@@ -1,0 +1,15 @@
+systemN: an multi-language interpreter/compiler 
+
+
+
+First orgamization
+
+app - executables
+doc - documentation
+langs - all the languages supported (parser/printer/typechecker(again icic)/compiler)
+      * icic: the type language for everything except L0
+      * L0: last layer language before llvm
+lib - contains the reusable library for parsing/pprinting/...
+llvm - contains the compilation from L0 to llvm
+runtime - contains the runtime routines 
+tests - series of tests
