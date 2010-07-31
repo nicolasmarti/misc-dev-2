@@ -1,0 +1,8 @@
+This is a git rep for all my dev (right now especially systemN & trading plateform)
+to make it short, you need (latest version of ...)
+ *) ocaml
+ *) pycaml
+ *) pyron
+ *) llvm
+ *) ibpy
+ *) (l)amp
