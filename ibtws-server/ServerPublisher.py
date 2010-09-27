@@ -11,3 +11,6 @@ fieldname = ["BID", "BID", "ASK", "ASK", "LAST", "LAST", "HIGH", "LOW", "VOLUME"
 class ServerPublisher(Pyro.EventService.Clients.Publisher):
     def __init__(self):
         Pyro.EventService.Clients.Publisher.__init__(self)
+        
+    def publishAccountInfo(self, values):
+        self.publish("AccountValue", values)

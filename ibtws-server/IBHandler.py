@@ -5,30 +5,36 @@ from ib.opt import ibConnection, message
 from ib.ext.ScannerSubscription import ScannerSubscription
 
 # IB message handler
-def error_handler(msg):
-    print "error: " + str(msg)
+class Handler:
 
-def tick_handler(msg):
-    print "tick: " + str(msg)
+    def __init__(self, sp):
+        self.m_sp = sp
 
-def order_handler(msg):
-    print "order: " + str(msg)
+    def error_handler(self, msg):
+        print "error: " + str(msg)
 
-def news_handler(msg):
-    print "news: "+ str(msg)    
+    def tick_handler(self, msg):
+        print "tick: " + str(msg)
 
-def contractdet_handler(msg):
-    print "contractdet: "+ str(msg)    
+    def order_handler(self, msg):
+        print "order: " + str(msg)
 
-def subscriptdata_handler(msg):
-    print "suscriptdat: "+ str(msg)    
+    def news_handler(self, msg):
+        print "news: "+ str(msg)    
 
-def subscriptdataend_handler(msg):
-    print "suscriptdataend: "+ str(msg)    
+    def contractdet_handler(self, msg):
+        print "contractdet: "+ str(msg)    
 
-def my_account_handler(msg):
-    print "account: "+ str(msg)
+    def subscriptdata_handler(self, msg):
+        print "suscriptdat: "+ str(msg)    
 
-def watcher(msg):
-    print "watcher: " + str(msg)
+    def subscriptdataend_handler(self, msg):
+        print "suscriptdataend: "+ str(msg)    
+
+    def my_account_handler(self, msg):
+        #print "account: "+ str(msg.values())
+        self.m_sp.publishAccountInfo(msg.values())
+
+    def watcher(self, msg):
+        print "watcher: " + str(msg)
 
