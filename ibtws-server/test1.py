@@ -18,4 +18,8 @@ o.accountStatus(True)
 
 sub.listen()
 
+print o.getValidIds(1)
+print o.getValidIds(2)
+print o.getValidIds(3)
+
 # blocked here ...

@@ -1,5 +1,12 @@
 # Imports
 
+# for thread lock
+from threading import *
+
+# for time-related functions
+from time import *
+from datetime import *
+
 # general
 import sys
 import os
@@ -20,11 +27,35 @@ import Pyro.EventService.Clients
 
 class ValidIdServer:
 
-    def __init__(self):
+    def __init__(self, con):
+        self.m_con = con
+        self.m_lock = Lock()
+        self.m_id = 0
         return
 
-    def nextvalidid(self, msg):
+    def getIds(self, nbids):
+        self.m_lock.acquire()
+        res = self.m_id
+        self.m_id += nbids
+        self.m_lock.release()
+        return res
+
+    def handler(self, msg):
+        self.m_lock.acquire()
         print "nextValidId" + str(msg)
+        self.m_id = msg.values()[0] # where to get it?
+        self.m_lock.release()
+
+class AccountServer(Pyro.EventService.Clients.Publisher):
+
+    def __init__(self, con):
+        Pyro.EventService.Clients.Publisher.__init__(self)
+        self.m_con = con
+        return
+
+    def handler(self, msg):
+        print "acount info: " + str(msg)
+        self.publish("AccountValue", msg)
 
 # Interface
 
@@ -39,9 +70,11 @@ class ServerInterface(Pyro.core.ObjBase):
     # flag = true: ignite the flow of data
     # flag = false: stop the flow of data
     def accountStatus(self, flag):
-        self.m_con.reqAccountUpdates(flag, '')
+        self.m_config["con"].reqAccountUpdates(flag, '')
         return
 
+    def getValidIds(self, nbids):
+        return self.m_config["ValidId"].getIds(nbids)
 
     # Exit
 
@@ -63,23 +96,21 @@ con = ibConnection("192.168.0.2")
 #config
 globalconfig = dict()
 
-validServer = ValidId()
+validServer = ValidIdServer(con)
 globalconfig["ValidId"] = validServer
-accountServer = AccountServer()
+accountServer = AccountServer(con)
 globalconfig["Account"] = accountServer
 globalconfig["con"] = con
 
 # registering callbacks
-con.register(handler.my_account_handler, 'UpdateAccountValue')
-con.register(handler.nextvalidid, "NextValidId")
-con.registerAll(handler.watcher)
-con.register(validServer.nextvalidid, "NextValidId")
+con.register(accountServer.handler, 'UpdateAccountValue')
+con.register(validServer.handler, "NextValidId")
 
 # connection
 con.connect()
 
 # register interface
-si = ServerInterface(con)
+si = ServerInterface(globalconfig)
 uri=daemon.connect(si,"serverInterface")
 print "The daemon runs on port:",daemon.port
 print "The object's uri is:",uri
