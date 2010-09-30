@@ -34,4 +34,4 @@ print "orderId1: " + str(o.placeOrder(c, order, timedelta(seconds=3)))
 
 sleep(30)
 
-o.exit()
+#o.exit()

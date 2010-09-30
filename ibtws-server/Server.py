@@ -108,7 +108,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
             else:
                 return oid
         
-
+    def placeOrder(self, contract, order, timeout):
         
     # loop that look at order in progress
     # Cancel, Filled -> put in done, look for time out and possibly unlock
@@ -135,7 +135,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
                         print "done"
                         self.doneOrders[k] = self.inProgressOrders[k]
                         del self.inProgressOrders[k]
-                        self.doneOrders[k][4].release()
+                        if self.doneOrders[k][4].locked(): self.doneOrders[k][4].release()
                         changed = True
 
             self.inProgressOrdersLock.release()
