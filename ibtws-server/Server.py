@@ -91,7 +91,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
         order.m_transmit = True
 
         self.inProgressOrdersLock.acquire()
-        self.inProgressOrders[oid] = [(contract, order), None, None, [timeout, date.today()], Lock()]
+        self.inProgressOrders[oid] = [(contract, order), [oid, "PendingSubmit"], None, [timeout, date.today()], Lock()]
         self.inProgressOrdersLock.release()
 
         if timeout == None:
@@ -108,7 +108,20 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
             else:
                 return oid
         
-    def placeOrder(self, contract, order, timeout):
+    def orderStatus(self, orderId):
+        self.inProgressOrdersLock.acquire()
+        if orderId in self.inProgressOrders:
+            res = self.inProgressOrders[orderId][1]
+            self.inProgressOrdersLock.release()
+            return res
+        else:
+            self.inProgressOrdersLock.release()
+            if orderId in self.doneOrders:
+                return self.doneOrders[orderId][1]
+            else:
+                return None
+
+
         
     # loop that look at order in progress
     # Cancel, Filled -> put in done, look for time out and possibly unlock
@@ -129,6 +142,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
                 if self.inProgressOrders[k][3][0] <> None and self.inProgressOrders[k][3][0] + self.inProgressOrders[k][3][1] >= date.today():
                     print "timed out"
                     self.inProgressOrders[k][3][0] = None
+                    if self.inProgressOrders[k][1][1] == "PendingSubmit": self.inProgressOrders[k][1][1] == "PendingCancel"
                     self.m_con.cancelOrder(k)
                 else:
                     if self.inProgressOrders[k][1] <> None and (self.inProgressOrders[k][1][1] == "Cancelled" or self.inProgressOrders[k][1][1] == "Filled"):
@@ -157,7 +171,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
     # open Order
     def handler3(self, msg):
-        print "open Status: " + str(msg.values())
+        print "open Status: " + str(msg.values()[3])
         self.inProgressOrdersLock.acquire()
         self.inProgressOrders[msg.values()[0]][2]=msg.values()[3]
         self.inProgressOrdersLock.release()
@@ -186,6 +200,9 @@ class ServerInterface(Pyro.core.ObjBase):
     # order
     def placeOrder(self, contract, order, timeout):
         return self.m_config["Order"].placeOrder(contract, order, timeout)
+
+    def orderStatus(self, oid):
+        return self.m_config["Order"].orderStatus(oid)
 
     # Exit
 
