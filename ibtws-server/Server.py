@@ -25,26 +25,25 @@ import Pyro.EventService.Clients
 
 # Back Servers
 
-class ValidIdServer:
+class NextIdServer:
 
     def __init__(self, con):
         self.m_con = con
         self.m_lock = Lock()
-        self.m_id = 0
+        self.m_ids = dict()
         return
 
-    def getIds(self, nbids):
+    def getNextId(self, category):
         self.m_lock.acquire()
-        res = self.m_id
-        self.m_id += nbids
+        if category in self.m_ids:
+            res = self.m_ids[category]
+            self.m_ids[category] += 1
+        else:
+            res = 0
+            self.m_ids[category] = 1
         self.m_lock.release()
         return res
 
-    def handler(self, msg):
-        self.m_lock.acquire()
-        print "nextValidId" + str(msg)
-        self.m_id = msg.values()[0] # where to get it?
-        self.m_lock.release()
 
 class AccountServer(Pyro.EventService.Clients.Publisher):
 
@@ -57,6 +56,113 @@ class AccountServer(Pyro.EventService.Clients.Publisher):
         print "acount info: " + str(msg)
         self.publish("AccountValue", msg)
 
+class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
+
+    def __init__(self, con):
+        Pyro.EventService.Clients.Publisher.__init__(self)
+        self.m_con = con
+
+        self.m_nextid = 0
+        self.m_nextidLock = Lock()
+        
+        self.inProgressOrders = dict()
+        self.inProgressOrdersLock = Lock()
+
+        self.doneOrders = dict()
+        self.doneOrdersLock = Lock()
+
+        Thread.__init__(self)
+
+        return
+
+    def nextId(self):
+        self.m_nextidLock.acquire()
+        res = self.m_nextid
+        self.m_nextid += 1        
+        self.m_nextidLock.release()
+        return res
+
+    # timeout = None -> non blocking
+    # else -> blocking
+    def placeOrder(self, contract, order, timeout):
+
+        oid = self.nextId()
+        order.m_orderId = oid
+        order.m_transmit = True
+
+        self.inProgressOrdersLock.acquire()
+        self.inProgressOrders[oid] = [(contract, order), None, None, [timeout, date.today()], Lock()]
+        self.inProgressOrdersLock.release()
+
+        if timeout == None:
+            self.m_con.placeOrder(oid, contract, order)
+            return(oid)
+        else:
+            self.m_con.placeOrder(oid, contract, order)
+            self.inProgressOrders[oid][4].acquire()
+            self.inProgressOrders[oid][4].acquire()
+            # next time I return, the order is in 
+            res = self.doneOrders[oid]
+            if res[1][2] == 0:
+                return None
+            else:
+                return oid
+        
+
+        
+    # loop that look at order in progress
+    # Cancel, Filled -> put in done, look for time out and possibly unlock
+    # other -> look for time out, if timed out, timeout = 0, and cancel the order
+    def run(self):
+
+        while True:
+            changed = False
+            sleep(5)
+            self.inProgressOrdersLock.acquire()
+
+            l = self.inProgressOrders.keys()
+
+            for k in l:
+
+                if changed: continue
+
+                if self.inProgressOrders[k][3][0] <> None and self.inProgressOrders[k][3][0] + self.inProgressOrders[k][3][1] >= date.today():
+                    print "timed out"
+                    self.inProgressOrders[k][3][0] = None
+                    self.m_con.cancelOrder(k)
+                else:
+                    if self.inProgressOrders[k][1] <> None and (self.inProgressOrders[k][1][1] == "Cancelled" or self.inProgressOrders[k][1][1] == "Filled"):
+                        print "done"
+                        self.doneOrders[k] = self.inProgressOrders[k]
+                        del self.inProgressOrders[k]
+                        self.doneOrders[k][4].release()
+                        changed = True
+
+            self.inProgressOrdersLock.release()
+
+
+    # nextID
+    def handler1(self, msg):
+        self.m_nextidLock.acquire()
+        print "nextValidId: " + str(msg.values())
+        self.m_nextid = msg.values()[0] # where to get it?
+        self.m_nextidLock.release()
+
+    # order status
+    def handler2(self, msg):
+        print "order Status: " + str(msg.values())
+        self.inProgressOrdersLock.acquire()
+        self.inProgressOrders[msg.values()[0]][1]=msg.values()
+        self.inProgressOrdersLock.release()
+
+    # open Order
+    def handler3(self, msg):
+        print "open Status: " + str(msg.values())
+        self.inProgressOrdersLock.acquire()
+        self.inProgressOrders[msg.values()[0]][2]=msg.values()[3]
+        self.inProgressOrdersLock.release()
+
+
 # Interface
 
 # the object exposed through pyro
@@ -65,6 +171,7 @@ class ServerInterface(Pyro.core.ObjBase):
     def __init__(self, config):
         Pyro.core.ObjBase.__init__(self)
         self.m_config = config
+        self.m_config["Order"].start()
 
     # account information
     # flag = true: ignite the flow of data
@@ -73,8 +180,12 @@ class ServerInterface(Pyro.core.ObjBase):
         self.m_config["con"].reqAccountUpdates(flag, '')
         return
 
-    def getValidIds(self, nbids):
-        return self.m_config["ValidId"].getIds(nbids)
+    def getNextId(self, category):
+        return self.m_config["NextId"].getNextId(category)
+
+    # order
+    def placeOrder(self, contract, order, timeout):
+        return self.m_config["Order"].placeOrder(contract, order, timeout)
 
     # Exit
 
@@ -96,15 +207,16 @@ con = ibConnection("192.168.0.2")
 #config
 globalconfig = dict()
 
-validServer = ValidIdServer(con)
-globalconfig["ValidId"] = validServer
-accountServer = AccountServer(con)
-globalconfig["Account"] = accountServer
+globalconfig["NextId"] = NextIdServer(con)
+globalconfig["Account"] = AccountServer(con)
+globalconfig["Order"] = OrderServer(con)
 globalconfig["con"] = con
 
 # registering callbacks
-con.register(accountServer.handler, 'UpdateAccountValue')
-con.register(validServer.handler, "NextValidId")
+con.register(globalconfig["Account"].handler, 'UpdateAccountValue')
+con.register(globalconfig["Order"].handler1, "NextValidId")
+con.register(globalconfig["Order"].handler2, message.OrderStatus)
+con.register(globalconfig["Order"].handler3, message.OpenOrder)
 
 # connection
 con.connect()
