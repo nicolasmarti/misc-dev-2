@@ -34,10 +34,12 @@ print "orderId1: " + str(oid1)
 oid2 = o.placeOrder(c, order, timedelta(seconds=3))
 print "orderId2: " + str(oid2)
 
-sleep(5)
+sleep(10)
 
 print o.orderStatus(oid1)
 print o.orderStatus(oid2)
+
+o.cancelOrder(oid1)
 
 print 
 

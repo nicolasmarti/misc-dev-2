@@ -72,6 +72,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
         self.doneOrdersLock = Lock()
 
         Thread.__init__(self)
+        self.m_loop = True
 
         return
 
@@ -128,7 +129,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
     # other -> look for time out, if timed out, timeout = 0, and cancel the order
     def run(self):
 
-        while True:
+        while self.m_loop:
             changed = False
             sleep(5)
             self.inProgressOrdersLock.acquire()
@@ -154,6 +155,8 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
             self.inProgressOrdersLock.release()
 
+    def stop(self):
+        self.m_loop = False
 
     # nextID
     def handler1(self, msg):
@@ -185,7 +188,10 @@ class ServerInterface(Pyro.core.ObjBase):
     def __init__(self, config):
         Pyro.core.ObjBase.__init__(self)
         self.m_config = config
+
+        # order
         self.m_config["Order"].start()
+        self.m_config["con"].reqAllOpenOrders()
 
     # account information
     # flag = true: ignite the flow of data
@@ -204,9 +210,14 @@ class ServerInterface(Pyro.core.ObjBase):
     def orderStatus(self, oid):
         return self.m_config["Order"].orderStatus(oid)
 
+    def cancelOrder(self, oid):
+        self.m_config["con"].cancelOrder(oid)
+
     # Exit
 
     def exit(self):
+        self.m_config["Order"].stop()
+        self.m_config["daemon"].disconnect(self)
         os._exit(0)
 
 
@@ -228,6 +239,7 @@ globalconfig["NextId"] = NextIdServer(con)
 globalconfig["Account"] = AccountServer(con)
 globalconfig["Order"] = OrderServer(con)
 globalconfig["con"] = con
+globalconfig["daemon"] = daemon
 
 # registering callbacks
 con.register(globalconfig["Account"].handler, 'UpdateAccountValue')
