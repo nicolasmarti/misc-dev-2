@@ -20,18 +20,26 @@ c.m_secType = 'STK'
 c.m_exchange = "NYSE"
 c.m_currency = "USD"
 
-order = Order()
-order.m_action = "BUY"
-order.m_tif = "DAY"
-order.m_orderType = 'LMT'
-order.m_totalQuantity = 100
-order.m_openClose = "O"
-order.m_lmtPrice = float(round(120,2))
+order1 = Order()
+order1.m_action = "BUY"
+order1.m_tif = "DAY"
+order1.m_orderType = 'LMT'
+order1.m_totalQuantity = 100
+order1.m_openClose = "O"
+order1.m_lmtPrice = float(round(120,2))
 
-oid1 = o.placeOrder(c, order, None)
+order2 = Order()
+order2.m_action = "BUY"
+order2.m_tif = "DAY"
+order2.m_orderType = 'LMT'
+order2.m_totalQuantity = 100
+order2.m_openClose = "O"
+order2.m_lmtPrice = float(round(171,2))
+
+oid1 = o.placeOrder(c, order2, None)
 print "orderId1: " + str(oid1)
 
-oid2 = o.placeOrder(c, order, timedelta(seconds=3))
+oid2 = o.placeOrder(c, order1, timedelta(seconds=3))
 print "orderId2: " + str(oid2)
 
 sleep(10)
@@ -39,7 +47,7 @@ sleep(10)
 print o.orderStatus(oid1)
 print o.orderStatus(oid2)
 
-o.cancelOrder(oid1)
+#o.cancelOrder(oid1)
 
 print 
 

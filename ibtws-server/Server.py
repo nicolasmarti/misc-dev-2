@@ -92,7 +92,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
         order.m_transmit = True
 
         self.inProgressOrdersLock.acquire()
-        self.inProgressOrders[oid] = [(contract, order), [oid, "PendingSubmit"], None, [timeout, date.today()], Lock()]
+        self.inProgressOrders[oid] = [[contract, order], [oid, "PendingSubmit"], None, [timeout, date.today()], Lock()]
         self.inProgressOrdersLock.release()
 
         if timeout == None:
@@ -146,7 +146,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
                     if self.inProgressOrders[k][1][1] == "PendingSubmit": self.inProgressOrders[k][1][1] == "PendingCancel"
                     self.m_con.cancelOrder(k)
                 else:
-                    if self.inProgressOrders[k][1] <> None and (self.inProgressOrders[k][1][1] == "Cancelled" or self.inProgressOrders[k][1][1] == "Filled"):
+                    if self.inProgressOrders[k][1] <> None and (self.inProgressOrders[k][1][1] == "Cancelled" or self.inProgressOrders[k][1][1] == "Filled" or self.inProgressOrders[k][1][1] == "ApiCancelled"):
                         print "done"
                         self.doneOrders[k] = self.inProgressOrders[k]
                         del self.inProgressOrders[k]
@@ -169,14 +169,21 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
     def handler2(self, msg):
         print "order Status: " + str(msg.values())
         self.inProgressOrdersLock.acquire()
-        self.inProgressOrders[msg.values()[0]][1]=msg.values()
+        if msg.values()[0] in self.inProgressOrders:
+            self.inProgressOrders[msg.values()[0]][1]=msg.values()
+        else:
+            self.inProgressOrders[msg.values()[0]] = [[None, None], msg.values(), None, [None, date.today()], Lock()]            
         self.inProgressOrdersLock.release()
 
     # open Order
     def handler3(self, msg):
-        print "open Status: " + str(msg.values()[3])
+        print "open Order: " + str(msg.values())
         self.inProgressOrdersLock.acquire()
-        self.inProgressOrders[msg.values()[0]][2]=msg.values()[3]
+        if msg.values()[0] in self.inProgressOrders:
+            self.inProgressOrders[msg.values()[0]][2]=msg.values()[3]
+        else:
+            self.inProgressOrders[msg.values()[0]] = [[msg.values()[1], msg.values()[2]], None, msg.values()[3], [None, date.today()], Lock()]            
+            
         self.inProgressOrdersLock.release()
 
 
