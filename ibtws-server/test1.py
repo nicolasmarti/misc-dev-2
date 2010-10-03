@@ -8,18 +8,17 @@ o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 class StockSubscriber(Subscriber):
     def __init__(self):
         Subscriber.__init__(self)
-        self.subscribe("AccountValue")
+        self.subscribe("UpdateAccountValue")
+        self.subscribe("UpdatePortfolio")
+        self.subscribe("UpdateAccountTime")
+
     def event(self, event):
-        print "receive a data: " + str(event.msg)
+        print "receive a data: " + str(event)
 
 sub = StockSubscriber()
 
 o.accountStatus(True)
 
 sub.listen()
-
-print o.getValidIds(1)
-print o.getValidIds(2)
-print o.getValidIds(3)
 
 # blocked here ...

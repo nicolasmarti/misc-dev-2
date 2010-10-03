@@ -52,9 +52,17 @@ class AccountServer(Pyro.EventService.Clients.Publisher):
         self.m_con = con
         return
 
-    def handler(self, msg):
-        print "acount info: " + str(msg)
-        self.publish("AccountValue", msg)
+    def handler1(self, msg):
+        print "update acount value: " + str(msg)
+        self.publish("UpdateAccountValue", msg)
+
+    def handler2(self, msg):
+        print "update portfolio: " + str(msg)
+        self.publish("UpdatePortfolio", msg)
+
+    def handler3(self, msg):
+        print "update account time: " + str(msg)
+        self.publish("UpdateAccountTime", msg)
 
 class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
@@ -186,6 +194,41 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
             
         self.inProgressOrdersLock.release()
 
+# Market Scanner
+class ScannerServer:
+    def __init__(self, con, idServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        
+        self.m_reqHandler = dict()
+        self.m_reqHandlerLock = Lock()
+
+ 
+    def mktScan(self, scannerInfo):
+        scanid = self.m_idServer.getNextId("scanid")
+        self.m_reqHandlerLock.acquire()         
+        self.m_reqHandler[scanid] = [Lock(), dict()]
+        self.m_reqHandler[scanid][0].acquire()
+        self.m_reqHandlerLock.release()         
+        con.reqScannerSubscription(scanid, scannerInfo) 
+        self.m_reqHandler[scanid][0].acquire()
+        return self.m_reqHandler[scanid][1]
+
+    def handler1(self, msg):
+        print "scanner data: " + str(msg)
+        
+        self.m_reqHandlerLock.acquire()
+        self.m_reqHandler[msg.values()[0]][1][msg.values()[1]] = (msg.values()[2], msg.values()[3], msg.values()[4], msg.values()[5], msg.values()[6])
+        self.m_reqHandlerLock.release()
+
+    def handler2(self, msg):
+        print "scanner data end: " + str(msg)        
+        self.m_reqHandlerLock.acquire()
+        if self.m_reqHandler[msg.values()[0]][0].locked: self.m_reqHandler[msg.values()[0]][0].release()
+        self.m_reqHandlerLock.release()
+
+    def handler3(self, msg):
+        print "scanner Param: " + str(msg)        
 
 # Interface
 
@@ -220,6 +263,13 @@ class ServerInterface(Pyro.core.ObjBase):
     def cancelOrder(self, oid):
         self.m_config["con"].cancelOrder(oid)
 
+    # scan
+    def scanMkt(self, scanInfo):
+        return self.m_config["Scanner"].mktScan(scanInfo)
+
+    def scanParam(self):
+        self.m_config["con"].reqScannerParameters()
+
     # Exit
 
     def exit(self):
@@ -245,14 +295,21 @@ globalconfig = dict()
 globalconfig["NextId"] = NextIdServer(con)
 globalconfig["Account"] = AccountServer(con)
 globalconfig["Order"] = OrderServer(con)
+globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"])
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
+
 # registering callbacks
-con.register(globalconfig["Account"].handler, 'UpdateAccountValue')
+con.register(globalconfig["Account"].handler1, 'UpdateAccountValue')
+con.register(globalconfig["Account"].handler2, 'UpdatePortfolio')
+con.register(globalconfig["Account"].handler3, 'UpdateAccountTime')
 con.register(globalconfig["Order"].handler1, "NextValidId")
 con.register(globalconfig["Order"].handler2, message.OrderStatus)
 con.register(globalconfig["Order"].handler3, message.OpenOrder)
+con.register(globalconfig["Scanner"].handler1, 'ScannerData')
+con.register(globalconfig["Scanner"].handler2, 'ScannerDataEnd')
+con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
 
 # connection
 con.connect()
