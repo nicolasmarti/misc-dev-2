@@ -30,19 +30,22 @@ class NextIdServer:
     def __init__(self, con):
         self.m_con = con
         self.m_lock = Lock()
-        self.m_ids = dict()
+        self.m_nextid = 0
         return
 
-    def getNextId(self, category):
+    def getNextId(self):
         self.m_lock.acquire()
-        if category in self.m_ids:
-            res = self.m_ids[category]
-            self.m_ids[category] += 1
-        else:
-            res = 0
-            self.m_ids[category] = 1
+        res = self.m_nextid
+        self.m_nextid += 1
         self.m_lock.release()
         return res
+
+    # nextID
+    def handler1(self, msg):
+        self.m_lock.acquire()
+        print "nextValidId: " + str(msg.values())
+        self.m_nextid = msg.values()[0] # where to get it?
+        self.m_lock.release()
 
 
 class AccountServer(Pyro.EventService.Clients.Publisher):
@@ -66,13 +69,12 @@ class AccountServer(Pyro.EventService.Clients.Publisher):
 
 class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
-    def __init__(self, con):
+    def __init__(self, con, nextId, serverC):
         Pyro.EventService.Clients.Publisher.__init__(self)
         self.m_con = con
+        self.m_nextId = nextId
+        self.m_serverC = serverC
 
-        self.m_nextid = 0
-        self.m_nextidLock = Lock()
-        
         self.inProgressOrders = dict()
         self.inProgressOrdersLock = Lock()
 
@@ -84,20 +86,15 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
         return
 
-    def nextId(self):
-        self.m_nextidLock.acquire()
-        res = self.m_nextid
-        self.m_nextid += 1        
-        self.m_nextidLock.release()
-        return res
-
     # timeout = None -> non blocking
     # else -> blocking
     def placeOrder(self, contract, order, timeout):
 
-        oid = self.nextId()
+        oid = self.m_nextId.getNextId()
         order.m_orderId = oid
         order.m_transmit = True
+
+        self.m_serverC.registerId(oid, self.error)
 
         self.inProgressOrdersLock.acquire()
         self.inProgressOrders[oid] = [[contract, order], [oid, "PendingSubmit"], None, [timeout, date.today()], Lock()]
@@ -130,7 +127,11 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
             else:
                 return None
 
-
+    def error(self, oid):
+        self.inProgressOrdersLock.acquire()
+        if oid in self.inProgressOrders:
+            self.inProgressOrders[oid][1] = [oid, "Error"]
+        self.inProgressOrdersLock.release()
         
     # loop that look at order in progress
     # Cancel, Filled -> put in done, look for time out and possibly unlock
@@ -166,13 +167,6 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
     def stop(self):
         self.m_loop = False
 
-    # nextID
-    def handler1(self, msg):
-        self.m_nextidLock.acquire()
-        print "nextValidId: " + str(msg.values())
-        self.m_nextid = msg.values()[0] # where to get it?
-        self.m_nextidLock.release()
-
     # order status
     def handler2(self, msg):
         print "order Status: " + str(msg.values())
@@ -196,23 +190,30 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
 # Market Scanner
 class ScannerServer:
-    def __init__(self, con, idServer):
+    def __init__(self, con, idServer, conServer):
         self.m_con = con
         self.m_idServer = idServer
-        
+        self.m_conServer = conServer
+
         self.m_reqHandler = dict()
         self.m_reqHandlerLock = Lock()
 
  
     def mktScan(self, scannerInfo):
-        scanid = self.m_idServer.getNextId("scanid")
+        scanid = self.m_idServer.getNextId()
         self.m_reqHandlerLock.acquire()         
         self.m_reqHandler[scanid] = [Lock(), dict()]
         self.m_reqHandler[scanid][0].acquire()
         self.m_reqHandlerLock.release()         
+        self.m_conServer.registerId(scanid, self.error)
         con.reqScannerSubscription(scanid, scannerInfo) 
         self.m_reqHandler[scanid][0].acquire()
         return self.m_reqHandler[scanid][1]
+
+    def error(self, tid):
+        self.m_reqHandlerLock.acquire()         
+        if self.m_reqHandler[tid][0].locked(): self.m_reqHandler[tid][0].release()
+        self.m_reqHandlerLock.release()
 
     def handler1(self, msg):
         print "scanner data: " + str(msg)
@@ -224,11 +225,39 @@ class ScannerServer:
     def handler2(self, msg):
         print "scanner data end: " + str(msg)        
         self.m_reqHandlerLock.acquire()
-        if self.m_reqHandler[msg.values()[0]][0].locked: self.m_reqHandler[msg.values()[0]][0].release()
+        if self.m_reqHandler[msg.values()[0]][0].locked(): self.m_reqHandler[msg.values()[0]][0].release()
         self.m_reqHandlerLock.release()
 
     def handler3(self, msg):
         print "scanner Param: " + str(msg)        
+
+# server object
+class ServerConnection:
+
+    def __init__(self, con):
+        self.m_con = con
+        self.m_error = dict()
+        self.m_errorLock = Lock()
+
+    def registerId(self, tid, fct):
+        self.m_errorLock.acquire()
+        self.m_error[tid] = fct
+        self.m_errorLock.release()
+
+    def handler1(self, msg):
+        print "winError: " + str(msg)
+
+    def handler2(self, msg):
+        print "error: " + str(msg)
+        if msg.values()[0] in self.m_error:
+           self.m_error[msg.values()[0]](msg.values()[0])
+
+    def handler3(self, msg):
+        print "connectionClosed: " + str(msg)
+
+    def handler4(self, msg):
+        print "currentTime: " + str(msg)
+
 
 # Interface
 
@@ -250,8 +279,8 @@ class ServerInterface(Pyro.core.ObjBase):
         self.m_config["con"].reqAccountUpdates(flag, '')
         return
 
-    def getNextId(self, category):
-        return self.m_config["NextId"].getNextId(category)
+    def getNextId(self):
+        return self.m_config["NextId"].getNextId()
 
     # order
     def placeOrder(self, contract, order, timeout):
@@ -287,29 +316,39 @@ daemon=Pyro.core.Daemon()
 daemon.useNameServer(ns)
 
 # Ib init
-con = ibConnection("192.168.0.2")
+con = ibConnection("192.168.0.4")
 
 #config
 globalconfig = dict()
 
+globalconfig["Server"] = ServerConnection(con)
+
 globalconfig["NextId"] = NextIdServer(con)
 globalconfig["Account"] = AccountServer(con)
-globalconfig["Order"] = OrderServer(con)
-globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"])
+globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
 
 # registering callbacks
+con.register(globalconfig["NextId"].handler1, "NextValidId")
+
 con.register(globalconfig["Account"].handler1, 'UpdateAccountValue')
 con.register(globalconfig["Account"].handler2, 'UpdatePortfolio')
 con.register(globalconfig["Account"].handler3, 'UpdateAccountTime')
-con.register(globalconfig["Order"].handler1, "NextValidId")
+
 con.register(globalconfig["Order"].handler2, message.OrderStatus)
 con.register(globalconfig["Order"].handler3, message.OpenOrder)
+
 con.register(globalconfig["Scanner"].handler1, 'ScannerData')
 con.register(globalconfig["Scanner"].handler2, 'ScannerDataEnd')
 con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
+
+con.register(globalconfig["Server"].handler1, 'WinError')
+con.register(globalconfig["Server"].handler2, 'Error')
+con.register(globalconfig["Server"].handler3, 'ConnectionClosed')
+con.register(globalconfig["Server"].handler4, 'CurentTime')
 
 # connection
 con.connect()
@@ -321,5 +360,6 @@ print "The daemon runs on port:",daemon.port
 print "The object's uri is:",uri
 
 # main loop = listening to pyro defined interface daemon
+print "Start main loop"
 daemon.requestLoop()
 

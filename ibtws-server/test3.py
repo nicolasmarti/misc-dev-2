@@ -16,14 +16,8 @@ subscript = ScannerSubscription()
 subscript.numberOfRows(200) 
 subscript.m_scanCode = 'MOST_ACTIVE' 
 subscript.m_instrument = 'STK' 
-subscript.m_averageOptionVolumeAbove = '' 
-subscript.m_couponRateAbove = '' 
-subscript.m_couponRateBelow = '' 
-subscript.m_abovePrice = 50
-subscript.m_belowPrice = 200
-subscript.m_marketCapAbove = '' 
-subscript.m_marketCapBelow = '' 
-subscript.m_aboveVolume = '' 
+subscript.m_abovePrice = float(round(0,2))
+subscript.m_belowPrice = float(round(10000,2))
 subscript.m_stockTypeFilter = 'ALL' 
 subscript.locationCode('STK.NYSE') 
 
