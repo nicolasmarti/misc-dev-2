@@ -19,8 +19,8 @@ subscript.m_instrument = 'STK'
 subscript.m_abovePrice = float(round(0,2))
 subscript.m_belowPrice = float(round(10000,2))
 subscript.m_stockTypeFilter = 'ALL' 
-subscript.locationCode('STK.NYSE') 
+subscript.locationCode('STK.NASDAQ.NMS') 
 
-o.scanParam()
+#o.scanParam()
 
 print str(o.scanMkt(subscript))
