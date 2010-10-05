@@ -43,7 +43,7 @@ class NextIdServer:
     # nextID
     def handler1(self, msg):
         self.m_lock.acquire()
-        print "nextValidId: " + str(msg.values())
+        #print "nextValidId: " + str(msg.values())
         self.m_nextid = msg.values()[0] # where to get it?
         self.m_lock.release()
 
@@ -56,15 +56,15 @@ class AccountServer(Pyro.EventService.Clients.Publisher):
         return
 
     def handler1(self, msg):
-        print "update acount value: " + str(msg)
+        #print "update acount value: " + str(msg)
         self.publish("UpdateAccountValue", msg)
 
     def handler2(self, msg):
-        print "update portfolio: " + str(msg)
+        #print "update portfolio: " + str(msg)
         self.publish("UpdatePortfolio", msg)
 
     def handler3(self, msg):
-        print "update account time: " + str(msg)
+        #print "update account time: " + str(msg)
         self.publish("UpdateAccountTime", msg)
 
 class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
@@ -169,7 +169,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
     # order status
     def handler2(self, msg):
-        print "order Status: " + str(msg.values())
+        #print "order Status: " + str(msg.values())
         self.inProgressOrdersLock.acquire()
         if msg.values()[0] in self.inProgressOrders:
             self.inProgressOrders[msg.values()[0]][1]=msg.values()
@@ -179,7 +179,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
     # open Order
     def handler3(self, msg):
-        print "open Order: " + str(msg.values())
+        #print "open Order: " + str(msg.values())
         self.inProgressOrdersLock.acquire()
         if msg.values()[0] in self.inProgressOrders:
             self.inProgressOrders[msg.values()[0]][2]=msg.values()[3]
@@ -216,20 +216,63 @@ class ScannerServer:
         self.m_reqHandlerLock.release()
 
     def handler1(self, msg):
-        print "scanner data: " + str(msg)
+        #print "scanner data: " + str(msg)
         
         self.m_reqHandlerLock.acquire()
         self.m_reqHandler[msg.values()[0]][1][msg.values()[1]] = (msg.values()[2], msg.values()[3], msg.values()[4], msg.values()[5], msg.values()[6])
         self.m_reqHandlerLock.release()
 
     def handler2(self, msg):
-        print "scanner data end: " + str(msg)        
+        #print "scanner data end: " + str(msg)        
         self.m_reqHandlerLock.acquire()
         if self.m_reqHandler[msg.values()[0]][0].locked(): self.m_reqHandler[msg.values()[0]][0].release()
         self.m_reqHandlerLock.release()
 
     def handler3(self, msg):
         print "scanner Param: " + str(msg)        
+
+# MktData Server
+
+
+class MktDataServer:
+    
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+        self.m_tick = ["BID SIZE", "BID PRICE", "ASK PRICE", "ASK SIZE", "LAST PRICE", "LAST SIZE", "HIGH", "LOW", "VOLUME", "CLOSE"]
+
+    def reqMktData(self, contract, oneshot):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = [dict(), dict()]
+        self.m_dataHandlerLock.release()
+        self.m_con.reqMktData(dataid, contract, '', oneshot)
+        return dataid
+
+    def cancelMktData(self, dataid):
+        self.m_con.cancelMktData(dataid)
+
+    def getData(self, dataid):
+        self.m_dataHandlerLock.acquire()
+        if dataid in self.m_dataHandler:
+            res = self.m_dataHandler[dataid][0]
+        else:
+            res = None
+        self.m_dataHandlerLock.release()
+        return res
+
+    # tickPrice/tickSize
+    def handler1(self, msg):
+        #print "tickPrice/Size: " + str(msg.values())
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]][0][self.m_tick[msg.values()[1]]] = msg.values()[2]            
+        self.m_dataHandlerLock.release()
+
 
 # server object
 class ServerConnection:
@@ -257,6 +300,7 @@ class ServerConnection:
 
     def handler4(self, msg):
         print "currentTime: " + str(msg)
+
 
 
 # Interface
@@ -299,6 +343,16 @@ class ServerInterface(Pyro.core.ObjBase):
     def scanParam(self):
         self.m_config["con"].reqScannerParameters()
 
+    # mktData
+    def reqMktData(self, contract, oneshot):
+        return self.m_config["MktData"].reqMktData(contract, oneshot)
+
+    def cancelMktData(self, dataid):
+        self.m_config["MktData"].cancelMktData(dataid)
+
+    def getData(self, dataid):
+        return self.m_config["MktData"].getData(dataid)
+
     # Exit
 
     def exit(self):
@@ -327,6 +381,7 @@ globalconfig["NextId"] = NextIdServer(con)
 globalconfig["Account"] = AccountServer(con)
 globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
@@ -344,6 +399,9 @@ con.register(globalconfig["Order"].handler3, message.OpenOrder)
 con.register(globalconfig["Scanner"].handler1, 'ScannerData')
 con.register(globalconfig["Scanner"].handler2, 'ScannerDataEnd')
 con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
+
+con.register(globalconfig["MktData"].handler1, 'TickPrice')
+con.register(globalconfig["MktData"].handler1, 'TickSize')
 
 con.register(globalconfig["Server"].handler1, 'WinError')
 con.register(globalconfig["Server"].handler2, 'Error')
