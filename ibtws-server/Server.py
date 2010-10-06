@@ -216,14 +216,13 @@ class ScannerServer:
         self.m_reqHandlerLock.release()
 
     def handler1(self, msg):
-        #print "scanner data: " + str(msg)
-        
+        print "scanner data: " + str(msg)        
         self.m_reqHandlerLock.acquire()
         self.m_reqHandler[msg.values()[0]][1][msg.values()[1]] = (msg.values()[2], msg.values()[3], msg.values()[4], msg.values()[5], msg.values()[6])
         self.m_reqHandlerLock.release()
 
     def handler2(self, msg):
-        #print "scanner data end: " + str(msg)        
+        print "scanner data end: " + str(msg)        
         self.m_reqHandlerLock.acquire()
         if self.m_reqHandler[msg.values()[0]][0].locked(): self.m_reqHandler[msg.values()[0]][0].release()
         self.m_reqHandlerLock.release()
@@ -324,6 +323,44 @@ class MktDepthServer:
             self.m_dataHandler[msg.values()[0]][msg.values()[1]] = None
         self.m_dataHandlerLock.release()
 
+# server contract details
+class ContractDetailsServer:
+
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+    def reqContractDetails(self, contract):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = [Lock(), []]
+        self.m_dataHandler[dataid][0].acquire()
+        self.m_dataHandlerLock.release()
+        self.m_con.reqContractDetails(dataid, contract)        
+        return dataid
+
+    def getContractDetails(self, dataid):
+        self.m_dataHandler[dataid][0].acquire()
+        return self.m_dataHandler[dataid][1]
+
+    # contractDetails
+    def handler1(self, msg):
+        #print "handler1"
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]][1].append(msg.values()[1])
+        self.m_dataHandlerLock.release()
+
+    # contractDetailsEnd
+    def handler2(self, msg):
+        #print "handler2"
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]][0].release()
+        self.m_dataHandlerLock.release()
+
 
 # server object
 class ServerConnection:
@@ -414,6 +451,13 @@ class ServerInterface(Pyro.core.ObjBase):
     def getMktDepth(self, dataid):
         return self.m_config["MktDepth"].getMktDepth(dataid)
 
+    # contractDetails
+    
+    def reqContractDetails(self, contract):
+        dataid = self.m_config["ContractDetails"].reqContractDetails(contract)
+        return self.m_config["ContractDetails"].getContractDetails(dataid)
+        
+
     # Exit
 
     def exit(self):
@@ -444,6 +488,7 @@ globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["S
 globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["ContractDetails"] = ContractDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
@@ -468,15 +513,18 @@ con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
 con.register(globalconfig["MktData"].handler1, 'TickPrice')
 con.register(globalconfig["MktData"].handler1, 'TickSize')
 
-con.register(globalconfig["MktDepth"].handler1, message.UpdateMktDepth)
-con.register(globalconfig["MktDepth"].handler2, message.UpdateMktDepthL2)
+con.register(globalconfig["MktDepth"].handler1, "UpdateMktDepth")
+con.register(globalconfig["MktDepth"].handler2, "UpdateMktDepthL2")
+
+con.register(globalconfig["ContractDetails"].handler1, "ContractDetails")
+con.register(globalconfig["ContractDetails"].handler2, "ContractDetailsEnd")
 
 con.register(globalconfig["Server"].handler1, 'WinError')
 con.register(globalconfig["Server"].handler2, 'Error')
 con.register(globalconfig["Server"].handler3, 'ConnectionClosed')
 con.register(globalconfig["Server"].handler4, 'CurentTime')
 
-con.registerAll(watcher)
+#con.registerAll(watcher)
 
 # connection
 con.connect()
