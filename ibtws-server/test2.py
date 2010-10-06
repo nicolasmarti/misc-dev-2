@@ -17,7 +17,7 @@ o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 c = Contract()
 c.m_symbol = "GS"
 c.m_secType = 'STK'
-c.m_exchange = "NYSE"
+c.m_exchange = "SMART"
 c.m_currency = "USD"
 
 order1 = Order()
@@ -34,7 +34,7 @@ order2.m_tif = "DAY"
 order2.m_orderType = 'LMT'
 order2.m_totalQuantity = 100
 order2.m_openClose = "O"
-order2.m_lmtPrice = float(round(171,2))
+order2.m_lmtPrice = float(round(130,2))
 
 oid1 = o.placeOrder(c, order2, None)
 print "orderId1: " + str(oid1)

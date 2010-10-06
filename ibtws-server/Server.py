@@ -233,7 +233,6 @@ class ScannerServer:
 
 # MktData Server
 
-
 class MktDataServer:
     
     def __init__(self, con, idServer, conServer):
@@ -257,7 +256,7 @@ class MktDataServer:
     def cancelMktData(self, dataid):
         self.m_con.cancelMktData(dataid)
 
-    def getData(self, dataid):
+    def getMktData(self, dataid):
         self.m_dataHandlerLock.acquire()
         if dataid in self.m_dataHandler:
             res = self.m_dataHandler[dataid][0]
@@ -271,6 +270,58 @@ class MktDataServer:
         #print "tickPrice/Size: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
         self.m_dataHandler[msg.values()[0]][0][self.m_tick[msg.values()[1]]] = msg.values()[2]            
+        self.m_dataHandlerLock.release()
+
+# MktDepth Server
+
+class MktDepthServer:
+    
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+    def reqMktDepth(self, contract, numrows):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = [None for i in range(0, numrows)]
+        self.m_dataHandlerLock.release()
+        self.m_con.reqMktDepth(dataid, contract, numrows)
+        return dataid
+
+    def cancelMktDepth(self, dataid):
+        self.m_con.cancelMktDepth(dataid)
+
+    def getMktDepth(self, dataid):
+        self.m_dataHandlerLock.acquire()
+        if dataid in self.m_dataHandler:
+            res = self.m_dataHandler[dataid]
+        else:
+            res = None
+        self.m_dataHandlerLock.release()
+        return res
+
+    # updateMktDepth
+    def handler1(self, msg):
+        print "updateMktDepth: " + str(msg.values())
+        self.m_dataHandlerLock.acquire()
+        if msg.values()[2] == 0 or msg.values()[2] == 1:
+            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = (msg.values()[3], msg.values()[4], msg.values()[5])
+        elif msg.values()[2] == 2:
+            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = None
+        self.m_dataHandlerLock.release()
+
+    # updateMktDepthL2
+    def handler2(self, msg):
+        print "updateMktDepthL2: " + str(msg.values())
+        self.m_dataHandlerLock.acquire()
+        if msg.values()[3] == 0 or msg.values()[3] == 1:
+            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = (msg.values()[2], msg.values()[4], msg.values()[5], msg.values()[6])
+        elif msg.values()[3] == 2:
+            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = None
         self.m_dataHandlerLock.release()
 
 
@@ -350,8 +401,18 @@ class ServerInterface(Pyro.core.ObjBase):
     def cancelMktData(self, dataid):
         self.m_config["MktData"].cancelMktData(dataid)
 
-    def getData(self, dataid):
-        return self.m_config["MktData"].getData(dataid)
+    def getMktData(self, dataid):
+        return self.m_config["MktData"].getMktData(dataid)
+
+    # mktDepth
+    def reqMktDepth(self, contract, numrows):
+        return self.m_config["MktDepth"].reqMktDepth(contract, numrows)
+
+    def cancelMktDepth(self, dataid):
+        self.m_config["MktDepth"].cancelMktDepth(dataid)
+
+    def getMktDepth(self, dataid):
+        return self.m_config["MktDepth"].getMktDepth(dataid)
 
     # Exit
 
@@ -382,9 +443,13 @@ globalconfig["Account"] = AccountServer(con)
 globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
+# just for debug
+def watcher(msg):
+    print "watcher: " + str(msg)
 
 # registering callbacks
 con.register(globalconfig["NextId"].handler1, "NextValidId")
@@ -403,13 +468,20 @@ con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
 con.register(globalconfig["MktData"].handler1, 'TickPrice')
 con.register(globalconfig["MktData"].handler1, 'TickSize')
 
+con.register(globalconfig["MktDepth"].handler1, message.UpdateMktDepth)
+con.register(globalconfig["MktDepth"].handler2, message.UpdateMktDepthL2)
+
 con.register(globalconfig["Server"].handler1, 'WinError')
 con.register(globalconfig["Server"].handler2, 'Error')
 con.register(globalconfig["Server"].handler3, 'ConnectionClosed')
 con.register(globalconfig["Server"].handler4, 'CurentTime')
 
+con.registerAll(watcher)
+
 # connection
 con.connect()
+
+
 
 # register interface
 si = ServerInterface(globalconfig)
