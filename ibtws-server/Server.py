@@ -480,7 +480,7 @@ class ServerInterface(Pyro.core.ObjBase):
         self.m_config["News"].reqNewsBulletins(allMsgs)
 
     def cancelNewsBulletins(self):
-        self.m_config["News"].reqNewsBulletins()
+        self.m_config["News"].cancelNewsBulletins()
 
     # Exit
 
