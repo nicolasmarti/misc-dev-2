@@ -361,6 +361,24 @@ class ContractDetailsServer:
         self.m_dataHandler[msg.values()[0]][0].release()
         self.m_dataHandlerLock.release()
 
+class NewsServer(Pyro.EventService.Clients.Publisher):
+
+    def __init__(self, con):
+        Pyro.EventService.Clients.Publisher.__init__(self)
+        self.m_con = con
+        return
+
+    def reqNewsBulletins(self, allMsgs):
+        self.m_con.reqNewsBulletins(allMsgs)
+
+    def cancelNewsBulletins(self):
+        self.m_con.cancelNewsBulletins()
+
+    def handler1(self, msg):
+        #print "update acount value: " + str(msg)
+        self.publish("NewsBulletins", msg)
+
+
 
 # server object
 class ServerConnection:
@@ -456,7 +474,13 @@ class ServerInterface(Pyro.core.ObjBase):
     def reqContractDetails(self, contract):
         dataid = self.m_config["ContractDetails"].reqContractDetails(contract)
         return self.m_config["ContractDetails"].getContractDetails(dataid)
-        
+
+    # news
+    def reqNewsBulletins(self, allMsgs):
+        self.m_config["News"].reqNewsBulletins(allMsgs)
+
+    def cancelNewsBulletins(self):
+        self.m_config["News"].reqNewsBulletins()
 
     # Exit
 
@@ -489,6 +513,7 @@ globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfi
 globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["ContractDetails"] = ContractDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["News"] = NewsServer(con)
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
 
@@ -518,6 +543,8 @@ con.register(globalconfig["MktDepth"].handler2, "UpdateMktDepthL2")
 
 con.register(globalconfig["ContractDetails"].handler1, "ContractDetails")
 con.register(globalconfig["ContractDetails"].handler2, "ContractDetailsEnd")
+
+con.register(globalconfig["News"].handler1, 'UpdateNewsBulletin')
 
 con.register(globalconfig["Server"].handler1, 'WinError')
 con.register(globalconfig["Server"].handler2, 'Error')
