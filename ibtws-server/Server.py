@@ -361,6 +361,8 @@ class ContractDetailsServer:
         self.m_dataHandler[msg.values()[0]][0].release()
         self.m_dataHandlerLock.release()
 
+
+# news
 class NewsServer(Pyro.EventService.Clients.Publisher):
 
     def __init__(self, con):
@@ -378,6 +380,43 @@ class NewsServer(Pyro.EventService.Clients.Publisher):
         #print "update acount value: " + str(msg)
         self.publish("NewsBulletins", msg)
 
+
+# historical
+class HistDataServer:
+    
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+    def reqHistData(self, contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = []
+        self.m_dataHandlerLock.release()
+        self.m_con.reqHistoricalData(dataid, contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate)
+        return dataid
+
+    def cancelHistData(self, dataid):
+        self.m_con.cancelHistoricalData(dataid)
+
+    def getHistData(self, dataid):
+        self.m_dataHandlerLock.acquire()
+        if dataid in self.m_dataHandler:
+            res = self.m_dataHandler[dataid]
+        else:
+            res = None
+        self.m_dataHandlerLock.release()
+        return res
+
+    # tickPrice/tickSize
+    def handler1(self, msg):
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]].append(msg.values())
+        self.m_dataHandlerLock.release()
 
 
 # server object
@@ -482,6 +521,16 @@ class ServerInterface(Pyro.core.ObjBase):
     def cancelNewsBulletins(self):
         self.m_config["News"].cancelNewsBulletins()
 
+    # historical
+    def reqHistData(self, contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate):
+        return self.m_config["HistData"].reqHistData(contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate)
+
+    def cancelHistData(self, dataid):
+        return self.m_config["HistData"].cancelHistData(dataid)
+
+    def getHistData(self, dataid):
+        return self.m_config["HistData"].getHistData(dataid)
+
     # Exit
 
     def exit(self):
@@ -511,6 +560,7 @@ globalconfig["Account"] = AccountServer(con)
 globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["HistData"] = HistDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["ContractDetails"] = ContractDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["News"] = NewsServer(con)
@@ -537,6 +587,8 @@ con.register(globalconfig["Scanner"].handler3, 'ScannerParameters')
 
 con.register(globalconfig["MktData"].handler1, 'TickPrice')
 con.register(globalconfig["MktData"].handler1, 'TickSize')
+
+con.register(globalconfig["HistData"].handler1, 'HistoricalData')
 
 con.register(globalconfig["MktDepth"].handler1, "UpdateMktDepth")
 con.register(globalconfig["MktDepth"].handler2, "UpdateMktDepthL2")
