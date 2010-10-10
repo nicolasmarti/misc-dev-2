@@ -455,6 +455,44 @@ class RTDataServer:
         self.m_dataHandler[msg.values()[0]].append(msg.values())
         self.m_dataHandlerLock.release()
 
+# server execution details
+class ExecutionDetailsServer:
+
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+    def reqExecutions(self, execfilter):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = [Lock(), []]
+        self.m_dataHandler[dataid][0].acquire()
+        self.m_dataHandlerLock.release()
+        self.m_con.reqExecutions(dataid, execfilter)        
+        return dataid
+
+    def getExecutionDetails(self, dataid):
+        self.m_dataHandler[dataid][0].acquire()
+        return self.m_dataHandler[dataid][1]
+
+    # execDetails
+    def handler1(self, msg):
+        #print "handler1: " + str(msg.values()) 
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]][1].append(msg.values())
+        self.m_dataHandlerLock.release()
+
+    # execDetailsEnd
+    def handler2(self, msg):
+        #print "handler2: " + str(msg.values())
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]][0].release()
+        self.m_dataHandlerLock.release()
+
 # server object
 class ServerConnection:
 
@@ -577,6 +615,12 @@ class ServerInterface(Pyro.core.ObjBase):
     def getRTData(self, dataid):
         return self.m_config["RTData"].getRTData(dataid)
 
+    # ExecutionDetails
+    
+    def reqExecutions(self, execfilter):
+        dataid = self.m_config["ExecutionDetails"].reqExecutions(execfilter)
+        return self.m_config["ExecutionDetails"].getExecutionDetails(dataid)
+
     # Exit
 
     def exit(self):
@@ -610,6 +654,7 @@ globalconfig["HistData"] = HistDataServer(con, globalconfig["NextId"], globalcon
 globalconfig["RTData"] = RTDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["ContractDetails"] = ContractDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["ExecutionDetails"] = ExecutionDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["News"] = NewsServer(con)
 globalconfig["con"] = con
 globalconfig["daemon"] = daemon
@@ -644,6 +689,9 @@ con.register(globalconfig["MktDepth"].handler2, "UpdateMktDepthL2")
 
 con.register(globalconfig["ContractDetails"].handler1, "ContractDetails")
 con.register(globalconfig["ContractDetails"].handler2, "ContractDetailsEnd")
+
+con.register(globalconfig["ExecutionDetails"].handler1, "ExecDetails")
+con.register(globalconfig["ExecutionDetails"].handler2, "ExecDetailsEnd")
 
 con.register(globalconfig["News"].handler1, 'UpdateNewsBulletin')
 
