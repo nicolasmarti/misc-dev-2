@@ -455,6 +455,43 @@ class RTDataServer:
         self.m_dataHandler[msg.values()[0]].append(msg.values())
         self.m_dataHandlerLock.release()
 
+# RT
+class FundamentalDataServer:
+    
+    def __init__(self, con, idServer, conServer):
+        self.m_con = con
+        self.m_idServer = idServer
+        self.m_conServer = conServer
+
+        self.m_dataHandler = dict()
+        self.m_dataHandlerLock = Lock()
+
+    def reqFundamentalData(self, contract, reportType):
+        dataid = self.m_idServer.getNextId()
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[dataid] = []
+        self.m_dataHandlerLock.release()
+        self.m_con.reqFundamentalData(dataid, contract, reportType)
+        return dataid
+
+    def cancelFundamentalData(self, dataid):
+        self.m_con.cancelFundamentalData(dataid)
+
+    def getFundamentalData(self, dataid):
+        self.m_dataHandlerLock.acquire()
+        if dataid in self.m_dataHandler:
+            res = self.m_dataHandler[dataid]
+        else:
+            res = None
+        self.m_dataHandlerLock.release()
+        return res
+
+    # 
+    def handler1(self, msg):
+        self.m_dataHandlerLock.acquire()
+        self.m_dataHandler[msg.values()[0]].append(msg.values())
+        self.m_dataHandlerLock.release()
+
 # server execution details
 class ExecutionDetailsServer:
 
@@ -615,6 +652,16 @@ class ServerInterface(Pyro.core.ObjBase):
     def getRTData(self, dataid):
         return self.m_config["RTData"].getRTData(dataid)
 
+    # Fundamental
+    def reqFundamentalData(self, contract, reportType):
+        return self.m_config["FundamentalData"].reqFundamentalData(contract, reportType)
+
+    def cancelFundamentalData(self, dataid):
+        return self.m_config["FundamentalData"].cancelFundamentalData(dataid)
+
+    def getFundamentalData(self, dataid):
+        return self.m_config["FundamentalData"].getFundamentalData(dataid)
+
     # ExecutionDetails
     
     def reqExecutions(self, execfilter):
@@ -651,6 +698,7 @@ globalconfig["Order"] = OrderServer(con, globalconfig["NextId"], globalconfig["S
 globalconfig["Scanner"] = ScannerServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktData"] = MktDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["HistData"] = HistDataServer(con, globalconfig["NextId"], globalconfig["Server"])
+globalconfig["FundamentalData"] = FundamentalDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["RTData"] = RTDataServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["MktDepth"] = MktDepthServer(con, globalconfig["NextId"], globalconfig["Server"])
 globalconfig["ContractDetails"] = ContractDetailsServer(con, globalconfig["NextId"], globalconfig["Server"])
@@ -681,7 +729,7 @@ con.register(globalconfig["MktData"].handler1, 'TickPrice')
 con.register(globalconfig["MktData"].handler1, 'TickSize')
 
 con.register(globalconfig["HistData"].handler1, 'HistoricalData')
-
+con.register(globalconfig["FundamentalData"].handler1, 'FundamentalData')
 con.register(globalconfig["RTData"].handler1, 'RealtimeBar')
 
 con.register(globalconfig["MktDepth"].handler1, "UpdateMktDepth")
