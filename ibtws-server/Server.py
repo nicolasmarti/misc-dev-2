@@ -16,6 +16,7 @@ from ib.ext.Contract import Contract
 from ib.ext.Order import Order
 from ib.opt import ibConnection, message
 from ib.ext.ScannerSubscription import ScannerSubscription
+from ib.ext.ExecutionFilter import ExecutionFilter
 
 # for pyro
 import Pyro.core
@@ -57,15 +58,15 @@ class AccountServer(Pyro.EventService.Clients.Publisher):
 
     def handler1(self, msg):
         #print "update acount value: " + str(msg)
-        self.publish("UpdateAccountValue", msg)
+        self.publish("UpdateAccountValue", (msg.values()[0], msg.values()[1], msg.values()[2], msg.values()[3]))
 
     def handler2(self, msg):
         #print "update portfolio: " + str(msg)
-        self.publish("UpdatePortfolio", msg)
+        self.publish("UpdatePortfolio", (msg.values()[0], msg.values()[1], msg.values()[2], msg.values()[3], msg.values()[4], msg.values()[5], msg.values()[6], msg.values()[7]))
 
     def handler3(self, msg):
         #print "update account time: " + str(msg)
-        self.publish("UpdateAccountTime", msg)
+        self.publish("UpdateAccountTime", msg.values()[0])
 
 class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
@@ -664,8 +665,8 @@ class ServerInterface(Pyro.core.ObjBase):
 
     # ExecutionDetails
     
-    def reqExecutions(self, execfilter):
-        dataid = self.m_config["ExecutionDetails"].reqExecutions(execfilter)
+    def reqExecutions(self):
+        dataid = self.m_config["ExecutionDetails"].reqExecutions(ExecutionFilter())
         return self.m_config["ExecutionDetails"].getExecutionDetails(dataid)
 
     # Exit
@@ -685,7 +686,7 @@ daemon=Pyro.core.Daemon()
 daemon.useNameServer(ns)
 
 # Ib init
-con = ibConnection("192.168.0.4")
+con = ibConnection("127.0.0.1")
 
 #config
 globalconfig = dict()

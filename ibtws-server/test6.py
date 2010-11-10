@@ -16,7 +16,7 @@ c.m_secType = 'STK'
 c.m_exchange = "SMART"
 c.m_currency = "USD"
 
-print str(o.reqContractDetails(c))
+print str(len(o.reqContractDetails(c)))
 
 c2 = Contract()
 c2.m_symbol = "GS"
@@ -24,4 +24,4 @@ c2.m_secType = 'OPT'
 c2.m_exchange = "SMART"
 c2.m_currency = "USD"
 
-print str(o.reqContractDetails(c2))
+print str(len(o.reqContractDetails(c2)))

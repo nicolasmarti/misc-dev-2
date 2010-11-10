@@ -47,7 +47,7 @@ sleep(10)
 print o.orderStatus(oid1)
 print o.orderStatus(oid2)
 
-#o.cancelOrder(oid1)
+o.cancelOrder(oid1)
 
 print 
 

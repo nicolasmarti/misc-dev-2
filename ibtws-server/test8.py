@@ -16,7 +16,15 @@ c.m_secType = 'STK'
 c.m_exchange = "SMART"
 c.m_currency = "USD"
 
-dataid = o.reqHistData(c, "20101008 22:00:00", "1000", "5 mins", "MIDPOINT", 0, 1)
+mnow = datetime.now()
+
+delta = timedelta(hours=2)
+
+mstr = (mnow - delta).strftime("%Y%m%d %H:%M:%S")
+
+print mstr
+
+dataid = o.reqHistData(c, mstr, "1000", "5 mins", "MIDPOINT", 0, 1)
 
 print dataid
 

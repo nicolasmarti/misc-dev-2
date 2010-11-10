@@ -19,26 +19,23 @@ import Pyro.core
 from Pyro.EventService.Clients import Subscriber
 
 gtk.gdk.threads_init()
+gobject.threads_init()
 
-class WorldClockWindow(gtk.Window, Thread):
+
+class WorldClockWindow(gtk.Window):
 
     def __init__(self):
         gtk.Window.__init__(self)
-        Thread.__init__(self)
-        
+
         self.connect("delete_event", self.delete)
         self.set_border_width(10)
 
-        self.daemon = True
+        self.terminate = False
         self.set_size_request(800, 400)
 
-    def run(self):
-        l = [(timezone('US/Eastern'), "NY"), 
-             (timezone('Europe/London'), "London"), 
-             (timezone('Europe/Paris'), "Paris"), 
-             (timezone('Asia/Singapore'), "HK"), 
-             (timezone('Asia/Tokyo'), "Tokyo")]
-        while True:
+    def loop(self):
+        l = [(timezone('US/Eastern'), "NY"), (timezone('Europe/London'), "London"), (timezone('Asia/Singapore'), "HK"), (timezone('Asia/Tokyo'), "Tokyo")]
+        while (not self.terminate):
             mstr = ""
             for d in l:
                 mnow = datetime.now(d[0])
@@ -51,6 +48,7 @@ class WorldClockWindow(gtk.Window, Thread):
 
     def delete(self, widget, event=None):
         gtk.main_quit()
+        self.terminate = True
         return False
 
 class EvalFrame(gtk.Frame):
@@ -239,27 +237,29 @@ class AccountFrame(gtk.Frame, Subscriber):
         self.table.attach(self.sw, 0, 100, 0, 100)
         
         self.name2iter = dict()
-        
+
     def loop(self):
-        print "enter loop"
         self.listen()
-        print "exit loop"
         return False
 
     def event(self, event):
         if event.subject == "UpdateAccountValue":
-            gtk.gdk.threads_enter()
 
             key = event.msg[0]
             
             if not key in self.name2iter:
+                gtk.gdk.threads_enter()
                 self.name2iter[key] = self.liststore.append(event.msg)
+                gtk.gdk.threads_leave()
+            else:
+                gtk.gdk.threads_enter()
+                self.liststore.set_value(self.name2iter[key], 0, event.msg[0])
+                self.liststore.set_value(self.name2iter[key], 1, event.msg[1])
+                self.liststore.set_value(self.name2iter[key], 2, event.msg[2])
+                self.liststore.set_value(self.name2iter[key], 3, event.msg[3])
+                gtk.gdk.threads_leave()
 
-            self.liststore.set_value(self.name2iter[key], 0, event.msg[0])
-            self.liststore.set_value(self.name2iter[key], 1, event.msg[1])
-            self.liststore.set_value(self.name2iter[key], 2, event.msg[2])
-            self.liststore.set_value(self.name2iter[key], 3, event.msg[3])
-            gtk.gdk.threads_leave() 
+        return 
 
 def contract2str(c):
     result = ""
@@ -323,33 +323,30 @@ class PortfolioFrame(gtk.Frame, Subscriber):
         self.name2iter = dict()
 
     def loop(self):
-        print "enter loop"
         self.listen()
-        print "exit loop"
+        print "never reach this point"
         return False
 
     def event(self, event):
         if event.subject == "UpdatePortfolio":
-            gtk.gdk.threads_enter()
-
             key = contract2str(event.msg[0])
 
             if not key in self.name2iter:
+                gtk.gdk.threads_enter()
                 self.name2iter[key] = self.liststore.append()
                 self.liststore.set_value(self.name2iter[key], 0, key)
+                gtk.gdk.threads_leave()
 
             for i in range(1, len(self.fields)):
+                gtk.gdk.threads_enter()
                 self.liststore.set_value(self.name2iter[key], i, event.msg[i])
+                gtk.gdk.threads_leave()
+        return 
 
-            gtk.gdk.threads_leave()
-
-
-
-class ExecutionFrame(gtk.Frame, Thread):
+class ExecutionFrame(gtk.Frame):
 
     def __init__(self):
         gtk.Frame.__init__(self)
-        Thread.__init__(self)
         
         self.set_label("Execution")
 
@@ -385,11 +382,10 @@ class ExecutionFrame(gtk.Frame, Thread):
         self.key2iter = dict()
 
 
-    def run(self):
+    def loop(self):
         while True:
             o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
             l = o.reqExecutions()            
-            gtk.gdk.threads_enter()
             for d in l:
                 key = d[2].m_execId
                 if not key in self.key2iter:
@@ -400,8 +396,8 @@ class ExecutionFrame(gtk.Frame, Thread):
                     self.liststore.set_value(self.key2iter[key], 3, d[2].m_shares)
                     self.liststore.set_value(self.key2iter[key], 4, d[2].m_price)
                     self.liststore.set_value(self.key2iter[key], 5, d[2].m_avgPrice)
-            gtk.gdk.threads_leave()
             sleep(1)
+        return False
 
 
 
@@ -416,48 +412,56 @@ def main():
     gtk.gdk.threads_leave()
 
 if __name__ == "__main__":
+    
+    window = WorldClockWindow()
+    t1 = Thread(target=window.loop)
+    t1.daemon = True
+    gobject.idle_add(t1.start)
+    window.show()
 
     notebook = gtk.Notebook()
     notebook.set_tab_pos(gtk.POS_TOP)
     notebook.show()
-    
-    window = WorldClockWindow()
-    window.start()
-    window.show()
+
     window.add(notebook)
 
-    #evalf = EvalFrame()
-    #evalf.show()
-    #notebook.append_page(evalf, gtk.Label(evalf.get_label()))
+    evalf = EvalFrame()
+    evalf.show()
+    notebook.append_page(evalf, gtk.Label(evalf.get_label()))
 
     accountf = AccountFrame()
+    t2 = Thread(target=accountf.loop)
+    t2.daemon = True
+    gobject.idle_add(t2.start)
     accountf.show()
-    th = Thread(target=accountf.loop)
-    th.daemon = True
-    th.start()
     notebook.append_page(accountf, gtk.Label(accountf.get_label()))
     
     portfoliof = PortfolioFrame()
+    t3 = Thread(target=portfoliof.loop)
+    t3.daemon = True
+    gobject.idle_add(t3.start)
     portfoliof.show()
-    th = Thread(target=portfoliof.loop)
-    th.daemon = True
-    th.start()
     notebook.append_page(portfoliof, gtk.Label(portfoliof.get_label()))
 
+    #th = Thread(target=updateloop)
+    #th.daemon = True
+    #gobject.idle_add(th.start)
+
     executionf = ExecutionFrame()
+    t4 = Thread(target=executionf.loop)
+    t4.daemon = True
+    gobject.idle_add(t4.start)
     executionf.show()
-    executionf.daemon = True
-    executionf.start()
     notebook.append_page(executionf, gtk.Label(executionf.get_label()))
 
-
-    #executionf.start()
-
-    o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")    
+    o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
+    
     # version 1
     o.accountStatus(True)
 
-    #executionf.start()
+    # version 2
+    #o.reqAccountUpdates(True)
+
 
     main()
     

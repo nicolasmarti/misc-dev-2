@@ -11,7 +11,5 @@ from datetime import *
 
 o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 
-f = ExecutionFilter()
-
-print str(o.reqExecutions(f))
+print str(o.reqExecutions())
 
