@@ -157,7 +157,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
                     self.m_con.cancelOrder(k)
                 else:
                     if self.inProgressOrders[k][1] <> None and (self.inProgressOrders[k][1][1] == "Cancelled" or self.inProgressOrders[k][1][1] == "Filled" or self.inProgressOrders[k][1][1] == "ApiCancelled"):
-                        print "done"
+                        #print "done"
                         self.doneOrders[k] = self.inProgressOrders[k]
                         del self.inProgressOrders[k]
                         if self.doneOrders[k][4].locked(): self.doneOrders[k][4].release()
