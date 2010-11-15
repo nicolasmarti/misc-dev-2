@@ -13,15 +13,18 @@ o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 c = Contract()
 c.m_symbol = "GS"
 c.m_secType = 'STK'
-c.m_exchange = "SMART"
+#c.m_exchange = "SMART"
 c.m_currency = "USD"
 
-print str(len(o.reqContractDetails(c)))
+l = o.reqContractDetails(c)
 
-c2 = Contract()
-c2.m_symbol = "GS"
-c2.m_secType = 'OPT'
-c2.m_exchange = "SMART"
-c2.m_currency = "USD"
+for i in l:
+    print "MarketName: " + i.m_marketName + ", secType:" + i.m_summary.m_secType + ", exchange: " + i.m_summary.m_exchange
 
-print str(len(o.reqContractDetails(c2)))
+#c2 = Contract()
+#c2.m_symbol = "GS"
+#c2.m_secType = 'OPT'
+#c2.m_exchange = "SMART"
+#c2.m_currency = "USD"
+
+#print str(len(o.reqContractDetails(c2)))
