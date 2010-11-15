@@ -348,7 +348,7 @@ class PortfolioFrame(gtk.Frame, Subscriber):
         self.glock.acquire()
         if event.subject == "UpdatePortfolio":
             gtk.gdk.threads_enter()
-            print "enter portfolio"
+            #print "enter portfolio"
 
             key = contract2str(event.msg[0])
 
@@ -359,7 +359,7 @@ class PortfolioFrame(gtk.Frame, Subscriber):
             for i in range(1, len(self.fields)):
                 self.liststore.set_value(self.name2iter[key], i, event.msg[i])
 
-            print "exit portfolio"
+            #print "exit portfolio"
             gtk.gdk.threads_leave()
         self.glock.release()
 
@@ -412,7 +412,7 @@ class ExecutionFrame(gtk.Frame, Thread):
             l = o.reqExecutions()                        
             self.glock.acquire()
             gtk.gdk.threads_enter()
-            print "enter execution"
+            #print "enter execution"
             for d in l:
                 key = d[2].m_execId
                 if not key in self.key2iter:
@@ -423,43 +423,52 @@ class ExecutionFrame(gtk.Frame, Thread):
                     self.liststore.set_value(self.key2iter[key], 3, d[2].m_shares)
                     self.liststore.set_value(self.key2iter[key], 4, d[2].m_price)
                     self.liststore.set_value(self.key2iter[key], 5, d[2].m_avgPrice)
-            print "exit execution"
+            #print "exit execution"
             gtk.gdk.threads_leave()
             self.glock.release()
             sleep(3)
 
+class StockFrame(gtk.Frame, Thread):
 
-class BakaThread(Thread): 
-
-    def __init__(self):
+    def __init__(self, glock, name):
+        gtk.Frame.__init__(self)
         Thread.__init__(self)
+
         self.daemon = True
+        self.glock = glock
+        self.stkname = name
+        self.set_label("Stock: " + name)
+
+        self.table = gtk.Table(100, 100, True)
+        self.table.show()
+        self.add(self.table)
+
+        self.sw = gtk.ScrolledWindow()
+        self.sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 
     def run(self):
+
         o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 
+        c = Contract()
+        c.m_symbol = self.stkname
+        c.m_secType = "STK"
+
+        c = o.reqContractDetails(c)[0].m_summary
+
+        print "Market Ticker: " + c.m_symbol + ", secType:" + c.m_secType + ", exchange: " + c.m_exchange + ", currency: " + c.m_currency
+
+        mktDataId= o.reqMktData(c, False)
+        mktDepthId = o.reqMktDepth(c, 10)
+
         while True:
-            
-            c = Contract()
-            c.m_symbol = "GSK"
-            c.m_secType = 'STK'
-            c.m_exchange = "SMART"
-            c.m_currency = "GBP"
-            
-            order1 = Order()
-            order1.m_action = "BUY"
-            order1.m_tif = "DAY"
-            order1.m_orderType = 'MKT'
-            order1.m_totalQuantity = 100
-            order1.m_openClose = "O"
-            
-            oid1 = o.placeOrder(c, order1, None)
-            print "orderId1: " + str(oid1)
-            
+            self.glock.acquire()
+            data = o.getMktData(mktDataId)
+            print str(data)
+            depth = o. getMktDepth(mktDepthId)
+            print str(depth)
+            self.glock.release()
             sleep(5)
-
-            print o.orderStatus(oid1)
-
 
 
 def updateloop():
@@ -509,8 +518,11 @@ if __name__ == "__main__":
     executionf.start()
     notebook.append_page(executionf, gtk.Label(executionf.get_label()))
 
-    #baka = BakaThread()
-    #baka.start()
+    stockf = StockFrame(glock, "STAN")
+    stockf.show()
+    stockf.daemon = True
+    stockf.start()
+    notebook.append_page(stockf, gtk.Label(stockf.get_label()))
 
     #executionf.start()
 
