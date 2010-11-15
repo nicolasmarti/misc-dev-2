@@ -16,28 +16,11 @@ c.m_secType = 'STK'
 c.m_exchange = "SMART"
 c.m_currency = "USD"
 
-dataid = o.reqMktDepth(c, 10)
+dataid = o.reqMktDepth(c, 5)
 
 print dataid
-
-print str(o.getMktDepth(dataid))
-
-sleep(1)
-
-print str(o.getMktDepth(dataid))
-
-sleep(1)
-
-print str(o.getMktDepth(dataid))
-
-sleep(1)
-
-print str(o.getMktDepth(dataid))
-
-sleep(1)
-
-print str(o.getMktDepth(dataid))
-
-sleep(1)
+for i in range(0, 10):
+    print str(o.getMktDepth(dataid))
+    sleep(1)
 
 o.cancelMktDepth(dataid)
