@@ -287,7 +287,7 @@ class MktDepthServer:
     def reqMktDepth(self, contract, numrows):
         dataid = self.m_idServer.getNextId()
         self.m_dataHandlerLock.acquire()
-        self.m_dataHandler[dataid] = [None for i in range(0, numrows)]
+        self.m_dataHandler[dataid] = [[None for i in range(0, numrows)], [None for i in range(0, numrows)]]
         self.m_dataHandlerLock.release()
         self.m_con.reqMktDepth(dataid, contract, numrows)
         return dataid
@@ -309,9 +309,9 @@ class MktDepthServer:
         print "updateMktDepth: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
         if msg.values()[2] == 0 or msg.values()[2] == 1:
-            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = (msg.values()[3], msg.values()[4], msg.values()[5])
+            self.m_dataHandler[msg.values()[0]][msg.values()[3]][msg.values()[1]] = (msg.values()[4], msg.values()[5])
         elif msg.values()[2] == 2:
-            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = None
+            self.m_dataHandler[msg.values()[0]][msg.values()[3]][msg.values()[1]] = None
         self.m_dataHandlerLock.release()
 
     # updateMktDepthL2
@@ -319,9 +319,9 @@ class MktDepthServer:
         print "updateMktDepthL2: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
         if msg.values()[3] == 0 or msg.values()[3] == 1:
-            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = (msg.values()[2], msg.values()[4], msg.values()[5], msg.values()[6])
+            self.m_dataHandler[msg.values()[0]][msg.values()[4]][msg.values()[1]] = (msg.values()[2], msg.values()[5], msg.values()[6])
         elif msg.values()[3] == 2:
-            self.m_dataHandler[msg.values()[0]][msg.values()[1]] = None
+            self.m_dataHandler[msg.values()[0]][msg.values()[4]][msg.values()[1]] = None
         self.m_dataHandlerLock.release()
 
 # server contract details
