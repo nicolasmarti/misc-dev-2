@@ -18,14 +18,20 @@ import sys
 import Pyro.core
 from Pyro.EventService.Clients import Subscriber
 
+from ib.ext.Contract import Contract
+from ib.ext.Order import Order
+from ib.opt import ibConnection, message
+from ib.ext.ScannerSubscription import ScannerSubscription
+
 gtk.gdk.threads_init()
 
 class WorldClockWindow(gtk.Window, Thread):
 
-    def __init__(self):
+    def __init__(self, glock):
         gtk.Window.__init__(self)
         Thread.__init__(self)
         
+        self.glock = glock
         self.connect("delete_event", self.delete)
         self.set_border_width(10)
 
@@ -43,9 +49,13 @@ class WorldClockWindow(gtk.Window, Thread):
             for d in l:
                 mnow = datetime.now(d[0])
                 mstr += d[1] + mnow.strftime(" %d/%m/%Y %H:%M:%S   ")
+            self.glock.acquire()
             gtk.gdk.threads_enter()
+            #print "enter time"
             self.set_title(mstr)
+            #print "exit time"
             gtk.gdk.threads_leave()
+            self.glock.release()
             sleep(1)
         return False
 
@@ -53,11 +63,10 @@ class WorldClockWindow(gtk.Window, Thread):
         gtk.main_quit()
         return False
 
-class EvalFrame(gtk.Frame):
+class EvalFrame(gtk.Frame, Thread):
     
     def __init__(self):
         gtk.Frame.__init__(self)
-        
         self.set_label("Evaluator")
         
         # build a table to put all my stuffs
@@ -185,9 +194,11 @@ class EvalFrame(gtk.Frame):
 
 class AccountFrame(gtk.Frame, Subscriber):
 
-    def __init__(self):
+    def __init__(self, glock):
         gtk.Frame.__init__(self)
         Subscriber.__init__(self)
+
+        self.glock = glock
 
         self.subscribe("UpdateAccountValue")
         #self.subscribe("UpdatePortfolio")
@@ -241,15 +252,16 @@ class AccountFrame(gtk.Frame, Subscriber):
         self.name2iter = dict()
         
     def loop(self):
-        print "enter loop"
+        #print "enter loop"
         self.listen()
-        print "exit loop"
+        #print "exit loop"
         return False
 
     def event(self, event):
+        self.glock.acquire()
         if event.subject == "UpdateAccountValue":
             gtk.gdk.threads_enter()
-
+            #print "enter account value"
             key = event.msg[0]
             
             if not key in self.name2iter:
@@ -259,7 +271,9 @@ class AccountFrame(gtk.Frame, Subscriber):
             self.liststore.set_value(self.name2iter[key], 1, event.msg[1])
             self.liststore.set_value(self.name2iter[key], 2, event.msg[2])
             self.liststore.set_value(self.name2iter[key], 3, event.msg[3])
+            #print "exit account value"
             gtk.gdk.threads_leave() 
+        self.glock.release()
 
 def contract2str(c):
     result = ""
@@ -279,9 +293,11 @@ def contract2str(c):
 
 class PortfolioFrame(gtk.Frame, Subscriber):
 
-    def __init__(self):
+    def __init__(self, glock):
         gtk.Frame.__init__(self)
         Subscriber.__init__(self)
+
+        self.glock = glock
 
         #self.subscribe("UpdateAccountValue")
         self.subscribe("UpdatePortfolio")
@@ -323,14 +339,16 @@ class PortfolioFrame(gtk.Frame, Subscriber):
         self.name2iter = dict()
 
     def loop(self):
-        print "enter loop"
+        #print "enter loop"
         self.listen()
-        print "exit loop"
+        #print "exit loop"
         return False
 
     def event(self, event):
+        self.glock.acquire()
         if event.subject == "UpdatePortfolio":
             gtk.gdk.threads_enter()
+            print "enter portfolio"
 
             key = contract2str(event.msg[0])
 
@@ -341,16 +359,19 @@ class PortfolioFrame(gtk.Frame, Subscriber):
             for i in range(1, len(self.fields)):
                 self.liststore.set_value(self.name2iter[key], i, event.msg[i])
 
+            print "exit portfolio"
             gtk.gdk.threads_leave()
-
+        self.glock.release()
 
 
 class ExecutionFrame(gtk.Frame, Thread):
 
-    def __init__(self):
+    def __init__(self, glock):
         gtk.Frame.__init__(self)
         Thread.__init__(self)
         
+        self.glock = glock
+
         self.set_label("Execution")
 
         self.table = gtk.Table(100, 100, True)
@@ -386,10 +407,12 @@ class ExecutionFrame(gtk.Frame, Thread):
 
 
     def run(self):
+        o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
         while True:
-            o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
-            l = o.reqExecutions()            
+            l = o.reqExecutions()                        
+            self.glock.acquire()
             gtk.gdk.threads_enter()
+            print "enter execution"
             for d in l:
                 key = d[2].m_execId
                 if not key in self.key2iter:
@@ -400,8 +423,42 @@ class ExecutionFrame(gtk.Frame, Thread):
                     self.liststore.set_value(self.key2iter[key], 3, d[2].m_shares)
                     self.liststore.set_value(self.key2iter[key], 4, d[2].m_price)
                     self.liststore.set_value(self.key2iter[key], 5, d[2].m_avgPrice)
+            print "exit execution"
             gtk.gdk.threads_leave()
-            sleep(1)
+            self.glock.release()
+            sleep(3)
+
+
+class BakaThread(Thread): 
+
+    def __init__(self):
+        Thread.__init__(self)
+        self.daemon = True
+
+    def run(self):
+        o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
+
+        while True:
+            
+            c = Contract()
+            c.m_symbol = "GSK"
+            c.m_secType = 'STK'
+            c.m_exchange = "SMART"
+            c.m_currency = "GBP"
+            
+            order1 = Order()
+            order1.m_action = "BUY"
+            order1.m_tif = "DAY"
+            order1.m_orderType = 'MKT'
+            order1.m_totalQuantity = 100
+            order1.m_openClose = "O"
+            
+            oid1 = o.placeOrder(c, order1, None)
+            print "orderId1: " + str(oid1)
+            
+            sleep(5)
+
+            print o.orderStatus(oid1)
 
 
 
@@ -417,11 +474,13 @@ def main():
 
 if __name__ == "__main__":
 
+    glock = Lock()
+
     notebook = gtk.Notebook()
     notebook.set_tab_pos(gtk.POS_TOP)
     notebook.show()
     
-    window = WorldClockWindow()
+    window = WorldClockWindow(glock)
     window.start()
     window.show()
     window.add(notebook)
@@ -430,26 +489,28 @@ if __name__ == "__main__":
     #evalf.show()
     #notebook.append_page(evalf, gtk.Label(evalf.get_label()))
 
-    accountf = AccountFrame()
+    accountf = AccountFrame(glock)
     accountf.show()
     th = Thread(target=accountf.loop)
     th.daemon = True
     th.start()
     notebook.append_page(accountf, gtk.Label(accountf.get_label()))
     
-    portfoliof = PortfolioFrame()
+    portfoliof = PortfolioFrame(glock)
     portfoliof.show()
     th = Thread(target=portfoliof.loop)
     th.daemon = True
     th.start()
     notebook.append_page(portfoliof, gtk.Label(portfoliof.get_label()))
 
-    executionf = ExecutionFrame()
+    executionf = ExecutionFrame(glock)
     executionf.show()
     executionf.daemon = True
     executionf.start()
     notebook.append_page(executionf, gtk.Label(executionf.get_label()))
 
+    #baka = BakaThread()
+    #baka.start()
 
     #executionf.start()
 
