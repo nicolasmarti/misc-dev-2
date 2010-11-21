@@ -468,7 +468,7 @@ class StockFrame(gtk.Frame, Thread):
             depth = o. getMktDepth(mktDepthId)
             print str(depth)
             self.glock.release()
-            sleep(5)
+            sleep(1)
 
 
 def updateloop():
