@@ -210,7 +210,7 @@ let pb2 = build_parserbuffer lines2;;
 try 
   let mexpr = cmd0_parser pb2 in
     printf "%s\n" text2;
-    printbox (token2box (cmd0_pprinter mexpr) 100 4);
+    printbox (token2box (cmd0_pprinter mexpr false) 100 4);
     printf "\n\n";
 with
   | NoMatch -> 
