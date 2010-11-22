@@ -176,3 +176,44 @@ print_string "main Evaluated to ";
 print_float (GenericValue.as_float (build_llvmtype comp_st VarMap.empty TDouble) result);;
 print_newline ();;
 
+open Mllvmpparser;;
+open Parser;;
+open Pprinter;;
+
+let stream_of_string s =
+  Stream.from
+    (fun x ->
+       match x with
+	 | 0 -> Some s
+	 | _ -> None
+    )
+
+let text1 = "()";;
+let lines1 = stream_of_string text1;;
+let pb1 = build_parserbuffer lines1;;
+
+try 
+  let mexpr = llvmtype_parser pb1 in
+    printf "%s\n" text1;
+    printbox (token2box (llvmtype_pprinter VarMap.empty mexpr) 100 4);
+    printf "\n\n";
+with
+  | NoMatch -> 
+      printf "error:%s\n\n" (errors2string pb1);
+      printf "%s\n\n" (markerror pb1);
+;;
+
+let text2 = "()";;
+let lines2 = stream_of_string text2;;
+let pb2 = build_parserbuffer lines2;;
+
+try 
+  let mexpr = cmd0_parser pb2 in
+    printf "%s\n" text2;
+    printbox (token2box (cmd0_pprinter mexpr) 100 4);
+    printf "\n\n";
+with
+  | NoMatch -> 
+      printf "error:%s\n\n" (errors2string pb2);
+      printf "%s\n\n" (markerror pb2);
+;;
