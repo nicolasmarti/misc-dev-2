@@ -1,3 +1,4 @@
 tests/testparser.native
 tests/testmllvm.native
 tests/testpprinter.native
+tests/testibtws.native

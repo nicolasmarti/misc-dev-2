@@ -2,7 +2,7 @@
 
 set -e
 
-TARGET=systemN.otarget
+TARGET=tests.otarget
 FLAGS=""
 OCAMLBUILD=ocamlbuild
 
