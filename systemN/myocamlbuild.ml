@@ -56,6 +56,8 @@ let _ = dispatch begin function
 
    | After_rules ->
 
+       flag ["ocaml"; "compile"] & S[A"-w"; A"p"];
+
        (* When one link an OCaml library/binary/package, one should use -linkpkg *)
        flag ["ocaml"; "link"] & A"-linkpkg";
 
