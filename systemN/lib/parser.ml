@@ -147,6 +147,11 @@ let rec applylexingrule (r: 'a lexingrule) (pb:parserbuffer) : 'a =
  
 type 'a parsingrule = parserbuffer -> 'a
 ;;
+
+(* the parser that return a constante *)
+let parsecste (v: 'a) (pb: parserbuffer) : 'a =
+ v
+;;
  
 (* try to apply a parsing rule, if it fails it restore the original beginpointer *)
  
@@ -313,13 +318,20 @@ let rec fixpoint (p: 'a -> 'a parsingrule) (a: 'a) (pb: parserbuffer) : 'a =
    | NoMatch -> a
 ;;
  
-(* the parser that return a constante *)
-let parsecste (v: 'a) (pb: parserbuffer) : 'a =
- v
-;;
  
 let (|>) v p = (parsecste v) >> p
 ;;
+
+let separatedBy (elem: 'a parsingrule) (sep: 'b parsingrule) (pb: parserbuffer) : ('a list) =
+    (
+      (tryrule
+	 (
+	   ((fun x l -> x::l) |> 
+		elem) >> (many (sep >>> elem))
+	 )
+      ) <|> (parsecste [])
+    ) pb
+;; 
  
 (* fold on parser, they are all tried, and it fails if none hold *)
 let foldp (l: ('a parsingrule) list) : 'a parsingrule =

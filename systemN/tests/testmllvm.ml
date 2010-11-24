@@ -188,7 +188,7 @@ let stream_of_string s =
 	 | _ -> None
     )
 
-let text1 = "i8";;
+let text1 = "(b, Double, Float, i8, (*Quad)-> a)-> (<3 x ()>, [ 89 x *i90])";;
 let lines1 = stream_of_string text1;;
 let pb1 = build_parserbuffer lines1;;
 
