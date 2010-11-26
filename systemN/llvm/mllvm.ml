@@ -9,6 +9,9 @@ open Array;;
 
 open Printf;;
 
+open Set;;
+open Map;;
+
 (**************************************************************)
 
 ignore (initialize_native_target ());;
@@ -26,14 +29,39 @@ type llvmtype = TUnit
 		| TFct of llvmtype array * llvmtype
 		| TPtr of llvmtype
 		| TTuple of llvmtype array
-		(*| TUnion of llvmtype array*)
 		| TVector of int * llvmtype
 		| TArray of int * llvmtype
+		| TDynArray of llvmtype
 		| TUnknownp
 		| TVar of string
 		| TCste of lltype
 		| TAVar
 ;;
+
+let rec llvmtype_compare (t1: llvmtype) (t2: llvmtype) : int =
+  if (t1 < t2) then
+    -1 
+  else if (t1 > t2) then 1 else 0
+;;
+
+module Orderedllvmtype = 
+    struct
+      type t = llvmtype
+      let compare x y = llvmtype_compare x y
+    end;;
+
+module LlvmtypeSet = Set.Make(Orderedllvmtype);; 
+module LlvmtypeMap = Map.Make(Orderedllvmtype);; 
+
+module OrderedInt = 
+    struct
+      type t = int
+      let compare x y = if (x<y) then -1 else if (x>y) then 1 else 0
+    end;;
+
+module IntSet = Set.Make(OrderedInt);; 
+module IntMap = Map.Make(OrderedInt);; 
+
 
 type bop = Add 
 	  | Sub
@@ -119,6 +147,8 @@ type compile_state =
       mutable engine: ExecutionEngine.t;
       mutable passmng: [`Function] PassManager.t;
       mutable optimize: bool;
+      mutable gc_typeset: IntSet.t;
+      mutable gc_typemap: int LlvmtypeMap.t;
     }
 ;;
 
@@ -167,6 +197,8 @@ let comp_st =
       engine = eng;
       passmng = pm;
       optimize = false;
+      gc_typeset = IntSet.empty;
+      gc_typemap = LlvmtypeMap.empty;      
     } ;;
 
 (**************************************************************)
@@ -188,13 +220,12 @@ let rec build_llvmtype (gst: compile_state) (lst: lltype VarMap.t) (ty: llvmtype
     | TTuple tys -> 
 	let tys = Array.map (fun hd -> build_llvmtype gst lst hd) tys in
 	  struct_type gst.ctxt tys
-    (*| TUnion tys ->
-	let tys = Array.map (fun hd -> build_llvmtype gst lst hd) tys in
-	  union_type gst.ctxt tys*)
     | TVector (i, ty) ->
 	vector_type (build_llvmtype gst lst ty) i
     | TArray (i, ty) ->
 	array_type (build_llvmtype gst lst ty) i
+    | TDynArray ty ->
+	pointer_type (struct_type gst.ctxt [| i32_type gst.ctxt; array_type (build_llvmtype gst lst ty) 0|])
     | TUnknownp ->
 	pointer_type (i8_type gst.ctxt)
     | TVar v -> (
@@ -245,6 +276,44 @@ let rec reg_llvmtype (gst: compile_state) (l: (string * llvmtype) list) : llvalu
     new_vals
     
 ;;
+
+(* this function encode the dynamic computation of sizeof *)
+
+let sizeof (gst: compile_state) (ty: llvmtype) : llvalue =
+  let one = const_int (integer_type gst.ctxt 32) 1 in
+  let size = build_gep (const_int (integer_type gst.ctxt 32) 0) [| one |] "size" gst.builder in
+    const_bitcast size (integer_type gst.ctxt 32)
+;;
+
+(* garbage collection *)
+
+type gcFunction = Create
+		  | Grab
+		  | Drop
+		  | Delete
+;;
+
+Random.self_init ();;
+
+let create_type_id (gst: compile_state) (ty: llvmtype) : int =
+  try 
+    LlvmtypeMap.find ty gst.gc_typemap
+  with
+    | Not_found ->
+	let b = ref false in
+	let tyval = ref 0 in
+	while !b do
+	  tyval := (Random.int 65000);
+	  b := not (IntSet.mem !tyval gst.gc_typeset);
+	  if !b then (
+	    gst.gc_typeset <- IntSet.add !tyval gst.gc_typeset;
+	    gst.gc_typemap <- LlvmtypeMap.add ty !tyval gst.gc_typemap;
+	  );	    
+	done;
+	  !tyval
+;;
+
+
 
 (**************************************************************)
   
@@ -444,10 +513,17 @@ let rec compile_expr0 (gst: compile_state) (e: expr0) : (llvalue * llvmtype) =
 	let (iv, it) = compile_expr0 gst i in
 	let (ev, et) = compile_expr0 gst e in
 	let zero = const_int (integer_type gst.ctxt 32) 0 in
+	let one = const_int (integer_type gst.ctxt 32) 1 in
 	  match et with
 	    | TPtr (TArray (i, ty)) -> (
 		
 		let ptr = build_gep ev [| zero; iv |] "arraylookup" gst.builder in
+		  (build_load ptr "load" gst.builder, ty)
+
+	      )
+	    | (TDynArray ty) -> (
+		
+		let ptr = build_gep ev [| zero; one; iv |] "arraylookup" gst.builder in
 		  (build_load ptr "load" gst.builder, ty)
 
 	      )
@@ -868,10 +944,11 @@ let rec compile_cmd0 (gst: compile_state) (c: cmd0)  : (llvalue * llvmtype) =
 		let (iv, it) = compile_expr0 gst i in
 		let (sv, st) = compile_expr0 gst s in
 		let zero = const_int (integer_type gst.ctxt 32) 0 in
+		let one = const_int (integer_type gst.ctxt 32) 1 in
 		  match st with
 		    | TPtr (TArray (i, ty)) -> (
 			
-			let ptr = build_gep sv [| zero; iv |] "arraystore" gst.builder in
+			let ptr = build_gep sv [| zero; one; iv |] "arraystore" gst.builder in
 			  ignore (build_store e_v ptr gst.builder);
 			  (undef (void_type gst.ctxt), TUnit)	  
 			    

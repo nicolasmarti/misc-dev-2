@@ -25,13 +25,13 @@ let rec llvmtype_pprinter (typeenv: llvmtype VarMap.t) (ty: llvmtype) : token =
     | TString -> Verbatim "String"
     | TVar v -> Verbatim v
     | TFct (args, retty) -> Box ([Verbatim "("] @ 
-				   (List.concat ( Array.to_list(Array.mapi (fun i hd ->
-									      (if i != 0 then 
-										 [Verbatim ","; Space 1]
-									       else
-										 []) @ [llvmtype_pprinter typeenv hd]
-									   ) args
-							       )
+				   (List.concat (Array.to_list(Array.mapi (fun i hd ->
+									     (if i != 0 then 
+										[Verbatim ","; Space 1]
+									      else
+										[]) @ [llvmtype_pprinter typeenv hd]
+									  ) args
+							      )
 						)
 				   ) @ 
 				   [Verbatim ")->"; Space 1; llvmtype_pprinter typeenv retty]
