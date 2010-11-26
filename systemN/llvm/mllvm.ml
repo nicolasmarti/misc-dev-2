@@ -36,6 +36,7 @@ type llvmtype = TUnit
 		| TVar of string
 		| TCste of lltype
 		| TAVar
+		| TGC of llvmtype
 ;;
 
 let rec llvmtype_compare (t1: llvmtype) (t2: llvmtype) : int =
@@ -152,56 +153,6 @@ type compile_state =
     }
 ;;
 
-let comp_st = 
-  let c = global_context () in 
-  let m = create_module c "main" in 
-  let eng = ExecutionEngine.create m in 
-  let pm = PassManager.create_function m in
-
-    TargetData.add (ExecutionEngine.target_data eng) pm;
-    
-    (* optimizations *)
-
-    add_constant_propagation pm;
-    add_sccp pm;
-    add_dead_store_elimination pm;
-    add_aggressive_dce pm;
-    add_scalar_repl_aggregation pm;
-    add_ind_var_simplification pm;    
-    add_instruction_combination pm;
-    add_licm pm;
-    add_loop_unswitch pm;
-    add_loop_unroll pm;
-    add_loop_rotation pm;
-    add_loop_index_split pm;
-    add_memory_to_register_promotion pm;
-    add_memory_to_register_demotion pm;
-    add_reassociation pm;
-    add_jump_threading pm;
-    add_cfg_simplification pm;
-    add_tail_call_elimination pm;
-    add_gvn pm;
-    add_memcpy_opt pm;
-    add_loop_deletion pm;
-    add_lib_call_simplification pm;
-
-    (* init passmanager *)
-    ignore (PassManager.initialize pm);
-
-    {
-      ctxt = c;
-      modul = m;
-      builder = builder c;
-      typeenv = VarMap.empty;
-      valueenv = VarMap.empty;
-      engine = eng;
-      passmng = pm;
-      optimize = false;
-      gc_typeset = IntSet.empty;
-      gc_typemap = LlvmtypeMap.empty;      
-    } ;;
-
-(**************************************************************)
 
 let rec build_llvmtype (gst: compile_state) (lst: lltype VarMap.t) (ty: llvmtype) : lltype =
   match ty with
@@ -241,7 +192,75 @@ let rec build_llvmtype (gst: compile_state) (lst: lltype VarMap.t) (ty: llvmtype
 		    raise e
       )
     | TCste ty -> ty
+    | TGC ty -> pointer_type (struct_type gst.ctxt [| i32_type gst.ctxt; build_llvmtype gst lst ty|])
+	
 ;;
+
+let comp_st = 
+  let c = global_context () in 
+  let m = create_module c "main" in 
+  let eng = ExecutionEngine.create m in 
+  let pm = PassManager.create_function m in
+
+    TargetData.add (ExecutionEngine.target_data eng) pm;
+    
+    (* optimizations *)
+
+    add_constant_propagation pm;
+    add_sccp pm;
+    add_dead_store_elimination pm;
+    add_aggressive_dce pm;
+    add_scalar_repl_aggregation pm;
+    add_ind_var_simplification pm;    
+    add_instruction_combination pm;
+    add_licm pm;
+    add_loop_unswitch pm;
+    add_loop_unroll pm;
+    add_loop_rotation pm;
+    add_loop_index_split pm;
+    add_memory_to_register_promotion pm;
+    add_memory_to_register_demotion pm;
+    add_reassociation pm;
+    add_jump_threading pm;
+    add_cfg_simplification pm;
+    add_tail_call_elimination pm;
+    add_gvn pm;
+    add_memcpy_opt pm;
+    add_loop_deletion pm;
+    add_lib_call_simplification pm;
+
+    (* init passmanager *)
+    ignore (PassManager.initialize pm);
+
+    let st = {
+      ctxt = c;
+      modul = m;
+      builder = builder c;
+      typeenv = VarMap.empty;
+      valueenv = VarMap.empty;
+      engine = eng;
+      passmng = pm;
+      optimize = false;
+      gc_typeset = IntSet.empty;
+      gc_typemap = LlvmtypeMap.empty;      
+    } in
+      (* grabbing some function *)
+    let malloc_ty = TFct ([| TInteger 32 |], TPtr (TInteger 8)) in
+    let malloc_llvmty = (build_llvmtype st VarMap.empty malloc_ty) in
+    let malloc_f = declare_function "malloc" malloc_llvmty st.modul in
+      st.valueenv <- VarMap.add "__malloc_" (malloc_f, malloc_ty) st.valueenv;
+      let free_ty = TFct ([| TPtr (TInteger 8) |], TUnit) in
+      let free_llvmty = (build_llvmtype st VarMap.empty free_ty) in
+      let free_f = declare_function "free" free_llvmty st.modul in
+	st.valueenv <- VarMap.add "__free_" (free_f, free_ty) st.valueenv;
+	let memcpy_ty = TFct ([| TPtr (TInteger 8); TPtr (TInteger 8); (TInteger 32) |], TPtr (TInteger 8)) in
+	let memcpy_llvmty = (build_llvmtype st VarMap.empty memcpy_ty) in
+	let memcpy_f = declare_function "memcpy" memcpy_llvmty st.modul in
+	  st.valueenv <- VarMap.add "__memcpy_" (memcpy_f, memcpy_ty) st.valueenv;
+	  st
+;;
+
+(**************************************************************)
 
 
 let rec reg_llvmtype (gst: compile_state) (l: (string * llvmtype) list) : llvalue list =
@@ -280,18 +299,14 @@ let rec reg_llvmtype (gst: compile_state) (l: (string * llvmtype) list) : llvalu
 (* this function encode the dynamic computation of sizeof *)
 
 let sizeof (gst: compile_state) (ty: llvmtype) : llvalue =
-  let one = const_int (integer_type gst.ctxt 32) 1 in
-  let size = build_gep (const_int (integer_type gst.ctxt 32) 0) [| one |] "size" gst.builder in
-    const_bitcast size (integer_type gst.ctxt 32)
+  let one = (const_int (integer_type gst.ctxt 32) 1) in
+  let zero = (const_int (integer_type gst.ctxt 32) 0) in
+  let addr = const_bitcast zero (build_llvmtype gst VarMap.empty (TPtr ty)) in
+  let sizeo = build_gep addr [| one |] "size" gst.builder in
+    build_bitcast sizeo (integer_type gst.ctxt 32) "cast" gst.builder
 ;;
 
 (* garbage collection *)
-
-type gcFunction = Create
-		  | Grab
-		  | Drop
-		  | Delete
-;;
 
 Random.self_init ();;
 
@@ -313,7 +328,43 @@ let create_type_id (gst: compile_state) (ty: llvmtype) : int =
 	  !tyval
 ;;
 
+let gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_create"] in
+    match lookup_function fctname gst.modul with
+      | Some f -> f
+      | None -> 
+	  
+	  let fty = TFct ([| TPtr (TGC ty) |], TPtr (TTuple [| TInteger 32; ty|])) in
+	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
+	  let f = declare_function fctname llvmfty gst.modul in
+	  let _ = set_value_name "ref" (params f).(0) in
+	  let entryb = append_block gst.ctxt "entry" f in
+	    position_at_end entryb gst.builder;
+	    
+	    let size1 = sizeof gst ty in
 
+	    let size2 = sizeof gst (TGC ty) in
+	      
+	    let mem = build_call (fst (VarMap.find "__malloc_" gst.valueenv)) [| size2 |] "memalloc" gst.builder in
+
+	    let addr = build_bitcast mem (build_llvmtype gst VarMap.empty (TPtr ty)) "cast" gst.builder in
+
+	    let one = const_int (integer_type gst.ctxt 32) 1 in
+	    let zero = const_int (integer_type gst.ctxt 32) 0 in
+
+	    let counter = build_gep addr [| zero; zero |] "counter" gst.builder in
+	    let data = build_gep addr [| zero; one |] "data" gst.builder in
+
+	    let counterval = build_store zero counter gst.builder in
+
+	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| mem; (params f).(0); size1 |] "memcpy" gst.builder in
+
+	      (* here we should grab the TGC first level .... *)
+	    
+	      build_ret addr gst.builder;
+	      
+;;
+    
 
 (**************************************************************)
   
