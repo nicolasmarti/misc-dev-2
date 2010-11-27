@@ -328,7 +328,8 @@ let create_type_id (gst: compile_state) (ty: llvmtype) : int =
 	  !tyval
 ;;
 
-let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (curp: llvalue) : unit =
+(* true: grab, false: drop *)
+let rec firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (curp: llvalue) (gd: bool): unit =
   match ty with
     | TUnit -> ()
     | TInteger i -> ()
@@ -343,7 +344,7 @@ let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (c
 	Array.iteri (
 	  fun i hd ->
 	    let curp' = build_struct_gep curp i "tuplelookup" b in
-	      grab_firstlevel_gc gst b hd curp'
+	      firstlevel_gc gst b hd curp' gd  
 	) tys
       )
     | TVector _ -> ()
@@ -351,7 +352,7 @@ let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (c
 	let j = ref 0 in
 	  while (!j < i) do
 	    let curp' = build_struct_gep curp !j "tuplelookup" b in
-	      grab_firstlevel_gc gst b ty curp';
+	      firstlevel_gc gst b ty curp' gd;
 	      j := !j + 1;
 	  done;	  
       )
@@ -362,8 +363,8 @@ let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (c
     | TAVar -> ()
     | TGC ty -> (
 	
-	let grab = gc_codegen_grab gst ty in
-	let _ = build_call grab [| curp |] "grab-first-level" b in
+	let fct = if gd then gc_codegen_grab gst ty else gc_codegen_drop gst ty in
+	let _ = build_call fct [| curp |] "rec_gc" b in
 	  ()
       )
 and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
@@ -392,14 +393,17 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let zero = const_int (integer_type gst.ctxt 32) 0 in
 
 	    let counter = build_gep addr [| zero; zero |] "counter" builder in
-	    let _ = build_gep addr [| zero; one |] "data" builder in
+	    let datap = build_gep addr [| zero; one |] "data" builder in
 
 	    let _ = build_store zero counter builder in
 
-	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| mem; (params f).(0); size1 |] "memcpy" builder in
+	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| datap; (params f).(0); size1 |] "memcpy" builder in
 
-	      grab_firstlevel_gc gst builder ty addr;	    
+	    let _ = firstlevel_gc gst builder ty datap true in
 	      build_ret addr builder;
+	      Llvm_analysis.assert_valid_function f;
+	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
+	      f
 
 and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
   let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
@@ -426,11 +430,86 @@ and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
 
 	    let _ = build_store counterv counterp builder in
 	      build_ret datap builder;
+	      Llvm_analysis.assert_valid_function f;
+	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
+	      f
 
 and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
-  raise (Failure "Not Yet Implemented")
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
+    match lookup_function fctname gst.modul with
+      | Some f -> f
+      | None -> 
+	  
+	  let builder = builder gst.ctxt in
+	  let fty = TFct ([| TGC ty |], TUnit) in
+	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
+	  let f = declare_function fctname llvmfty gst.modul in
+	  let _ = set_value_name "ref" (params f).(0) in
+	  let entryb = append_block gst.ctxt "entry" f in
+	    position_at_end entryb builder;
+	    
+	    let one = const_int (integer_type gst.ctxt 32) 1 in
+	    let zero = const_int (integer_type gst.ctxt 32) 0 in
+
+	    let counterp = build_gep (params f).(0) [| zero; zero |] "counter" builder in
+
+	    let counterv = build_load counterp "load" builder in
+	    let counterv = build_sub counterv one "add" builder in
+
+	    (* build then branch  *)
+	    let then_startblock = append_block gst.ctxt "then" f in
+	      
+	    (* build the else branch  *)
+	    let else_startblock = append_block gst.ctxt "else" f in
+	      
+	    (* build the continuation of the if *)
+	    let merge_block = append_block gst.ctxt "iftecont" f in	  
+
+	    let v1 = build_icmp Icmp.Eq counterv zero "comp" builder in
+	    let _ = build_cond_br v1 then_startblock else_startblock builder in
+
+	    let _ = position_at_end then_startblock builder in
+	    let _ = build_call (gc_codegen_delete gst ty) [| (params f).(0) |] "delete" builder in
+	    let _ = build_br merge_block builder in
+
+	      
+	    let _ = position_at_end else_startblock builder in
+	    let _ = build_store counterv counterp builder in
+	    let _ = build_br merge_block builder in
+	      
+	    let _ = position_at_end merge_block builder in
+	      build_ret_void builder;
+	      Llvm_analysis.assert_valid_function f;
+	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
+	      f
+
 and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
-  raise (Failure "Not Yet Implemented")
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
+    match lookup_function fctname gst.modul with
+      | Some f -> f
+      | None -> 
+	  
+	  let builder = builder gst.ctxt in
+	  let fty = TFct ([| TGC ty |], TUnit) in
+	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
+	  let f = declare_function fctname llvmfty gst.modul in
+	  let _ = set_value_name "ref" (params f).(0) in
+	  let entryb = append_block gst.ctxt "entry" f in
+	    position_at_end entryb builder;
+
+	    let one = const_int (integer_type gst.ctxt 32) 1 in
+	    let zero = const_int (integer_type gst.ctxt 32) 0 in
+
+	    let datap = build_gep (params f).(0) [| zero; one |] "counter" builder in
+
+	    let _ = firstlevel_gc gst builder ty datap false in
+	      
+	    let mem = build_call (fst (VarMap.find "__free_" gst.valueenv)) [| (params f).(0) |] "memfree" builder in
+	      
+	      build_ret_void builder;
+	      Llvm_analysis.assert_valid_function f;
+	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
+	      f
 ;;
     
 
