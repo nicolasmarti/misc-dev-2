@@ -348,7 +348,12 @@ let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (c
       )
     | TVector _ -> ()
     | TArray (i, ty) -> (
-	raise (Failure "Not Yet Implemented")
+	let j = ref 0 in
+	  while (!j < i) do
+	    let curp' = build_struct_gep curp !j "tuplelookup" b in
+	      grab_firstlevel_gc gst b ty curp';
+	      j := !j + 1;
+	  done;	  
       )
     | TDynArray ty -> (
 	raise (Failure "Not Yet Implemented")
@@ -389,9 +394,9 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let zero = const_int (integer_type gst.ctxt 32) 0 in
 
 	    let counter = build_gep addr [| zero; zero |] "counter" builder in
-	    let data = build_gep addr [| zero; one |] "data" builder in
+	    let _ = build_gep addr [| zero; one |] "data" builder in
 
-	    let counterval = build_store zero counter builder in
+	    let _ = build_store zero counter builder in
 
 	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| mem; (params f).(0); size1 |] "memcpy" builder in
 
