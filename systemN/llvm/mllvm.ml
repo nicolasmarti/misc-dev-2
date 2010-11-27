@@ -311,21 +311,23 @@ let sizeof (gst: compile_state) (ty: llvmtype) : llvalue =
 Random.self_init ();;
 
 let create_type_id (gst: compile_state) (ty: llvmtype) : int =
-  try 
-    LlvmtypeMap.find ty gst.gc_typemap
-  with
-    | Not_found ->
-	let b = ref false in
-	let tyval = ref 0 in
-	while !b do
-	  tyval := (Random.int 65000);
-	  b := not (IntSet.mem !tyval gst.gc_typeset);
-	  if !b then (
-	    gst.gc_typeset <- IntSet.add !tyval gst.gc_typeset;
-	    gst.gc_typemap <- LlvmtypeMap.add ty !tyval gst.gc_typemap;
-	  );	    
-	done;
-	  !tyval
+  let mid = 
+    try 
+      LlvmtypeMap.find ty gst.gc_typemap
+    with
+      | Not_found ->
+	  let b = ref true in
+	  let tyval = ref 0 in
+	    while !b do
+	      tyval := (Random.int 65000);
+	      b := (IntSet.mem !tyval gst.gc_typeset);
+	      if !b then (
+		gst.gc_typeset <- IntSet.add !tyval gst.gc_typeset;
+		gst.gc_typemap <- LlvmtypeMap.add ty !tyval gst.gc_typemap;
+	      );	    
+	    done;
+	    !tyval in
+    mid
 ;;
 
 (* true: grab, false: drop *)
@@ -351,7 +353,8 @@ let rec firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (curp: 
     | TArray (i, ty) -> (
 	let j = ref 0 in
 	  while (!j < i) do
-	    let curp' = build_struct_gep curp !j "tuplelookup" b in
+	    let zero = const_int (integer_type gst.ctxt 32) 0 in
+	    let curp' = build_gep curp [| zero; const_int (integer_type gst.ctxt !j) 0 |] "arraylookup" b in
 	      firstlevel_gc gst b ty curp' gd;
 	      j := !j + 1;
 	  done;	  
@@ -361,10 +364,11 @@ let rec firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (curp: 
     | TVar v -> ()
     | TCste t -> ()
     | TAVar -> ()
-    | TGC ty -> (
+    | TGC gty -> (
 	
-	let fct = if gd then gc_codegen_grab gst ty else gc_codegen_drop gst ty in
-	let _ = build_call fct [| curp |] "rec_gc" b in
+	let fct = if gd then gc_codegen_grab gst gty else gc_codegen_drop gst gty in
+	let gc = build_load curp "load" b in
+	let _ = build_call fct [| gc |] "" b in
 	  ()
       )
 and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
@@ -387,7 +391,7 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	      
 	    let mem = build_call (fst (VarMap.find "__malloc_" gst.valueenv)) [| size2 |] "memalloc" builder in
 
-	    let addr = build_bitcast mem (build_llvmtype gst VarMap.empty (TPtr ty)) "cast" builder in
+	    let addr = build_bitcast mem (build_llvmtype gst VarMap.empty (TGC ty)) "cast" builder in
 
 	    let one = const_int (integer_type gst.ctxt 32) 1 in
 	    let zero = const_int (integer_type gst.ctxt 32) 0 in
@@ -397,7 +401,10 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 
 	    let _ = build_store zero counter builder in
 
-	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| datap; (params f).(0); size1 |] "memcpy" builder in
+	    let arg1 = build_bitcast datap (build_llvmtype gst VarMap.empty (TPtr (TInteger 8))) "cast" builder in
+	    let arg2 = build_bitcast (params f).(0) (build_llvmtype gst VarMap.empty (TPtr (TInteger 8))) "cast" builder in
+
+	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| arg1; arg2; size1 |] "memcpy" builder in
 
 	    let _ = firstlevel_gc gst builder ty datap true in
 	      build_ret addr builder;
@@ -435,7 +442,7 @@ and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
 	      f
 
 and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
-  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_drop"] in
     match lookup_function fctname gst.modul with
       | Some f -> f
       | None -> 
@@ -469,7 +476,7 @@ and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let _ = build_cond_br v1 then_startblock else_startblock builder in
 
 	    let _ = position_at_end then_startblock builder in
-	    let _ = build_call (gc_codegen_delete gst ty) [| (params f).(0) |] "delete" builder in
+	    let _ = build_call (gc_codegen_delete gst ty) [| (params f).(0) |] "" builder in
 	    let _ = build_br merge_block builder in
 
 	      
@@ -477,14 +484,14 @@ and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let _ = build_store counterv counterp builder in
 	    let _ = build_br merge_block builder in
 	      
-	    let _ = position_at_end merge_block builder in
+	    let _ = position_at_end merge_block builder in	      
 	      build_ret_void builder;
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      f
 
 and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
-  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_delete"] in
     match lookup_function fctname gst.modul with
       | Some f -> f
       | None -> 
@@ -500,12 +507,13 @@ and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let one = const_int (integer_type gst.ctxt 32) 1 in
 	    let zero = const_int (integer_type gst.ctxt 32) 0 in
 
-	    let datap = build_gep (params f).(0) [| zero; one |] "counter" builder in
+	    let datap = build_gep (params f).(0) [| zero; one |] "datap" builder in
 
 	    let _ = firstlevel_gc gst builder ty datap false in
+
+	    let arg1 = build_bitcast (params f).(0) (build_llvmtype gst VarMap.empty (TPtr (TInteger 8))) "cast" builder in
 	      
-	    let mem = build_call (fst (VarMap.find "__free_" gst.valueenv)) [| (params f).(0) |] "memfree" builder in
-	      
+	    let mem = build_call (fst (VarMap.find "__free_" gst.valueenv)) [| arg1 |] "" builder in
 	      build_ret_void builder;
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
@@ -951,6 +959,7 @@ let rec compile_cmd0 (gst: compile_state) (c: cmd0)  : (llvalue * llvmtype) =
 	     | _ -> ignore (build_ret v comp_st.builder)
 	  );
 	
+	  
 	  let cur_block = insertion_block gst.builder in
 
 	  (* ... of the current function *)
@@ -960,7 +969,7 @@ let rec compile_cmd0 (gst: compile_state) (c: cmd0)  : (llvalue * llvmtype) =
 	  let nextblock = append_block gst.ctxt "returnnext" cur_fct in
 
 	    position_at_end nextblock gst.builder;
-	    
+	  	  
 	    (undef (void_type gst.ctxt), TUnit)
       )
     | If (b, c) -> (

@@ -10,6 +10,7 @@ open Mllvm;;
 
 open Printf;;
 
+(*
 let (cos, costy) = compile_block0 comp_st (
   Extern ("cos", [|(TDouble, "x")|], TDouble)
 );;
@@ -176,6 +177,8 @@ print_string "main Evaluated to ";
 print_float (GenericValue.as_float (build_llvmtype comp_st VarMap.empty TDouble) result);;
 print_newline ();;
 
+*)
+
 open Mllvmpparser;;
 open Parser;;
 open Pprinter;;
@@ -217,3 +220,24 @@ with
       printf "error:%s\n\n" (errors2string pb2);
       printf "%s\n\n" (markerror pb2);
 ;;
+
+(*****************************)
+
+let (f1, ty1) = compile_block0 comp_st (
+  Fct ("f11", [| |], TUnit, 
+       Return (ECste (CNull TUnit))
+      )
+)
+;;
+
+let ty = TTuple [| TVector (6, TDouble); TGC TDouble|] in
+  gc_codegen_create comp_st ty;
+  gc_codegen_delete comp_st ty;
+  gc_codegen_grab comp_st ty;
+  gc_codegen_drop comp_st ty;
+;;
+
+dump_module comp_st.modul;;
+
+
+let result = ExecutionEngine.run_function f1 [| |] comp_st.engine;;
