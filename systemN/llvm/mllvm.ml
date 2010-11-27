@@ -355,9 +355,7 @@ let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (c
 	      j := !j + 1;
 	  done;	  
       )
-    | TDynArray ty -> (
-	raise (Failure "Not Yet Implemented")
-      )
+    | TDynArray ty -> ()
     | TUnknownp -> ()
     | TVar v -> ()
     | TCste t -> ()
@@ -375,7 +373,7 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
       | None -> 
 	  
 	  let builder = builder gst.ctxt in
-	  let fty = TFct ([| TPtr (TGC ty) |], TPtr (TTuple [| TInteger 32; ty|])) in
+	  let fty = TFct ([| TPtr ty |], TGC ty) in
 	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
 	  let f = declare_function fctname llvmfty gst.modul in
 	  let _ = set_value_name "ref" (params f).(0) in
@@ -404,7 +402,31 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	      build_ret addr builder;
 
 and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
-  raise (Failure "Not Yet Implemented")
+  let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_grab"] in
+    match lookup_function fctname gst.modul with
+      | Some f -> f
+      | None -> 
+	  
+	  let builder = builder gst.ctxt in
+	  let fty = TFct ([| TGC ty |], TPtr ty) in
+	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
+	  let f = declare_function fctname llvmfty gst.modul in
+	  let _ = set_value_name "ref" (params f).(0) in
+	  let entryb = append_block gst.ctxt "entry" f in
+	    position_at_end entryb builder;
+	    
+	    let one = const_int (integer_type gst.ctxt 32) 1 in
+	    let zero = const_int (integer_type gst.ctxt 32) 0 in
+
+	    let counterp = build_gep (params f).(0) [| zero; zero |] "counter" builder in
+	    let datap = build_gep (params f).(0) [| zero; one |] "data" builder in
+
+	    let counterv = build_load counterp "load" builder in
+	    let counterv = build_add counterv one "add" builder in
+
+	    let _ = build_store counterv counterp builder in
+	      build_ret datap builder;
+
 and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
   raise (Failure "Not Yet Implemented")
 and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
