@@ -328,41 +328,82 @@ let create_type_id (gst: compile_state) (ty: llvmtype) : int =
 	  !tyval
 ;;
 
-let gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
+let rec grab_firstlevel_gc (gst: compile_state) (b: llbuilder) (ty: llvmtype) (curp: llvalue) : unit =
+  match ty with
+    | TUnit -> ()
+    | TInteger i -> ()
+    | TFloat -> ()
+    | TDouble -> ()
+    | TQuad -> ()
+    | TBool -> ()
+    | TString -> ()
+    | TFct (args, ret) -> ()
+    | TPtr ty -> ()
+    | TTuple tys -> (
+	Array.iteri (
+	  fun i hd ->
+	    let curp' = build_struct_gep curp i "tuplelookup" b in
+	      grab_firstlevel_gc gst b hd curp'
+	) tys
+      )
+    | TVector _ -> ()
+    | TArray (i, ty) -> (
+	raise (Failure "Not Yet Implemented")
+      )
+    | TDynArray ty -> (
+	raise (Failure "Not Yet Implemented")
+      )
+    | TUnknownp -> ()
+    | TVar v -> ()
+    | TCste t -> ()
+    | TAVar -> ()
+    | TGC ty -> (
+	
+	let grab = gc_codegen_grab gst ty in
+	let _ = build_call grab [| curp |] "grab-first-level" b in
+	  ()
+      )
+and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
   let fctname = String.concat "" ["__"; string_of_int (create_type_id gst ty); "_GC_create"] in
     match lookup_function fctname gst.modul with
       | Some f -> f
       | None -> 
 	  
+	  let builder = builder gst.ctxt in
 	  let fty = TFct ([| TPtr (TGC ty) |], TPtr (TTuple [| TInteger 32; ty|])) in
 	  let llvmfty = (build_llvmtype gst VarMap.empty fty) in
 	  let f = declare_function fctname llvmfty gst.modul in
 	  let _ = set_value_name "ref" (params f).(0) in
 	  let entryb = append_block gst.ctxt "entry" f in
-	    position_at_end entryb gst.builder;
+	    position_at_end entryb builder;
 	    
 	    let size1 = sizeof gst ty in
 
 	    let size2 = sizeof gst (TGC ty) in
 	      
-	    let mem = build_call (fst (VarMap.find "__malloc_" gst.valueenv)) [| size2 |] "memalloc" gst.builder in
+	    let mem = build_call (fst (VarMap.find "__malloc_" gst.valueenv)) [| size2 |] "memalloc" builder in
 
-	    let addr = build_bitcast mem (build_llvmtype gst VarMap.empty (TPtr ty)) "cast" gst.builder in
+	    let addr = build_bitcast mem (build_llvmtype gst VarMap.empty (TPtr ty)) "cast" builder in
 
 	    let one = const_int (integer_type gst.ctxt 32) 1 in
 	    let zero = const_int (integer_type gst.ctxt 32) 0 in
 
-	    let counter = build_gep addr [| zero; zero |] "counter" gst.builder in
-	    let data = build_gep addr [| zero; one |] "data" gst.builder in
+	    let counter = build_gep addr [| zero; zero |] "counter" builder in
+	    let data = build_gep addr [| zero; one |] "data" builder in
 
-	    let counterval = build_store zero counter gst.builder in
+	    let counterval = build_store zero counter builder in
 
-	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| mem; (params f).(0); size1 |] "memcpy" gst.builder in
+	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| mem; (params f).(0); size1 |] "memcpy" builder in
 
-	      (* here we should grab the TGC first level .... *)
-	    
-	      build_ret addr gst.builder;
-	      
+	      grab_firstlevel_gc gst builder ty addr;	    
+	      build_ret addr builder;
+
+and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
+  raise (Failure "Not Yet Implemented")
+and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
+  raise (Failure "Not Yet Implemented")
+and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
+  raise (Failure "Not Yet Implemented")
 ;;
     
 
