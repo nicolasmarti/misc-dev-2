@@ -223,14 +223,15 @@ with
 
 (*****************************)
 
+let ty = (TArray (10, TDouble))
+;;
+
 let (f1, ty1) = compile_block0 comp_st (
-  Fct ("f11", [| |], TUnit, 
-       Return (ECste (CNull TUnit))
-      )
+  Global ("a", CNull ty)
 )
 ;;
 
-let ty = TTuple [| TVector (6, TDouble); TGC TDouble|] in
+let ty = ty in
   gc_codegen_create comp_st ty;
   gc_codegen_delete comp_st ty;
   gc_codegen_grab comp_st ty;
@@ -239,5 +240,18 @@ let ty = TTuple [| TVector (6, TDouble); TGC TDouble|] in
 
 dump_module comp_st.modul;;
 
+let (f1, ty1) = compile_block0 comp_st (
+  Fct ("f11", [| |], TUnit, 
+       Let (
+	 [| ("create", EGCCreate (EVar "a"));
+	    ("grab", EGCGrab (EVar "create"));
+	    ("drop", EGCDrop (EVar "create"))
+	 |],
+	 Return (ECste (CNull TUnit))
+       )
+      )
+)
+;;
 
 let result = ExecutionEngine.run_function f1 [| |] comp_st.engine;;
+

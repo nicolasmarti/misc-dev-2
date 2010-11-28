@@ -100,6 +100,10 @@ type expr0 = ECste of cste
 	     | ECast of llvmtype * expr0
 	     | ECall of expr0 * expr0 array
 	     | EArray of llvmtype * expr0
+	     | EGCCreate of expr0
+	     | EGCGrab of expr0
+	     | EGCDrop of expr0
+	     | EGCDelete of expr0
 ;;
 
 type bexpr0 = BCste of bool
@@ -240,7 +244,7 @@ let comp_st =
       valueenv = VarMap.empty;
       engine = eng;
       passmng = pm;
-      optimize = false;
+      optimize = true;
       gc_typeset = IntSet.empty;
       gc_typemap = LlvmtypeMap.empty;      
     } in
@@ -387,7 +391,7 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	    
 	    let size1 = sizeof gst ty in
 
-	    let size2 = sizeof gst (TGC ty) in
+	    let size2 = sizeof gst (TTuple [| TInteger 32; ty |]) in
 	      
 	    let mem = build_call (fst (VarMap.find "__malloc_" gst.valueenv)) [| size2 |] "memalloc" builder in
 
@@ -792,6 +796,26 @@ let rec compile_expr0 (gst: compile_state) (e: expr0) : (llvalue * llvmtype) =
 	let mty = (build_llvmtype gst VarMap.empty ty) in
 	  (build_array_alloca mty v "dynarray" gst.builder, TPtr ty)
       )
+    | EGCCreate e -> (
+	let (v, TPtr ty) = compile_expr0 gst e in
+	let fct = gc_codegen_create gst ty in
+	  (build_call fct [| v |] "gc_create_call" gst.builder, TGC ty)
+      )
+    | EGCGrab e -> (
+	let (v, TGC ty) = compile_expr0 gst e in
+	let fct = gc_codegen_grab gst ty in
+	  (build_call fct [| v |] "gc_grab_call" gst.builder, TPtr ty)
+      )
+    | EGCDrop e -> (
+	let (v, TGC ty) = compile_expr0 gst e in
+	let fct = gc_codegen_drop gst ty in
+	  (build_call fct [| v |] "" gst.builder, TPtr ty)
+      )
+    | EGCDelete e -> (
+	let (v, TGC ty) = compile_expr0 gst e in
+	let fct = gc_codegen_delete gst ty in
+	  (build_call fct [| v |] "" gst.builder, TUnit)
+      )
 ;;
 
 let rec compile_bexpr0 (gst: compile_state) (b: bexpr0) : (llvalue * llvmtype) =
@@ -958,7 +982,6 @@ let rec compile_cmd0 (gst: compile_state) (c: cmd0)  : (llvalue * llvmtype) =
 	     | TUnit -> ignore (build_ret_void comp_st.builder)
 	     | _ -> ignore (build_ret v comp_st.builder)
 	  );
-	
 	  
 	  let cur_block = insertion_block gst.builder in
 
@@ -1242,6 +1265,7 @@ let rec compile_block0 (gst: compile_state) (b: block0)  : (llvalue * llvmtype) 
 	      
 	      gst.valueenv <- varmap_union vs gst.valueenv;
 
+	      dump_value f;
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      gst.valueenv <- VarMap.add name (f, TPtr fty) gst.valueenv;
