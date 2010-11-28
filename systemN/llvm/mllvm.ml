@@ -1265,7 +1265,7 @@ let rec compile_block0 (gst: compile_state) (b: block0)  : (llvalue * llvmtype) 
 	      
 	      gst.valueenv <- varmap_union vs gst.valueenv;
 
-	      dump_value f;
+	      (*dump_value f;*)
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      gst.valueenv <- VarMap.add name (f, TPtr fty) gst.valueenv;

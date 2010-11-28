@@ -221,9 +221,11 @@ with
       printf "%s\n\n" (markerror pb2);
 ;;
 
+flush stdout;;
+
 (*****************************)
 
-let ty = (TArray (10, TDouble))
+let ty = TTuple [| TDouble ; TArray (10, TDouble) |]
 ;;
 
 let (f1, ty1) = compile_block0 comp_st (
@@ -247,7 +249,7 @@ let (f1, ty1) = compile_block0 comp_st (
 	    ("grab", EGCGrab (EVar "create"));
 	    ("drop", EGCDrop (EVar "create"))
 	 |],
-	 Return (ECste (CNull TUnit))
+	 Unit
        )
       )
 )
