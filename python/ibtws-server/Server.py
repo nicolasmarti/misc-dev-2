@@ -84,6 +84,7 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
 
         Thread.__init__(self)
         self.m_loop = True
+        self.daemon = True
 
         return
 
@@ -217,19 +218,20 @@ class ScannerServer:
         self.m_reqHandlerLock.release()
 
     def handler1(self, msg):
-        print "scanner data: " + str(msg)        
+        #print "scanner data: " + str(msg)        
         self.m_reqHandlerLock.acquire()
         self.m_reqHandler[msg.values()[0]][1][msg.values()[1]] = (msg.values()[2], msg.values()[3], msg.values()[4], msg.values()[5], msg.values()[6])
         self.m_reqHandlerLock.release()
 
     def handler2(self, msg):
-        print "scanner data end: " + str(msg)        
+        #print "scanner data end: " + str(msg)        
         self.m_reqHandlerLock.acquire()
         if self.m_reqHandler[msg.values()[0]][0].locked(): self.m_reqHandler[msg.values()[0]][0].release()
         self.m_reqHandlerLock.release()
 
     def handler3(self, msg):
-        print "scanner Param: " + str(msg)        
+        #print "scanner Param: " + str(msg)        
+        pass
 
 # MktData Server
 
@@ -306,7 +308,7 @@ class MktDepthServer:
 
     # updateMktDepth
     def handler1(self, msg):
-        print "updateMktDepth: " + str(msg.values())
+        #print "updateMktDepth: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
         if msg.values()[2] == 0 or msg.values()[2] == 1:
             self.m_dataHandler[msg.values()[0]][msg.values()[3]][msg.values()[1]] = (msg.values()[4], msg.values()[5])
@@ -316,7 +318,7 @@ class MktDepthServer:
 
     # updateMktDepthL2
     def handler2(self, msg):
-        print "updateMktDepthL2: " + str(msg.values())
+        #print "updateMktDepthL2: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
         if msg.values()[3] == 0 or msg.values()[3] == 1:
             self.m_dataHandler[msg.values()[0]][msg.values()[4]][msg.values()[1]] = (msg.values()[2], msg.values()[5], msg.values()[6])
