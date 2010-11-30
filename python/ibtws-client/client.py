@@ -477,7 +477,7 @@ class StockFrame(gtk.Frame, Thread):
         self.liststore2 = gtk.ListStore(str, str)
         self.treeview2 = gtk.TreeView(self.liststore2)
 
-        self.fields2 = ["BID PRICE", "BID SIZE"]
+        self.fields2 = ["ASK PRICE", "ASK SIZE"]
 
         self.columns2 = range(0, len(self.fields2))
         self.cells2 = range(0, len(self.fields2))
