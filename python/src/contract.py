@@ -54,7 +54,7 @@ class Stock:
     def __getattr__(self, name):
         if name == "mktdata":
             return self.con.getMktData(self.mktDataId)
-        elif name == "mkdepth":
+        elif name == "mktdepth":
             return self.con.getMktDepth(self.cancelMktDepth)
 
         return None
@@ -62,9 +62,23 @@ class Stock:
     def __getitem__(self, key):
         if key == "mktdata":
             return self.con.getMktData(self.mktDataId)
-        elif key == "mkdepth":
+        elif key == "mktdepth":
             return self.con.getMktDepth(self.cancelMktDepth)
 
+    def __call__(self, position = "BUY", orderty = "MKT", quantity = 100, price = None, timeout = None, openClose = "O"):
+        order = Order()
+        order.m_action = position
+        order.m_tif = "DAY"
+        order.m_orderType = orderty
+        order.m_totalQuantity = quantity
+        order.m_openClose = openClose
+        if price <> None: order.m_lmtPrice = float(round(float(price)))
+
+        if timeout == None:
+            return self.con.placeOrder(self.contract, order, None)
+        else:
+            return self.con.placeOrder(self.contract, order, timedelta(seconds=timeout))
+    
 
     def getNextId(self):
         self.m_lock.acquire()
