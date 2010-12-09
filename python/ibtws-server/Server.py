@@ -119,13 +119,13 @@ class OrderServer(Pyro.EventService.Clients.Publisher, Thread):
     def orderStatus(self, orderId):
         self.inProgressOrdersLock.acquire()
         if orderId in self.inProgressOrders:
-            res = self.inProgressOrders[orderId][1]
+            res = [self.inProgressOrders[orderId][0], self.inProgressOrders[orderId][1], self.inProgressOrders[orderId][2]]
             self.inProgressOrdersLock.release()
             return res
         else:
             self.inProgressOrdersLock.release()
             if orderId in self.doneOrders:
-                return self.doneOrders[orderId][1]
+                return [self.doneOrders[orderId][0], self.doneOrders[orderId][1], self.doneOrders[orderId][2]]
             else:
                 return None
 
@@ -523,7 +523,10 @@ class ExecutionDetailsServer:
     def handler1(self, msg):
         #print "handler1: " + str(msg.values()) 
         self.m_dataHandlerLock.acquire()
-        self.m_dataHandler[msg.values()[0]][1].append(msg.values())
+        try:
+            self.m_dataHandler[msg.values()[0]][1].append(msg.values())
+        except:
+            pass
         self.m_dataHandlerLock.release()
 
     # execDetailsEnd
