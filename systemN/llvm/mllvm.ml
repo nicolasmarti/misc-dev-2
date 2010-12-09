@@ -12,6 +12,24 @@ open Printf;;
 open Set;;
 open Map;;
 
+(*
+1) mllvm
+	a) finish parser/pprinter
+	b) TPtr (TFct …) ==> Fct …
+	c) TDynArray: i) { i32, [0xty]}* ==> { i32, [0xty]} 
+			ii) modify sizeof, .. (all GC stuffs)
+			iii) ENth semantics
+	d) add TSum of llvmtype array + Destructor cmd
+	e) add dynsizeof: needed when there is either TSum or TDynArray (need a pointer to data structure)
+	f) EArray -> ELocArray
+g) add init to GC function(create on null value) + nullptr tests
+
+
+redo mllvm properly ??? NO TIME!!!!! Use it as it is moron !!!
+
+*)
+
+
 (**************************************************************)
 
 ignore (initialize_native_target ());;
