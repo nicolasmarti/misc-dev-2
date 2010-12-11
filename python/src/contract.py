@@ -62,6 +62,13 @@ class Stock:
                 order.m_totalQuantity = quantity
                 order.m_openClose = openClose
                 if price <> None: order.m_lmtPrice = float(round(float(price)))
+
+                if position == "BUY":
+                    pos = quantity
+                else:
+                    pos = -quantity
+
+                if price == None and orderty <> "MKT": order.m_lmtPrice = float(round(float(self.best_price(pos))))
                 
                 if timeout == None:
                     oid = self.con.placeOrder(self.contract, order, None)
@@ -85,9 +92,11 @@ class Stock:
                     order.m_action = "BUY"
                 order.m_tif = "DAY"
                 order.m_orderType = orderty
-                order.m_totalQuantity = position
+                order.m_totalQuantity = abs(position)
                 order.m_openClose = "C"
                 if price <> None: order.m_lmtPrice = float(round(float(price)))
+
+                if price == None and orderty <> "MKT": order.m_lmtPrice = float(round(float(self.best_price(position))))
                 
                 if timeout == None:
                     oid = self.con.placeOrder(self.contract, order, None)
@@ -109,7 +118,7 @@ class Stock:
         if key == "mktdata":
             return self.con.getMktData(self.mktDataId)
         elif key == "mktdepth":
-            return self.con.getMktDepth(self.cancelMktDepth)
+            return self.con.getMktDepth(self.mktDepthId)
         elif key == "orders":
             l = []
             for i in self.oids:
@@ -126,4 +135,12 @@ class Stock:
                     position += mul * self.con.orderStatus(i)[1][2]
             return position
     
-    
+        # determine the best price to ask/bid for a given position, depending on the mkt depth
+        def best_price(self, position):
+            mktdepth = self.con.getMktDepth(self.mktDepthId)
+            if position > 0:
+                if (mktdepth[0][0][0]) <> None: return mktdepth[0][0][0]
+            else:
+                if (mktdepth[1][0][0]) <> None: return mktdepth[1][0][0]
+            return 0
+
