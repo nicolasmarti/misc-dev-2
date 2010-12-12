@@ -24,6 +24,10 @@ import Pyro.naming
 import Pyro.constants
 import Pyro.EventService.Clients
 
+
+
+# TODO: implement a + * / --> allow to build a portfolio (can be seen as a stock)
+
 class Stock:
 
     def __init__(self, name):
