@@ -461,8 +461,9 @@ class RTDataServer:
 
     # 
     def handler1(self, msg):
+        print "realtime bar: " + str(msg.values())
         self.m_dataHandlerLock.acquire()
-        self.m_dataHandler[msg.values()[0]].append(msg.values())
+        self.m_dataHandler[msg.values()[0]] = msg.values()
         self.m_dataHandlerLock.release()
 
 # RT

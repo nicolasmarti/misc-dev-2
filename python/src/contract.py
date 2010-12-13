@@ -45,13 +45,16 @@ class Stock:
         
         self.mktDataId = self.con.reqMktData(self.contract, False)
         self.mktDepthId = self.con.reqMktDepth(self.contract, 10)
+        self.mktRTBarId = self.con.reqRTData(self.contract, 5, "MIDPOINT", 0)
+
 
         self.oids = []
 
     def __del__(self):
         
         self.con.cancelMktData(self.mktDataId)
-        self.con.cancelMktData(self.cancelMktDepth)
+        self.con.cancelMktDepth(self.MktDepthId)
+        self.con.cancelRTData(self.mktRTBarId)
 
     def __str__(self):        
         return "Contract"
@@ -65,14 +68,14 @@ class Stock:
                 order.m_orderType = orderty
                 order.m_totalQuantity = quantity
                 order.m_openClose = openClose
-                if price <> None: order.m_lmtPrice = float(round(float(price)))
+                if price <> None: order.m_lmtPrice = price
 
                 if position == "BUY":
                     pos = quantity
                 else:
                     pos = -quantity
 
-                if price == None and orderty <> "MKT": order.m_lmtPrice = float(round(float(self.best_price(pos))))
+                if price == None and orderty <> "MKT": order.m_lmtPrice = self.best_price(pos)
                 
                 if timeout == None:
                     oid = self.con.placeOrder(self.contract, order, None)
@@ -98,9 +101,9 @@ class Stock:
                 order.m_orderType = orderty
                 order.m_totalQuantity = abs(position)
                 order.m_openClose = "C"
-                if price <> None: order.m_lmtPrice = float(round(float(price)))
+                if price <> None: order.m_lmtPrice = price
 
-                if price == None and orderty <> "MKT": order.m_lmtPrice = float(round(float(self.best_price(position))))
+                if price == None and orderty <> "MKT": order.m_lmtPrice = self.best_price(position)
                 
                 if timeout == None:
                     oid = self.con.placeOrder(self.contract, order, None)
@@ -114,7 +117,23 @@ class Stock:
                         self.oids.append(oid)
                         return oid
             return close
-
+        elif name == "best_price":
+            # determine the best price to ask/bid for a given position, depending on the mkt depth
+            def best_price(position):
+                #return self.con.getMktData(self.mktDataId)["LAST PRICE"]
+                mktdepth = self.con.getMktDepth(self.mktDepthId)
+                if position > 0:
+                    if (mktdepth[0][0][0]) <> None: return mktdepth[0][0][0]
+                else:
+                    if (mktdepth[1][0][0]) <> None: return mktdepth[1][0][0]
+                return 0
+            return best_price
+        elif name == "cancel":
+            def cancel():
+                for i in self.oids:
+                    if self.con.orderStatus(i)[1][1] == "PendingSubmit" or self.con.orderStatus(i)[1][1] == "PreSubmitted" or self.con.orderStatus(i)[1][1] == "Submitted":
+                        self.con.cancelOrder(i)
+            return cancel
         else:
             return None
 
@@ -128,6 +147,8 @@ class Stock:
             for i in self.oids:
                 l.append(self.con.orderStatus(i))
             return l
+        elif key == "rtbar":
+            return self.con.getRTData(self.mktRTBarId)
         elif key == "position":
             position = 0
             for i in self.oids:
@@ -138,13 +159,23 @@ class Stock:
                         mul = -1
                     position += mul * self.con.orderStatus(i)[1][2]
             return position
-    
-        # determine the best price to ask/bid for a given position, depending on the mkt depth
-        def best_price(self, position):
-            mktdepth = self.con.getMktDepth(self.mktDepthId)
-            if position > 0:
-                if (mktdepth[0][0][0]) <> None: return mktdepth[0][0][0]
+        elif key == "pnl":
+            pnl = 0
+            for i in self.oids:
+                if len(self.con.orderStatus(i)[1]) > 2:
+                    if self.con.orderStatus(i)[0][1].m_action == "BUY": 
+                        mul = -1
+                    else:
+                        mul = 1
+                    pnl += mul * self.con.orderStatus(i)[1][2] * self.con.orderStatus(i)[1][4]
+            return pnl
+        elif key == "upnl":
+            upnl = self["position"]
+            if upnl < 0:
+                return upnl * self.con.getMktData(self.mktDataId)["ASK PRICE"]
             else:
-                if (mktdepth[1][0][0]) <> None: return mktdepth[1][0][0]
-            return 0
+                return upnl * self.con.getMktData(self.mktDataId)["BID PRICE"]
+
+
+
 
