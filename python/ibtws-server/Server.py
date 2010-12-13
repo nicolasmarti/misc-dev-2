@@ -24,6 +24,13 @@ import Pyro.naming
 import Pyro.constants
 import Pyro.EventService.Clients
 
+
+# ISSUES to be solved:
+# mem occupation grow to much (ex: RTBar) --> keep only the last one + add clear functions
+# add publishing for RTBar
+# for Order ID -> should use, reqIds (python server might not be the only one to use TWS)
+# add hook for hist data, which asserts that hist data have been received
+
 # Back Servers
 
 class NextIdServer:
