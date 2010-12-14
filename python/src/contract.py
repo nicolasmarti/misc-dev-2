@@ -159,6 +159,8 @@ class Stock:
                     filled = self.con.orderStatus(i)[1][2]
                     avgPrice = self.con.orderStatus(i)[1][4]
                     return mul * filled * avgPrice            
+                sleep(1)
+                return ordervalue(i)
             return ordervalue
         elif key == "pnl" or key == "upnl" or key == "position" or key == "value":
             pnl = 0.0

@@ -95,7 +95,7 @@ class Strat1(Thread):
             # if we are opening, and that the position is > 0, it means that we are open
             if self.state == "OPENING" and self.c["position"] > 0:
                 self.state = "OPENED"
-                self.pose += self.c["ordervalue"](openorder)
+                money = self.pose + self.c["ordervalue"](openorder)
                 print "OPENING --> OPENED"
                 
             # if we hit the timeout, cancel it and retry
@@ -127,7 +127,7 @@ class Strat1(Thread):
 
             if self.state == "CLOSING" and self.c["position"] == 0:
                 self.state = "CLOSED"
-                self.pose += self.c["ordervalue"](closeorder)
+                self.pose = money + self.c["ordervalue"](closeorder)
                 print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
 
             if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
