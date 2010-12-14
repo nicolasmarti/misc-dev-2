@@ -149,32 +149,63 @@ class Stock:
             return l
         elif key == "rtbar":
             return self.con.getRTData(self.mktRTBarId)
-        elif key == "position":
-            position = 0
-            for i in self.oids:
-                if len(self.con.orderStatus(i)[1]) > 2:
-                    if self.con.orderStatus(i)[0][1].m_action == "BUY": 
-                        mul = 1
-                    else:
-                        mul = -1
-                    position += mul * self.con.orderStatus(i)[1][2]
-            return position
-        elif key == "pnl":
-            pnl = 0
+        elif key == "pnl" or key == "upnl" or key == "position":
+            pnl = 0.0
+            upnl = [0, 0.0]
             for i in self.oids:
                 if len(self.con.orderStatus(i)[1]) > 2:
                     if self.con.orderStatus(i)[0][1].m_action == "BUY": 
                         mul = -1
                     else:
                         mul = 1
-                    pnl += mul * self.con.orderStatus(i)[1][2] * self.con.orderStatus(i)[1][4]
-            return pnl
-        elif key == "upnl":
-            upnl = self["position"]
-            if upnl < 0:
-                return upnl * self.con.getMktData(self.mktDataId)["ASK PRICE"]
-            else:
-                return upnl * self.con.getMktData(self.mktDataId)["BID PRICE"]
+                    filled = self.con.orderStatus(i)[1][2]
+                    avgPrice = self.con.orderStatus(i)[1][4]
+
+                    # case analysis: 
+                    if mul >= 0 and upnl[0] >= 0:
+                        # here we SELL and or upnl is long
+                        if filled > upnl[0]:
+                            # we sold more than we own
+                            pnl += upnl[0] * (upnl[1] - avgPrice)
+                            upnl[0] = upnl[0] - filled
+                            upnl[1] = avgPrice
+                        elif filled < upnl[0]:
+                            # we sold less than we own
+                            pnl += filled * (upnl[1] - avgPrice)
+                            upnl[0] = upnl[0] - filled
+                        elif filled == upnl[0]:
+                            pnl += filled * (upnl[1] - avgPrice)
+                            upnl[0] = 0
+                    elif mul <= 0 and upnl <= 0:
+                        # here we BUY and or upnl is short
+                        if filled > -upnl[0]:
+                            # we buy more than we are short
+                            pnl += -upnl[0] * (upnl[1] - avgPrice)
+                            upnl[0] = filled + upnl[0]
+                            upnl[1] = avgPrice
+                        elif filled < -upnl[0]:
+                            # we buy less then we are short
+                            pnl += filled * (upnl[1] - avgPrice)
+                            upnl[0] = filled + upnl[0]
+                        elif filled == upnl[0]:
+                            pnl += -filled * (upnl[1] - avgPrice)
+                            upnl[0] = 0
+                    elif mul <= 0 and upnl[0] >= 0:
+                        # we buy stock and are already long
+                        upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
+                        upnl[0] = filled + upnl[0]
+                    elif mul >= 0 and upnl[0] <= 0:
+                        # we sell stock and are already short
+                        upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
+                        upnl[0] = -filled + upnl[0]
+
+            if key == "position": return upnl[0]
+            if key == "pnl": return pnl
+            if key == "upnl": 
+                if upnl[0] < 0:
+                    return - upnl[0] * (upnl[1] - self.con.getMktData(self.mktDataId)["ASK PRICE"])
+                else:
+                    return upnl[0] * (self.con.getMktData(self.mktDataId)["BID PRICE"] - upnl[1])
 
 
 
