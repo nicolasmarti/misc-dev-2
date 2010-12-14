@@ -179,15 +179,15 @@ class Stock:
                         # here we SELL and or upnl is long
                         if filled > upnl[0]:
                             # we sold more than we own
-                            pnl += upnl[0] * (upnl[1] - avgPrice)
+                            pnl += upnl[0] * (avgPrice - upnl[1])
                             upnl[0] = upnl[0] - filled
                             upnl[1] = avgPrice
                         elif filled < upnl[0]:
                             # we sold less than we own
-                            pnl += filled * (upnl[1] - avgPrice)
+                            pnl += filled * (avgPrice - upnl[1])
                             upnl[0] = upnl[0] - filled
                         elif filled == upnl[0]:
-                            pnl += filled * (upnl[1] - avgPrice)
+                            pnl += filled * (avgPrice - upnl[1])
                             upnl[0] = 0
                     elif mul <= 0 and upnl <= 0:
                         # here we BUY and or upnl is short
