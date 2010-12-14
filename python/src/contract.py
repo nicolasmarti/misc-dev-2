@@ -149,7 +149,18 @@ class Stock:
             return l
         elif key == "rtbar":
             return self.con.getRTData(self.mktRTBarId)
-        elif key == "pnl" or key == "upnl" or key == "position":
+        elif key == "ordervalue":
+            def ordervalue(i):
+                if len(self.con.orderStatus(i)[1]) > 2:
+                    if self.con.orderStatus(i)[0][1].m_action == "BUY": 
+                        mul = -1
+                    else:
+                        mul = 1
+                    filled = self.con.orderStatus(i)[1][2]
+                    avgPrice = self.con.orderStatus(i)[1][4]
+                    return mul * filled * avgPrice            
+            return ordervalue
+        elif key == "pnl" or key == "upnl" or key == "position" or key == "value":
             pnl = 0.0
             upnl = [0, 0.0]
             for i in self.oids:
@@ -192,11 +203,17 @@ class Stock:
                             upnl[0] = 0
                     elif mul <= 0 and upnl[0] >= 0:
                         # we buy stock and are already long
-                        upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
+                        if (filled + upnl[0]) == 0:
+                            upnl[1] = 0.0
+                        else:
+                            upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
                         upnl[0] = filled + upnl[0]
                     elif mul >= 0 and upnl[0] <= 0:
                         # we sell stock and are already short
-                        upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
+                        if (filled - upnl[0]) == 0:
+                            upnl[1] = 0.0
+                        else:
+                            upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
                         upnl[0] = -filled + upnl[0]
 
             if key == "position": return upnl[0]
@@ -206,7 +223,8 @@ class Stock:
                     return - upnl[0] * (upnl[1] - self.con.getMktData(self.mktDataId)["ASK PRICE"])
                 else:
                     return upnl[0] * (self.con.getMktData(self.mktDataId)["BID PRICE"] - upnl[1])
-
-
+            if key == "value":
+                upnl[0] * upnl[1]
+                
 
 
