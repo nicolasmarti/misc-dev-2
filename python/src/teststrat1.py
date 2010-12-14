@@ -1,7 +1,7 @@
 from strat1 import *
 from time import *
 
-s = Strat1("GS", 30, -1, 0.5, 10000, 0.05)
+s = Strat1(["MSFT", 10, -0.4, 0.4, 10000, 0.05, 5, 1])
 
 s.start()
 
