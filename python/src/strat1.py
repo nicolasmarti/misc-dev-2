@@ -6,21 +6,25 @@ from datetime import *
 
 class Strat1(Thread):
 
-    def __init__(self, stck, N, kdown, kup, pose, risk):
-        self.c = Stock(stck)
+    # params = [stck, N, kdown, kup, pose, risk, ordertimout, barsize]
+    def __init__(self, params):
+        self.c = Stock(params[0])
         self.state = "CLOSED"
         self.data = []
         Thread.__init__(self)
         self.daemon = True
 
         # strat param
-        self.N = N
-        self.kdown = kdown
-        self.kup = kup
-        self.pose = pose
-        self.risk = risk
+        self.N = params[1]
+        self.kdown = params[2]
+        self.kup = params[3]
+        self.originpose = float(params[4])
+        self.pose = float(params[4])
+        self.risk = float(params[5])
 
-        self.timeout = timedelta(seconds=10)
+        self.ordertimeout = timedelta(seconds=params[6])
+        self.barsize = timedelta(seconds=params[7])
+
 
     def __del__(self):
        pass 
@@ -28,20 +32,24 @@ class Strat1(Thread):
     def run(self):
 
         sleep(5)
+        print "Start"
+
+        # first the new data
+        newdata = dict()
+        newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
+        newdata["start"] = datetime.now()
+
         while True:
-
-            sleep(1)
-            # first the new data
-            newdata = dict()
-            newbar = self.c["rtbar"]
-
-            #we put the close
-            #try:
-            #    newdata["close"] = newbar[5]
-            #except:
-            #    newdata["close"] = self.c["mktdata"]["LAST PRICE"]
+          
+            #update the OHLCV
 
             newdata["close"] = self.c["mktdata"]["LAST PRICE"]
+            if newdata["close"] > newdata["high"]:
+                newdata["high"] = newdata["close"]
+
+            if newdata["close"] > newdata["low"]:
+                newdata["low"] = newdata["close"]
+
 
             # first compute the mean (ema on N)
             try:
@@ -89,7 +97,7 @@ class Strat1(Thread):
                 print "OPENING --> OPENED"
                 
             # if we hit the timeout, cancel it and retry
-            if self.state == "OPENING" and (openingtime + self.timeout) < datetime.now():
+            if self.state == "OPENING" and (openingtime + self.ordertimeout) < datetime.now():
                 self.c.cancel()
                 self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
                 openingtime = datetime.now()
@@ -115,15 +123,24 @@ class Strat1(Thread):
                 self.state = "CLOSED"
                 print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
 
-            if self.state == "CLOSING" and closingtime + self.timeout < datetime.now():
+            if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
                 self.c.cancel()
                 self.c.close(orderty = "LMT")
                 closingtime = datetime.now()                
                 print "CLOSING --> CLOSING (timeout)"
-                
-            # finally we insert the newdata
-            self.data.insert(0, newdata)
 
-            # we remove elements in the list as they are not needed
-            if len(self.data) > self.N:
-                self.data.pop()
+            # finally we insert the newdata if the bar size is reached
+            if datetime.now() > newdata["start"] + self.barsize:
+
+                #print newdata
+                
+                self.data.insert(0, newdata)
+
+                # we remove elements in the list as they are not needed
+                if len(self.data) > self.N:
+                    self.data.pop()
+
+                # we create the new bar
+                newdata = dict()
+                newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
+                newdata["start"] = datetime.now()
