@@ -39,6 +39,8 @@ class Strat1(Thread):
         newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
         newdata["start"] = datetime.now()
 
+        money = self.pose
+
         while True:
           
             #update the OHLCV
@@ -83,7 +85,7 @@ class Strat1(Thread):
             try:
                 if self.state == "CLOSED" and newdata["k"] < self.kdown:
                     self.state = "OPENING"
-                    self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
+                    openorder = self.c.order(orderty = "LMT", quantity = int(money / newdata["close"]))
                     openingtime = datetime.now()
                     print "CLOSED --> OPENING"
             except Exception as inst:
@@ -94,12 +96,13 @@ class Strat1(Thread):
             # if we are opening, and that the position is > 0, it means that we are open
             if self.state == "OPENING" and self.c["position"] > 0:
                 self.state = "OPENED"
+                money += self.c["ordervalue"](openorder)
                 print "OPENING --> OPENED"
                 
             # if we hit the timeout, cancel it and retry
             if self.state == "OPENING" and (openingtime + self.ordertimeout) < datetime.now():
                 self.c.cancel()
-                self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
+                openorder = self.c.order(orderty = "LMT", quantity = int(money / newdata["close"]))
                 openingtime = datetime.now()
                 print "OPENING --> OPENING (time out)"
 
@@ -108,24 +111,24 @@ class Strat1(Thread):
                     
                 if newdata["k"] > self.kup and self.c["upnl"] > 0:
                     self.state = "CLOSING"
-                    self.c.close(orderty = "LMT")
+                    closeorder = self.c.close(orderty = "LMT")
                     closingtime = datetime.now()
                     print "OPENED --> CLOSING (stopgain)"
 
-                elif self.c["upnl"] - self.c["pnl"] < self.risk * self.pose:
+                elif self.c["upnl"] < -(self.risk * self.pose):
                     self.state = "CLOSING"
-                    self.c.close(orderty = "LMT")
+                    closeorder = self.c.close(orderty = "LMT")
                     closingtime = datetime.now()
-                    print "OPENED --> CLOSING (stoploss)"
+                    print "OPENED --> CLOSING (stoploss: " + str(self.c["upnl"]) + " < " + str(- (self.risk * self.pose)) + ")"
 
             if self.state == "CLOSING" and self.c["position"] == 0:
-                self.pose += self.c["pnl"]
                 self.state = "CLOSED"
-                print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
+                money += self.c["ordervalue"](closeorder)
+                print "CLOSING --> CLOSED (money = " + str(money) + ")"
 
             if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
                 self.c.cancel()
-                self.c.close(orderty = "LMT")
+                closeorder = self.c.close(orderty = "LMT")
                 closingtime = datetime.now()                
                 print "CLOSING --> CLOSING (timeout)"
 
@@ -144,3 +147,5 @@ class Strat1(Thread):
                 newdata = dict()
                 newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
                 newdata["start"] = datetime.now()
+
+
