@@ -123,10 +123,10 @@ class Stock:
                 #return self.con.getMktData(self.mktDataId)["LAST PRICE"]
                 mktdepth = self.con.getMktDepth(self.mktDepthId)
                 if position > 0:
-                    if (mktdepth[0][0][0]) <> None: return mktdepth[0][0][0]
+                    if (mktdepth[0][0]) <> None: return mktdepth[0][0][0]
                 else:
-                    if (mktdepth[1][0][0]) <> None: return mktdepth[1][0][0]
-                return 0
+                    if (mktdepth[1][0]) <> None: return mktdepth[1][0][0]
+                return self["mktdata"]["LAST PRICE"]
             return best_price
         elif name == "cancel":
             def cancel():
