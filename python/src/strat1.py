@@ -25,9 +25,19 @@ class Strat1(Thread):
         self.ordertimeout = timedelta(seconds=params[6])
         self.barsize = timedelta(seconds=params[7])
 
+        self.opened = True
 
     def __del__(self):
        pass 
+
+    def open(self):
+        self.opened = True
+        self.start()
+
+    def close(self):
+        self.opened = False
+        sleep(2)
+        self.c.close()
 
     def run(self):
 
@@ -36,10 +46,16 @@ class Strat1(Thread):
 
         # first the new data
         newdata = dict()
-        newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
+
+        val = self.c["mktdata"]["LAST PRICE"]
+
+        while val == None:
+            val = self.c["mktdata"]["LAST PRICE"]
+
+        newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = val
         newdata["start"] = datetime.now()
 
-        while True:
+        while self.opened:
           
             #update the OHLCV
 
@@ -80,61 +96,64 @@ class Strat1(Thread):
                 newdata["k"] = 0
     
             # if we are closed and the price number of sigma is < kdown we buy
-            try:
-                if self.state == "CLOSED" and newdata["k"] < self.kdown:
-                    self.state = "OPENING"
+            # only if enough bars are here
+            if len(self.state) > self.N-1: 
+
+                try:
+                    if self.state == "CLOSED" and newdata["k"] < self.kdown:
+                        self.state = "OPENING"
+                        openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
+                        openingtime = datetime.now()
+                        opentry = 0
+                        print "CLOSED --> OPENING"
+                except Exception as inst:
+                    print inst
+                    self.state = "CLOSED"
+                    pass
+            
+                # if we are opening, and that the position is > 0, it means that we are open
+                if self.state == "OPENING" and self.c["position"] > 0:
+                    self.state = "OPENED"
+                    money = self.pose + self.c["ordervalue"](openorder)
+                    print "OPENING --> OPENED"
+                
+                # if we hit the timeout, cancel it and retry
+                if self.state == "OPENING" and (openingtime + self.ordertimeout) < datetime.now():
+                    self.c.cancel()
                     openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
                     openingtime = datetime.now()
-                    opentry = 0
-                    print "CLOSED --> OPENING"
-            except Exception as inst:
-                print inst
-                self.state = "CLOSED"
-                pass
-            
-            # if we are opening, and that the position is > 0, it means that we are open
-            if self.state == "OPENING" and self.c["position"] > 0:
-                self.state = "OPENED"
-                money = self.pose + self.c["ordervalue"](openorder)
-                print "OPENING --> OPENED"
-                
-            # if we hit the timeout, cancel it and retry
-            if self.state == "OPENING" and (openingtime + self.ordertimeout) < datetime.now():
-                self.c.cancel()
-                openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
-                openingtime = datetime.now()
-                opentry += 1
-                if opentry < 5:
-                    print "OPENING --> OPENING (time out)"
-                else:
-                    self.state = "CLOSED"
-                    print "OPENING --> CLOSED (time out)"
+                    opentry += 1
+                    if opentry < 5:
+                        print "OPENING --> OPENING (time out)"
+                    else:
+                        self.state = "CLOSED"
+                        print "OPENING --> CLOSED (time out)"
 
-            # if we are opened, we leave if: 1) we are > kup, 2) we loose risk% of our pose 
-            if self.state == "OPENED":
+                # if we are opened, we leave if: 1) we are > kup, 2) we loose risk% of our pose 
+                if self.state == "OPENED":
                     
-                if newdata["k"] > self.kup and self.c["upnl"] > 0:
-                    self.state = "CLOSING"
+                    if newdata["k"] > self.kup and self.c["upnl"] > 0:
+                        self.state = "CLOSING"
+                        closeorder = self.c.close(orderty = "LMT")
+                        closingtime = datetime.now()
+                        print "OPENED --> CLOSING (stopgain)"
+
+                    elif self.c["upnl"] < -(self.risk * self.pose):
+                        self.state = "CLOSING"
+                        closeorder = self.c.close(orderty = "LMT")
+                        closingtime = datetime.now()
+                        print "OPENED --> CLOSING (stoploss: " + str(self.c["upnl"]) + " < " + str(- (self.risk * self.pose)) + ")"
+
+                if self.state == "CLOSING" and self.c["position"] == 0:
+                    self.state = "CLOSED"
+                    self.pose = money + self.c["ordervalue"](closeorder)
+                    print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
+
+                if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
+                    self.c.cancel()
                     closeorder = self.c.close(orderty = "LMT")
-                    closingtime = datetime.now()
-                    print "OPENED --> CLOSING (stopgain)"
-
-                elif self.c["upnl"] < -(self.risk * self.pose):
-                    self.state = "CLOSING"
-                    closeorder = self.c.close(orderty = "LMT")
-                    closingtime = datetime.now()
-                    print "OPENED --> CLOSING (stoploss: " + str(self.c["upnl"]) + " < " + str(- (self.risk * self.pose)) + ")"
-
-            if self.state == "CLOSING" and self.c["position"] == 0:
-                self.state = "CLOSED"
-                self.pose = money + self.c["ordervalue"](closeorder)
-                print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
-
-            if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
-                self.c.cancel()
-                closeorder = self.c.close(orderty = "LMT")
-                closingtime = datetime.now()                
-                print "CLOSING --> CLOSING (timeout)"
+                    closingtime = datetime.now()                
+                    print "CLOSING --> CLOSING (timeout)"
 
             # finally we insert the newdata if the bar size is reached
             if datetime.now() > newdata["start"] + self.barsize:
@@ -153,3 +172,4 @@ class Strat1(Thread):
                 newdata["start"] = datetime.now()
 
 
+    
