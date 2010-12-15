@@ -97,7 +97,7 @@ class Strat1(Thread):
     
             # if we are closed and the price number of sigma is < kdown we buy
             # only if enough bars are here
-            if len(self.state) > self.N-1: 
+            if len(self.data) > self.N-1: 
 
                 try:
                     if self.state == "CLOSED" and newdata["k"] < self.kdown:
