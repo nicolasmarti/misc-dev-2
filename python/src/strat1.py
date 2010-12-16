@@ -58,12 +58,12 @@ class Strat1(Thread):
         while self.opened:
           
             #update the OHLCV
-
+            
             newdata["close"] = self.c["mktdata"]["LAST PRICE"]
             if newdata["close"] > newdata["high"]:
                 newdata["high"] = newdata["close"]
 
-            if newdata["close"] > newdata["low"]:
+            if newdata["close"] < newdata["low"]:
                 newdata["low"] = newdata["close"]
 
 
@@ -107,7 +107,9 @@ class Strat1(Thread):
                         opentry = 0
                         print "CLOSED --> OPENING"
                 except Exception as inst:
-                    print inst
+                    print "err in trasition opening: " + str(inst)
+                    print newdata
+                    print (newdata["k"], newdata["close"])
                     self.state = "CLOSED"
                     pass
             
@@ -171,5 +173,6 @@ class Strat1(Thread):
                 newdata["open"] = newdata["high"] = newdata["low"] = newdata["close"] = self.c["mktdata"]["LAST PRICE"]
                 newdata["start"] = datetime.now()
 
-
+                # we ask for a new bar in contract
+                self.c.newbar()
     
