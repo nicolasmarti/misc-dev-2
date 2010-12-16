@@ -138,9 +138,8 @@ class Stock(Thread):
  
         self.lock.release()
 
-    def scale(self, value, mmax, mmin, height):
-        val =  ((float(value) - float(mmin)) / (float(mmax) - float(mmin))) * float(height)
-        #print "(" + str(value) + ", " + str(mmin)+ ", " + str(mmax)+ ", " + str(height) + ")" + " --> " + str(val)
+    def scale(self, value, mmax, mmin):
+        val =  ((float(value) - float(mmin)) / (float(mmax) - float(mmin))) * float(100)
         return val
             
     def toGoogleChart(self):
@@ -178,25 +177,25 @@ class Stock(Thread):
 
 
         for i in a:
-            lows += str(self.scale(self.bars[i]["low"], mmax, mmin, heigth))
+            lows += str(self.scale(self.bars[i]["low"], mmax, mmin))
             if i <> 0:
                 lows += ","
             else:
                 lows += ",-1"
 
-            opens += str(self.scale(self.bars[i]["open"], mmax, mmin, heigth))
+            opens += str(self.scale(self.bars[i]["open"], mmax, mmin))
             if i <> 0:
                 opens += ","
             else:
                 opens += ",-1"
 
-            closes += str(self.scale(self.bars[i]["close"], mmax, mmin, heigth))
+            closes += str(self.scale(self.bars[i]["close"], mmax, mmin))
             if i <> 0:
                 closes += ","
             else:
                 closes += ",-1"
 
-            highs += str(self.scale(self.bars[i]["high"], mmax, mmin, heigth))
+            highs += str(self.scale(self.bars[i]["high"], mmax, mmin))
             if i <> 0:
                 highs += ","
             else:
@@ -218,15 +217,10 @@ class Stock(Thread):
 
         res += "&chm=F,0000FF,0,,20"
 
-        print "google chart: " + res
+        #print "google chart: " + res
 
         return res
 
-#http://chart.apis.google.com/chart?chs=200x125&cht=lc&chd=t0:10,17,12,12,23|19.9,45,47,24,24|40,30,27,39,39|55,63,59,80,80&chm=F,0000FF,0,,20&chxt=y
-
-#http://chart.apis.google.com/chart?chs=1000x125&cht=lc&chd=t0:169.17|169.17|169.19|169.19&chxt=y&chxr=0,169.17,169.19&chm=F,0000FF,0,0:1,20
-
-#http://chart.apis.google.com/chart?chxt=x,y,r&chxr=0,0,500|1,0,200|2,1000,0&cht=lc&chd=s:cEAELFJHHHKUju9uuXUc&chco=76A4FB&chls=2.0&chs=200x125
     def __str__(self):        
         return "Contract"
 
