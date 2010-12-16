@@ -167,6 +167,7 @@ class Strat1(Thread):
                 # we remove elements in the list as they are not needed
                 if len(self.data) > self.N:
                     self.data.pop()
+                    self.c.pop()
 
                 # we create the new bar
                 newdata = dict()
