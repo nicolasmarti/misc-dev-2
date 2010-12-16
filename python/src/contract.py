@@ -25,10 +25,9 @@ import Pyro.constants
 import Pyro.EventService.Clients
 
 
-
 # TODO: implement a + * / --> allow to build a portfolio (can be seen as a stock)
 
-class Stock:
+class Stock(Thread):
 
     def __init__(self, name):
         
@@ -40,15 +39,53 @@ class Stock:
         c.m_symbol = name
         c.m_secType = "STK"
 
+        # ib-tws server connection
         self.con = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
+
+        # get the first contract of the list comming from the details
         self.contract = self.con.reqContractDetails(c)[0].m_summary
         
+        # all data connection stuffs
         self.mktDataId = self.con.reqMktData(self.contract, False)
         self.mktDepthId = self.con.reqMktDepth(self.contract, 10)
         self.mktRTBarId = self.con.reqRTData(self.contract, 5, "MIDPOINT", 0)
 
-
+        # the list of orders
         self.oids = []
+
+        # the list of bars
+        self.bars = []
+
+        # are initializing it (this code come from strat1)
+        newbar = dict ()
+
+        try:
+            val = self["mktdata"]["LAST PRICE"]
+        except:
+            val = None
+
+
+        while val == None:
+            try:
+                val = self["mktdata"]["LAST PRICE"]
+            except:
+                val = None
+
+
+        newbar["open"] = newbar["high"] = newbar["low"] = newbar["close"] = val
+        newbar["start"] = datetime.now()
+        newbar["order"] = []
+
+        self.bars.insert(0, newbar)
+
+        Thread.__init__(self)
+
+        self.daemon = True
+
+        self.loop = True
+        self.lock = Lock()
+        
+        self.start()
 
     def __del__(self):
         
@@ -56,6 +93,140 @@ class Stock:
         self.con.cancelMktDepth(self.MktDepthId)
         self.con.cancelRTData(self.mktRTBarId)
 
+        self.loop = False
+
+    def run(self):
+        
+        while self.loop:
+            sleep(1)
+            
+            self.lock.acquire()
+
+            self.bars[0]["close"] = self["mktdata"]["LAST PRICE"]
+            if self.bars[0]["close"] > self.bars[0]["high"]:
+                self.bars[0]["high"] = self.bars[0]["close"]
+
+            if self.bars[0]["close"] < self.bars[0]["low"]:
+                self.bars[0]["low"] = self.bars[0]["close"]
+
+            self.lock.release()
+            
+    def newbar(self):
+
+        self.lock.acquire()
+
+        newbar = dict()
+
+        try:
+            val = self["mktdata"]["LAST PRICE"]
+        except:
+            val = None
+
+
+        while val == None:
+            try:
+                val = self["mktdata"]["LAST PRICE"]
+            except:
+                val = None
+       
+        newbar["open"] = newbar["high"] = newbar["low"] = newbar["close"] = val
+        newbar["start"] = datetime.now()
+        newbar["order"] = []
+        self.bars[0]["stop"] = newbar["start"]
+        
+        self.bars.insert(0, newbar)
+ 
+        self.lock.release()
+
+    def scale(self, value, mmax, mmin, height):
+        val =  ((float(value) - float(mmin)) / (float(mmax) - float(mmin))) * float(height)
+        #print "(" + str(value) + ", " + str(mmin)+ ", " + str(mmax)+ ", " + str(height) + ")" + " --> " + str(val)
+        return val
+            
+    def toGoogleChart(self):
+
+        res = "http://chart.apis.google.com/chart?"
+
+        self.lock.acquire()
+
+        width = 1000
+        heigth = 300
+
+        # google format: LOCH
+        a = range(0, min(len(self.bars), 10))
+        a.reverse()
+
+        mmax = None
+        mmin =None
+
+        lows = "-1,"
+        opens = "-1,"
+        closes = "-1,"
+        highs = "-1,"
+
+        for i in a:
+            
+            if mmax == None:
+                mmax = self.bars[i]["high"]
+            else:
+                mmax = max(mmax, self.bars[i]["high"])
+
+            if mmin == None:
+                mmin = self.bars[i]["low"]
+            else:
+                mmin = min(mmin, self.bars[i]["low"])
+
+
+        for i in a:
+            lows += str(self.scale(self.bars[i]["low"], mmax, mmin, heigth))
+            if i <> 0:
+                lows += ","
+            else:
+                lows += ",-1"
+
+            opens += str(self.scale(self.bars[i]["open"], mmax, mmin, heigth))
+            if i <> 0:
+                opens += ","
+            else:
+                opens += ",-1"
+
+            closes += str(self.scale(self.bars[i]["close"], mmax, mmin, heigth))
+            if i <> 0:
+                closes += ","
+            else:
+                closes += ",-1"
+
+            highs += str(self.scale(self.bars[i]["high"], mmax, mmin, heigth))
+            if i <> 0:
+                highs += ","
+            else:
+                highs += ",-1"
+
+        
+
+            
+            
+        self.lock.release()
+
+        res += "&chxt=x,y"
+
+        res += "&chxr=1," + str(mmin) + "," + str(mmax)
+
+        res += "&chs=" + str(width)+ "x" + str(heigth)  
+
+        res += "&cht=lc&chd=t0:" + lows + "|" + opens + "|" + closes + "|" + highs
+
+        res += "&chm=F,0000FF,0,,20"
+
+        print "google chart: " + res
+
+        return res
+
+#http://chart.apis.google.com/chart?chs=200x125&cht=lc&chd=t0:10,17,12,12,23|19.9,45,47,24,24|40,30,27,39,39|55,63,59,80,80&chm=F,0000FF,0,,20&chxt=y
+
+#http://chart.apis.google.com/chart?chs=1000x125&cht=lc&chd=t0:169.17|169.17|169.19|169.19&chxt=y&chxr=0,169.17,169.19&chm=F,0000FF,0,0:1,20
+
+#http://chart.apis.google.com/chart?chxt=x,y,r&chxr=0,0,500|1,0,200|2,1000,0&cht=lc&chd=s:cEAELFJHHHKUju9uuXUc&chco=76A4FB&chls=2.0&chs=200x125
     def __str__(self):        
         return "Contract"
 
@@ -80,6 +251,7 @@ class Stock:
                 if timeout == None:
                     oid = self.con.placeOrder(self.contract, order, None)
                     self.oids.append(oid)
+                    
                     return oid
                 else:
                     oid = self.con.placeOrder(self.contract, order, timedelta(seconds=timeout))
