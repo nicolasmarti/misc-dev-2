@@ -138,6 +138,12 @@ class Stock(Thread):
  
         self.lock.release()
 
+    def pop(self):
+        self.lock.acquire()
+        self.bars.pop()
+        self.lock.release()
+
+
     def scale(self, value, mmax, mmin):
         val =  ((float(value) - float(mmin)) / (float(mmax) - float(mmin))) * float(100)
         return val
