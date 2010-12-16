@@ -36,6 +36,7 @@ class Strat1(Thread):
 
     def close(self):
         self.opened = False
+        self.state = "CLOSED"
         sleep(2)
         self.c.close()
 
