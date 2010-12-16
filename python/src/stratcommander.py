@@ -46,10 +46,17 @@ def loop(username, passwd):
     feed = gd_client.GetWorksheetsFeed(curr_key)
 
     for i, entry in enumerate(feed.entry):
-        if entry.title.text == "StratCommander":
-            index = i
+      if entry.title.text == "Rimocon":
+        index = i
     id_parts = feed.entry[index].id.text.split('/')
     curr_wksht_id = id_parts[len(id_parts) - 1]
+
+    for i, entry in enumerate(feed.entry):
+      if entry.title.text == "charts":
+        index = i
+    id_parts = feed.entry[index].id.text.split('/')
+    curr_wksht_id2 = id_parts[len(id_parts) - 1]
+
 
     strats = []
 
@@ -136,9 +143,16 @@ def loop(username, passwd):
                                  col=9, 
                                  inputValue=str(((entry["strat"].pose - entry["strat"].originpose)/entry["strat"].originpose) * 100.0) + "%", 
                                  key=curr_key, wksht_id=curr_wksht_id)
+
+          gd_client.UpdateCell(row=i+2, 
+                                 col=1, 
+                                 inputValue=entry["strat"].c.toGoogleChart(), 
+                                 key=curr_key, wksht_id=curr_wksht_id2)
+
           
         # we should look for further strat / modif of the other
-        except:
+        except Exception as inst:
+          print "exception: " + str(inst)
           pass
 
     return None
