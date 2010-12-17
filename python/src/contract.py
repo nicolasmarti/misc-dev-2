@@ -378,20 +378,20 @@ class Stock(Thread):
                             elif filled == upnl[0]:
                                 rpnl += filled * (avgPrice - upnl[1])
                                 upnl[0] = 0
-                            elif mul <= 0 and upnl <= 0:
-                                # here we BUY and or upnl is short
-                                if filled > -upnl[0]:
-                                    # we buy more than we are short
-                                    rpnl += -upnl[0] * (upnl[1] - avgPrice)
-                                    upnl[0] = filled + upnl[0]
-                                    upnl[1] = avgPrice
-                                elif filled < -upnl[0]:
-                                    # we buy less then we are short
-                                    rpnl += filled * (upnl[1] - avgPrice)
-                                    upnl[0] = filled + upnl[0]
-                                elif filled == upnl[0]:
-                                    rpnl += -filled * (upnl[1] - avgPrice)
-                                    upnl[0] = 0
+                        elif mul <= 0 and upnl <= 0:
+                            # here we BUY and or upnl is short
+                            if filled > -upnl[0]:
+                                # we buy more than we are short
+                                rpnl += -upnl[0] * (upnl[1] - avgPrice)
+                                upnl[0] = filled + upnl[0]
+                                upnl[1] = avgPrice
+                            elif filled < -upnl[0]:
+                                # we buy less then we are short
+                                rpnl += filled * (upnl[1] - avgPrice)
+                                upnl[0] = filled + upnl[0]
+                            elif filled == upnl[0]:
+                                rpnl += -filled * (upnl[1] - avgPrice)
+                                upnl[0] = 0
                         elif mul <= 0 and upnl[0] >= 0:
                             # we buy stock and are already long
                             if (filled + upnl[0]) == 0:
