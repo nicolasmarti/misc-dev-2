@@ -174,7 +174,7 @@ class Stock(Thread):
         heigth = 300
 
         # google format: LOCH
-        a = range(0, min(len(self.bars), 10))
+        a = range(0, min(len(self.bars), 30))
         a.reverse()
 
         mmax = None
