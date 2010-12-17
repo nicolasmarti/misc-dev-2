@@ -152,7 +152,6 @@ def loop(username, passwd):
           
         # we should look for further strat / modif of the other
         except Exception as inst:
-          print "exception: " + str(inst)
           pass
 
     return None
@@ -161,8 +160,7 @@ def loop(username, passwd):
 
 if __name__ == '__main__':
   if not username:
-    username = raw_input('Spreadsheets API | Text DB Tests\n'
-                         'Please enter your username: ')
+    username = raw_input('Please enter your username: ')
   if not password:
     password = getpass.getpass()  
   loop(username, password)
