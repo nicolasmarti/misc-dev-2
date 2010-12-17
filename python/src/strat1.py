@@ -31,14 +31,16 @@ class Strat1(Thread):
        pass 
 
     def open(self):
+        self.restart()
         self.opened = True
         self.start()
+
 
     def close(self):
         self.opened = False
         self.state = "CLOSED"
         sleep(2)
-        self.c.close()
+        self.c.stop()
 
     def run(self):
 
