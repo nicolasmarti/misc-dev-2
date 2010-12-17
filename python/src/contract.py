@@ -407,7 +407,7 @@ class Stock(Thread):
                         upnl[0] = -filled + upnl[0]
 
             if key == "position": return upnl[0]
-            if key == "rpnl": return pnl
+            if key == "rpnl": return rpnl
             if key == "upnl": 
                 if upnl[0] < 0:
                     return - upnl[0] * (upnl[1] - self.con.getMktData(self.mktDataId)["ASK PRICE"])
