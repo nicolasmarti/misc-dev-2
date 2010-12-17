@@ -95,6 +95,16 @@ class Stock(Thread):
 
         self.loop = False
 
+    def stop(self):
+        self.loop = False
+        self.closepending()
+
+    def restart(self):
+        self.loop = True
+        sleep(1)
+        self.bars = []
+        self.start()
+
     def run(self):
         
         while self.loop:
@@ -143,6 +153,11 @@ class Stock(Thread):
         self.bars.pop()
         self.lock.release()
 
+    def closepending(self):
+        for i in self.oids:
+            if len(self.con.orderStatus(i)[1]) > 2:
+                if self.con.orderStatus(i)[1][2] > 0:
+                    self.con.cancelOrder(i)
 
     def scale(self, value, mmax, mmin):
         val =  ((float(value) - float(mmin)) / (float(mmax) - float(mmin))) * float(100)
