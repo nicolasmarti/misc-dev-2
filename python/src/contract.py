@@ -354,57 +354,60 @@ class Stock(Thread):
             rpnl = 0.0
             upnl = [0, 0.0]
             for i in self.oids:
-                if len(self.con.orderStatus(i)[1]) > 2:
-                    if self.con.orderStatus(i)[0][1].m_action == "BUY": 
-                        mul = -1
-                    else:
-                        mul = 1
-                    filled = self.con.orderStatus(i)[1][2]
-                    avgPrice = self.con.orderStatus(i)[1][4]
+                try:
+                    if len(self.con.orderStatus(i)[1]) > 2:
+                        if self.con.orderStatus(i)[0][1].m_action == "BUY": 
+                            mul = -1
+                        else:
+                            mul = 1
+                        filled = self.con.orderStatus(i)[1][2]
+                        avgPrice = self.con.orderStatus(i)[1][4]
 
-                    # case analysis: 
-                    if mul >= 0 and upnl[0] >= 0:
-                        # here we SELL and or upnl is long
-                        if filled > upnl[0]:
-                            # we sold more than we own
-                            rpnl += upnl[0] * (avgPrice - upnl[1])
-                            upnl[0] = upnl[0] - filled
-                            upnl[1] = avgPrice
-                        elif filled < upnl[0]:
-                            # we sold less than we own
-                            rpnl += filled * (avgPrice - upnl[1])
-                            upnl[0] = upnl[0] - filled
-                        elif filled == upnl[0]:
-                            rpnl += filled * (avgPrice - upnl[1])
-                            upnl[0] = 0
-                    elif mul <= 0 and upnl <= 0:
-                        # here we BUY and or upnl is short
-                        if filled > -upnl[0]:
-                            # we buy more than we are short
-                            rpnl += -upnl[0] * (upnl[1] - avgPrice)
+                        # case analysis: 
+                        if mul >= 0 and upnl[0] >= 0:
+                            # here we SELL and or upnl is long
+                            if filled > upnl[0]:
+                                # we sold more than we own
+                                rpnl += upnl[0] * (avgPrice - upnl[1])
+                                upnl[0] = upnl[0] - filled
+                                upnl[1] = avgPrice
+                            elif filled < upnl[0]:
+                                # we sold less than we own
+                                rpnl += filled * (avgPrice - upnl[1])
+                                upnl[0] = upnl[0] - filled
+                            elif filled == upnl[0]:
+                                rpnl += filled * (avgPrice - upnl[1])
+                                upnl[0] = 0
+                            elif mul <= 0 and upnl <= 0:
+                                # here we BUY and or upnl is short
+                                if filled > -upnl[0]:
+                                    # we buy more than we are short
+                                    rpnl += -upnl[0] * (upnl[1] - avgPrice)
+                                    upnl[0] = filled + upnl[0]
+                                    upnl[1] = avgPrice
+                                elif filled < -upnl[0]:
+                                    # we buy less then we are short
+                                    rpnl += filled * (upnl[1] - avgPrice)
+                                    upnl[0] = filled + upnl[0]
+                                elif filled == upnl[0]:
+                                    rpnl += -filled * (upnl[1] - avgPrice)
+                                    upnl[0] = 0
+                        elif mul <= 0 and upnl[0] >= 0:
+                            # we buy stock and are already long
+                            if (filled + upnl[0]) == 0:
+                                upnl[1] = 0.0
+                            else:
+                                upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
                             upnl[0] = filled + upnl[0]
-                            upnl[1] = avgPrice
-                        elif filled < -upnl[0]:
-                            # we buy less then we are short
-                            rpnl += filled * (upnl[1] - avgPrice)
-                            upnl[0] = filled + upnl[0]
-                        elif filled == upnl[0]:
-                            rpnl += -filled * (upnl[1] - avgPrice)
-                            upnl[0] = 0
-                    elif mul <= 0 and upnl[0] >= 0:
-                        # we buy stock and are already long
-                        if (filled + upnl[0]) == 0:
-                            upnl[1] = 0.0
-                        else:
-                            upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
-                        upnl[0] = filled + upnl[0]
-                    elif mul >= 0 and upnl[0] <= 0:
-                        # we sell stock and are already short
-                        if (filled - upnl[0]) == 0:
-                            upnl[1] = 0.0
-                        else:
-                            upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
-                        upnl[0] = -filled + upnl[0]
+                        elif mul >= 0 and upnl[0] <= 0:
+                            # we sell stock and are already short
+                            if (filled - upnl[0]) == 0:
+                                upnl[1] = 0.0
+                            else:
+                                upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
+                            upnl[0] = -filled + upnl[0]
+                except:
+                    pass
 
             if key == "position": return upnl[0]
             if key == "rpnl": return rpnl
