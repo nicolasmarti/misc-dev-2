@@ -98,6 +98,7 @@ class Stock(Thread):
     def stop(self):
         self.loop = False
         self.closepending()
+        self.close()
 
     def restart(self):
         self.loop = True
@@ -349,8 +350,8 @@ class Stock(Thread):
                 sleep(1)
                 return ordervalue(i)
             return ordervalue
-        elif key == "pnl" or key == "upnl" or key == "position" or key == "value":
-            pnl = 0.0
+        elif key == "rpnl" or key == "upnl" or key == "position" or key == "value":
+            rpnl = 0.0
             upnl = [0, 0.0]
             for i in self.oids:
                 if len(self.con.orderStatus(i)[1]) > 2:
@@ -366,29 +367,29 @@ class Stock(Thread):
                         # here we SELL and or upnl is long
                         if filled > upnl[0]:
                             # we sold more than we own
-                            pnl += upnl[0] * (avgPrice - upnl[1])
+                            rpnl += upnl[0] * (avgPrice - upnl[1])
                             upnl[0] = upnl[0] - filled
                             upnl[1] = avgPrice
                         elif filled < upnl[0]:
                             # we sold less than we own
-                            pnl += filled * (avgPrice - upnl[1])
+                            rpnl += filled * (avgPrice - upnl[1])
                             upnl[0] = upnl[0] - filled
                         elif filled == upnl[0]:
-                            pnl += filled * (avgPrice - upnl[1])
+                            rpnl += filled * (avgPrice - upnl[1])
                             upnl[0] = 0
                     elif mul <= 0 and upnl <= 0:
                         # here we BUY and or upnl is short
                         if filled > -upnl[0]:
                             # we buy more than we are short
-                            pnl += -upnl[0] * (upnl[1] - avgPrice)
+                            rpnl += -upnl[0] * (upnl[1] - avgPrice)
                             upnl[0] = filled + upnl[0]
                             upnl[1] = avgPrice
                         elif filled < -upnl[0]:
                             # we buy less then we are short
-                            pnl += filled * (upnl[1] - avgPrice)
+                            rpnl += filled * (upnl[1] - avgPrice)
                             upnl[0] = filled + upnl[0]
                         elif filled == upnl[0]:
-                            pnl += -filled * (upnl[1] - avgPrice)
+                            rpnl += -filled * (upnl[1] - avgPrice)
                             upnl[0] = 0
                     elif mul <= 0 and upnl[0] >= 0:
                         # we buy stock and are already long
@@ -406,7 +407,7 @@ class Stock(Thread):
                         upnl[0] = -filled + upnl[0]
 
             if key == "position": return upnl[0]
-            if key == "pnl": return pnl
+            if key == "rpnl": return pnl
             if key == "upnl": 
                 if upnl[0] < 0:
                     return - upnl[0] * (upnl[1] - self.con.getMktData(self.mktDataId)["ASK PRICE"])

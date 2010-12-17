@@ -131,12 +131,12 @@ def loop(username, passwd):
           
           gd_client.UpdateCell(row=i+2, 
                                col=7, 
-                               inputValue=str(entry["strat"].c["pnl"]), 
+                               inputValue=str(entry["strat"].c["prnl"]), 
                                key=curr_key, wksht_id=curr_wksht_id)
           
           gd_client.UpdateCell(row=i+2, 
                                col=8, 
-                               inputValue=str(entry["strat"].c["pnl"] + entry["strat"].c["upnl"]), 
+                               inputValue=str(entry["strat"].c["rpnl"] + entry["strat"].c["upnl"]), 
                                key=curr_key, wksht_id=curr_wksht_id)
 
           gd_client.UpdateCell(row=i+2, 
