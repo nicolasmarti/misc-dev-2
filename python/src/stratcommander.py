@@ -139,10 +139,10 @@ def loop(username, passwd):
                                inputValue=str(entry["strat"].c["rpnl"] + entry["strat"].c["upnl"]), 
                                key=curr_key, wksht_id=curr_wksht_id)
 
-          gd_client.UpdateCell(row=i+2, 
-                                 col=9, 
-                                 inputValue=str(((entry["strat"].pose - entry["strat"].originpose)/entry["strat"].originpose) * 100.0) + "%", 
-                                 key=curr_key, wksht_id=curr_wksht_id)
+          #gd_client.UpdateCell(row=i+2, 
+          #                       col=9, 
+          #                       inputValue=str(((entry["strat"].pose - entry["strat"].originpose)/entry["strat"].originpose) * 100.0) + "%", 
+          #                       key=curr_key, wksht_id=curr_wksht_id)
 
           gd_client.UpdateCell(row=i+2, 
                                  col=1, 
