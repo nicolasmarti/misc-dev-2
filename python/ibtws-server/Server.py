@@ -567,6 +567,8 @@ class ServerConnection:
 
     def handler3(self, msg):
         print "connectionClosed: " + str(msg)
+        self.m_con.connect()
+        
 
     def handler4(self, msg):
         print "currentTime: " + str(msg)
