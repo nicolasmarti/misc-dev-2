@@ -9,14 +9,38 @@ class Indicator:
     def value(self, bars):
         return None
 
+    def croseup(self, other):
+        def value(bars):
+            try:
+                moldvalue = self.value(bars[1:])
+                mnewvalue = self.value(bars)
+                otheroldvalue = other.value(bars[1:])
+                othernewvalue = other.value(bars)
+                return (moldvalue < otheroldvalue) and (mnewvalue > othernewvalue)
+            except:
+                return None
+        return value
+
+    def crosedown(self, other):
+        def value(bars):
+            try:
+                moldvalue = self.value(bars[1:])
+                mnewvalue = self.value(bars)
+                otheroldvalue = other.value(bars[1:])
+                othernewvalue = other.value(bars)
+                return (moldvalue > otheroldvalue) and (mnewvalue < othernewvalue)
+            except:
+                return None
+        return value
+
     def __lt__(self, other):
         def value(bars):
-            myvalue = self.value(bars)
-            if myvalue == None: return None
-            othervalue = other.value(bars)
-            if othervalue == None: return None
-            
-            return myvalue < othervalue
+            try:
+                myvalue = self.value(bars)
+                othervalue = other.value(bars)
+                return myvalue < othervalue
+            except:
+                return None
         return value
     #all the other alike
         
