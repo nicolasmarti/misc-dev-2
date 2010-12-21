@@ -8,10 +8,13 @@ class Strat1(Thread):
 
     # params = [stck, N, kdown, kup, pose, risk, ordertimout, barsize]
     def __init__(self, params):
+
         self.c = Stock(params[0])
         self.state = "CLOSED"
         self.data = []
+
         Thread.__init__(self)
+
         self.daemon = True
 
         # strat param
@@ -44,8 +47,7 @@ class Strat1(Thread):
 
     def run(self):
 
-        sleep(5)
-        #print "Start"
+        print "Start"
 
         # first the new data
         newdata = dict()

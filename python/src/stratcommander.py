@@ -63,7 +63,7 @@ def loop(username, passwd):
     # loop of results
     
     while True:
-      sleep(10)
+      sleep(3)
 
       try:
         # read the configuration
@@ -86,30 +86,36 @@ def loop(username, passwd):
 
         # manage the strategies
         for j, i in enumerate(strats):
+
+          print "slot " + str(j) + ": " + str(i)
           
           # create the strat if not yet created, and activated
           if i["stratname"] == "strat1" and (not "strat" in i) and i["activated"] == "Y":
+            print "starting strat"
             # eval parameters
             params = eval(i["params"])
             # create the strat
             strat = Strat1(params)
             # input it into the dict
             i["strat"] = strat
-            i["strat"].start()
             i["strat"].daemon = True
+            i["strat"].start()
             print "activate slot: " + str(j)
 
           # if deactivated, and a strat is already running: stop it
           if "strat" in i and i["activated"] <> "Y" and i["strat"].opened == True:
+            print "deactivating strat"
             i["strat"].close()
             print "deactivate slot: " + str(j)
 
           # if activated, and a strat is stopped: run it
           if "strat" in i and i["activated"] == "Y" and i["strat"].opened == False:
+            print "reactivating strat"
             i["strat"].open()
             print "reactivate slot: " + str(j)
 
-      except:
+      except Exception as inst:
+        print "stratcommander error: " + str(inst)
         pass
 
       # show the results
@@ -163,6 +169,7 @@ def loop(username, passwd):
 
         # we should look for further strat / modif of the other
         except Exception as inst:
+          print "output loop: " + str(inst)
           pass
 
     return None

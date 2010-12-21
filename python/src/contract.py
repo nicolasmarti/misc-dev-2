@@ -397,14 +397,14 @@ class Stock(Thread):
                             if (filled + upnl[0]) == 0:
                                 upnl[1] = 0.0
                             else:
-                                upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / (filled + upnl[0])
+                                upnl[1] = (filled * avgPrice + upnl[0] * upnl[1]) / float(filled + upnl[0])
                             upnl[0] = filled + upnl[0]
                         elif mul >= 0 and upnl[0] <= 0:
                             # we sell stock and are already short
                             if (filled - upnl[0]) == 0:
                                 upnl[1] = 0.0
                             else:
-                                upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / (filled - upnl[0])
+                                upnl[1] = (filled * avgPrice + -upnl[0] * upnl[1]) / float(filled - upnl[0])
                             upnl[0] = -filled + upnl[0]
                 except:
                     pass
