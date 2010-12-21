@@ -96,6 +96,7 @@ def loop(username, passwd):
             # input it into the dict
             i["strat"] = strat
             i["strat"].start()
+            i["strat"].daemon = True
             print "activate slot: " + str(j)
 
           # if deactivated, and a strat is already running: stop it
@@ -114,29 +115,37 @@ def loop(username, passwd):
       # show the results
       for i, entry in enumerate(strats):
         try:
+
+          state = entry["strat"].state
+          position = entry["strat"].c["position"]
+          upnl = entry["strat"].c["upnl"]
+          rpnl = entry["strat"].c["rpnl"]
+          pnl = upnl + rpnl
+
           gd_client.UpdateCell(row=i+2, 
                                col=4, 
-                               inputValue=str(entry["strat"].state), 
+                               inputValue=str(state), 
                                key=curr_key, wksht_id=curr_wksht_id)
-          
+
+
           gd_client.UpdateCell(row=i+2, 
                                col=5, 
-                               inputValue=str(entry["strat"].c["position"]), 
+                               inputValue=str(position), 
                                key=curr_key, wksht_id=curr_wksht_id)
-          
+
           gd_client.UpdateCell(row=i+2, 
                                col=6, 
-                               inputValue=str(entry["strat"].c["upnl"]), 
+                               inputValue=str(upnl), 
                                key=curr_key, wksht_id=curr_wksht_id)
           
           gd_client.UpdateCell(row=i+2, 
                                col=7, 
-                               inputValue=str(entry["strat"].c["rpnl"]), 
+                               inputValue=str(rpnl), 
                                key=curr_key, wksht_id=curr_wksht_id)
           
           gd_client.UpdateCell(row=i+2, 
                                col=8, 
-                               inputValue=str(entry["strat"].c["rpnl"] + entry["strat"].c["upnl"]), 
+                               inputValue=str(pnl), 
                                key=curr_key, wksht_id=curr_wksht_id)
 
           #gd_client.UpdateCell(row=i+2, 
@@ -150,6 +159,8 @@ def loop(username, passwd):
                                  key=curr_key, wksht_id=curr_wksht_id2)
 
           
+          print "strat " + str(i) + ": state = " + str(state) + ", position = " + str(position) + ", upnl = " + str(upnl) + ", rpnl = " + str(rpnl) + ", pnl = " + str(pnl)
+
         # we should look for further strat / modif of the other
         except Exception as inst:
           pass
