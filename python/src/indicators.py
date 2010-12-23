@@ -18,7 +18,7 @@ class Indicator:
                 othernewvalue = other.value(bars)
                 return (moldvalue < otheroldvalue) and (mnewvalue > othernewvalue)
             except:
-                return None
+                return False
         return value
 
     def crosedown(self, other):
@@ -30,7 +30,7 @@ class Indicator:
                 othernewvalue = other.value(bars)
                 return (moldvalue > otheroldvalue) and (mnewvalue < othernewvalue)
             except:
-                return None
+                return False
         return value
 
     def __lt__(self, other):
@@ -40,7 +40,7 @@ class Indicator:
                 othervalue = other.value(bars)
                 return myvalue < othervalue
             except:
-                return None
+                return False
         return value
     #all the other alike
         
