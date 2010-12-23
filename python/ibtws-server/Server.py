@@ -592,104 +592,186 @@ class ServerInterface(Pyro.core.ObjBase):
     # flag = true: ignite the flow of data
     # flag = false: stop the flow of data
     def accountStatus(self, flag):
-        self.m_config["con"].reqAccountUpdates(flag, '')
-        return
+        try:
+            self.m_config["con"].reqAccountUpdates(flag, '')
+            return
+        except:
+            return
 
     def getNextId(self):
-        return self.m_config["NextId"].getNextId()
+        try:
+            return self.m_config["NextId"].getNextId()
+        except:
+            return
 
     # order
     def placeOrder(self, contract, order, timeout):
-        return self.m_config["Order"].placeOrder(contract, order, timeout)
+        try:
+            return self.m_config["Order"].placeOrder(contract, order, timeout)
+        except:
+            return
 
     def orderStatus(self, oid):
-        return self.m_config["Order"].orderStatus(oid)
+        try:
+            return self.m_config["Order"].orderStatus(oid)
+        except:
+            return
 
     def cancelOrder(self, oid):
-        self.m_config["con"].cancelOrder(oid)
+        try:
+            self.m_config["con"].cancelOrder(oid)
+        except:
+            return
 
     # scan
     def scanMkt(self, scanInfo):
-        return self.m_config["Scanner"].mktScan(scanInfo)
+        try:
+            return self.m_config["Scanner"].mktScan(scanInfo)
+        except:
+            return
 
     def scanParam(self):
-        self.m_config["con"].reqScannerParameters()
+        try:
+            self.m_config["con"].reqScannerParameters()
+        except:
+            return
 
     # mktData
     def reqMktData(self, contract, oneshot):
-        return self.m_config["MktData"].reqMktData(contract, oneshot)
+        try:
+            return self.m_config["MktData"].reqMktData(contract, oneshot)
+        except:
+            return
 
     def cancelMktData(self, dataid):
-        self.m_config["MktData"].cancelMktData(dataid)
+        try:
+            self.m_config["MktData"].cancelMktData(dataid)
+        except:
+            return
 
     def getMktData(self, dataid):
-        return self.m_config["MktData"].getMktData(dataid)
+        try:
+            return self.m_config["MktData"].getMktData(dataid)
+        except:
+            return
 
     # mktDepth
     def reqMktDepth(self, contract, numrows):
-        return self.m_config["MktDepth"].reqMktDepth(contract, numrows)
+        try:
+            return self.m_config["MktDepth"].reqMktDepth(contract, numrows)
+        except:
+            return
 
     def cancelMktDepth(self, dataid):
-        self.m_config["MktDepth"].cancelMktDepth(dataid)
+        try:
+            self.m_config["MktDepth"].cancelMktDepth(dataid)
+        except:
+            return
 
     def getMktDepth(self, dataid):
-        return self.m_config["MktDepth"].getMktDepth(dataid)
+        try:
+            return self.m_config["MktDepth"].getMktDepth(dataid)
+        except:
+            return
 
     # contractDetails
     
     def reqContractDetails(self, contract):
-        dataid = self.m_config["ContractDetails"].reqContractDetails(contract)
-        return self.m_config["ContractDetails"].getContractDetails(dataid)
+        try:
+            dataid = self.m_config["ContractDetails"].reqContractDetails(contract)
+            return self.m_config["ContractDetails"].getContractDetails(dataid)
+        except:
+            return
 
     # news
     def reqNewsBulletins(self, allMsgs):
-        self.m_config["News"].reqNewsBulletins(allMsgs)
+        try:
+            self.m_config["News"].reqNewsBulletins(allMsgs)
+        except:
+            return
 
     def cancelNewsBulletins(self):
-        self.m_config["News"].cancelNewsBulletins()
+        try:
+            self.m_config["News"].cancelNewsBulletins()
+        except:
+            return
 
     # historical
     def reqHistData(self, contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate):
-        return self.m_config["HistData"].reqHistData(contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate)
+        try:
+            return self.m_config["HistData"].reqHistData(contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate)
+        except:
+            return
+
 
     def cancelHistData(self, dataid):
-        return self.m_config["HistData"].cancelHistData(dataid)
+        try:
+            return self.m_config["HistData"].cancelHistData(dataid)
+        except:
+            return
 
     def getHistData(self, dataid):
-        return self.m_config["HistData"].getHistData(dataid)
+        try:
+            return self.m_config["HistData"].getHistData(dataid)
+        except:
+            return
 
     # RT
     def reqRTData(self, contract, barSize, whatToShow, useRTH):
-        return self.m_config["RTData"].reqRTData(contract, barSize, whatToShow, useRTH)
+        try:
+            return self.m_config["RTData"].reqRTData(contract, barSize, whatToShow, useRTH)
+        except:
+            return
 
     def cancelRTData(self, dataid):
-        return self.m_config["RTData"].cancelRTData(dataid)
+        try:
+            return self.m_config["RTData"].cancelRTData(dataid)
+        except:
+            return
 
     def getRTData(self, dataid):
-        return self.m_config["RTData"].getRTData(dataid)
+        try:
+            return self.m_config["RTData"].getRTData(dataid)
+        except:
+            return
 
     # Fundamental
     def reqFundamentalData(self, contract, reportType):
-        return self.m_config["FundamentalData"].reqFundamentalData(contract, reportType)
+        try:
+            return self.m_config["FundamentalData"].reqFundamentalData(contract, reportType)
+        except:
+            return
 
     def cancelFundamentalData(self, dataid):
-        return self.m_config["FundamentalData"].cancelFundamentalData(dataid)
+        try:
+            return self.m_config["FundamentalData"].cancelFundamentalData(dataid)
+        except:
+            return
 
     def getFundamentalData(self, dataid):
-        return self.m_config["FundamentalData"].getFundamentalData(dataid)
+        try:
+            return self.m_config["FundamentalData"].getFundamentalData(dataid)
+        except:
+            return
 
     # ExecutionDetails
     
     def reqExecutions(self):
-        dataid = self.m_config["ExecutionDetails"].reqExecutions(ExecutionFilter())
-        return self.m_config["ExecutionDetails"].getExecutionDetails(dataid)
+        try:
+            dataid = self.m_config["ExecutionDetails"].reqExecutions(ExecutionFilter())
+            return self.m_config["ExecutionDetails"].getExecutionDetails(dataid)
+        except:
+            return
 
     # Exit
 
     def exit(self):
-        self.m_config["Order"].stop()
-        self.m_config["daemon"].disconnect(self)
-        os._exit(0)
+        try:
+            self.m_config["Order"].stop()
+            self.m_config["daemon"].disconnect(self)
+            os._exit(0)
+        except:
+            return
 
 
 # initialization

@@ -12,4 +12,7 @@ from datetime import *
 
 o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 
-o.exit()
+try:
+    o.exit()
+except:
+    pass
