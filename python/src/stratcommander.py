@@ -21,6 +21,7 @@ username = ''
 password = ''
 
 from strat1 import Strat1
+from strat2 import Strat2
 
 def loop(username, passwd):
 
@@ -63,7 +64,6 @@ def loop(username, passwd):
     # loop of results
     
     while True:
-      sleep(3)
 
       try:
         # read the configuration
@@ -96,6 +96,19 @@ def loop(username, passwd):
             params = eval(i["params"])
             # create the strat
             strat = Strat1(params)
+            # input it into the dict
+            i["strat"] = strat
+            i["strat"].daemon = True
+            i["strat"].start()
+            print "activate slot: " + str(j)
+
+          # create the strat if not yet created, and activated
+          if i["stratname"] == "strat2" and (not "strat" in i) and i["activated"] == "Y":
+            print "starting strat"
+            # eval parameters
+            params = eval(i["params"])
+            # create the strat
+            strat = Strat2(params)
             # input it into the dict
             i["strat"] = strat
             i["strat"].daemon = True

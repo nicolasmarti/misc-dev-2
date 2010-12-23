@@ -25,7 +25,7 @@ class Strat1(Thread):
         self.pose = float(params[4])
         self.risk = float(params[5])
 
-        self.ordertimeout = timedelta(seconds=params[6])
+        self.ordertimeout = seconds=params[6]
         self.barsize = timedelta(seconds=params[7])
 
         self.opened = True
@@ -107,10 +107,10 @@ class Strat1(Thread):
                 try:
                     if self.state == "CLOSED" and newdata["k"] < self.kdown:
                         self.state = "OPENING"
-                        openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
+                        openorder = self.c.order(quantity = int(self.pose / newdata["close"]))
                         openingtime = datetime.now()
                         opentry = 0
-                        #print "CLOSED --> OPENING"
+                        #print "CLOSED --> OPENING ( k = " + str(newdata["k"]) + ")"
                 except Exception as inst:
                     print "err in transition opening: " + str(inst)
                     print newdata
@@ -121,17 +121,16 @@ class Strat1(Thread):
                 # if we are opening, and that the position is > 0, it means that we are open
                 if self.state == "OPENING" and self.c["position"] > 0:
                     self.state = "OPENED"                    
-                    #print "OPENING --> OPENED"
+                    #print "OPENING --> OPENED ( position = " + str(self.c["position"]) +")"
                 
                 # if we hit the timeout, cancel it and retry
-                if self.state == "OPENING" and (openingtime + self.ordertimeout) < datetime.now():
+                if self.state == "OPENING" and (openingtime + timedelta(self.ordertimeout)) < datetime.now():
                     self.c.cancel()
-                    openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
-                    openingtime = datetime.now()
                     opentry += 1
                     if opentry < 5:
                         #print "OPENING --> OPENING (time out)"
-                        pass
+                        openorder = self.c.order(quantity = int(self.pose / newdata["close"]))
+                        openingtime = datetime.now()
                     else:
                         self.state = "CLOSED"
                         #print "OPENING --> CLOSED (time out)"
@@ -141,13 +140,13 @@ class Strat1(Thread):
                     
                     if newdata["k"] > self.kup and self.c["upnl"] > 0:
                         self.state = "CLOSING"
-                        closeorder = self.c.close(orderty = "LMT")
+                        closeorder = self.c.close()
                         closingtime = datetime.now()
                         #print "OPENED --> CLOSING (stopgain)"
 
                     elif self.c["upnl"] < -(self.risk * self.pose):
                         self.state = "CLOSING"
-                        closeorder = self.c.close(orderty = "LMT")
+                        closeorder = self.c.close()
                         closingtime = datetime.now()
                         #print "OPENED --> CLOSING (stoploss: " + str(self.c["upnl"]) + " < " + str(- (self.risk * self.pose)) + ")"
 
@@ -156,9 +155,9 @@ class Strat1(Thread):
                     self.pose = self.originpose + self.c["rpnl"]
                     #print "CLOSING --> CLOSED (pose = " + str(self.pose) + ")"
 
-                if self.state == "CLOSING" and closingtime + self.ordertimeout < datetime.now():
+                if self.state == "CLOSING" and closingtime + timedelta(self.ordertimeout) < datetime.now():
                     self.c.cancel()
-                    closeorder = self.c.close(orderty = "LMT")
+                    closeorder = self.c.close()
                     closingtime = datetime.now()                
                     #print "CLOSING --> CLOSING (timeout)"
 
