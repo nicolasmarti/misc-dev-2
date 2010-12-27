@@ -107,7 +107,7 @@ class Strat1(Thread):
                 try:
                     if self.state == "CLOSED" and newdata["k"] < self.kdown:
                         self.state = "OPENING"
-                        openorder = self.c.order(quantity = int(self.pose / newdata["close"]))
+                        openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
                         openingtime = datetime.now()
                         opentry = 0
                         #print "CLOSED --> OPENING ( k = " + str(newdata["k"]) + ")"
@@ -129,7 +129,7 @@ class Strat1(Thread):
                     opentry += 1
                     if opentry < 5:
                         #print "OPENING --> OPENING (time out)"
-                        openorder = self.c.order(quantity = int(self.pose / newdata["close"]))
+                        openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / newdata["close"]))
                         openingtime = datetime.now()
                     else:
                         self.state = "CLOSED"
@@ -140,13 +140,13 @@ class Strat1(Thread):
                     
                     if newdata["k"] > self.kup and self.c["upnl"] > 0:
                         self.state = "CLOSING"
-                        closeorder = self.c.close()
+                        closeorder = self.c.close(orderty = "LMT")
                         closingtime = datetime.now()
                         #print "OPENED --> CLOSING (stopgain)"
 
                     elif self.c["upnl"] < -(self.risk * self.pose):
                         self.state = "CLOSING"
-                        closeorder = self.c.close()
+                        closeorder = self.c.close(orderty = "LMT")
                         closingtime = datetime.now()
                         #print "OPENED --> CLOSING (stoploss: " + str(self.c["upnl"]) + " < " + str(- (self.risk * self.pose)) + ")"
 
@@ -157,7 +157,7 @@ class Strat1(Thread):
 
                 if self.state == "CLOSING" and closingtime + timedelta(self.ordertimeout) < datetime.now():
                     self.c.cancel()
-                    closeorder = self.c.close()
+                    closeorder = self.c.close(orderty = "LMT")
                     closingtime = datetime.now()                
                     #print "CLOSING --> CLOSING (timeout)"
 
