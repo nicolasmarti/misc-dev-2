@@ -19,12 +19,13 @@ c.m_currency = "USD"
 mnow = datetime.now()
 
 delta = timedelta(hours=2)
+delta2 = timedelta(days=1)
 
-mstr = (mnow - delta).strftime("%Y%m%d %H:%M:%S")
+mstr = (mnow - delta2 + delta).strftime("%Y%m%d %H:%M:%S")
 
 print mstr
 
-dataid = o.reqHistData(c, mstr, "1000", "5 mins", "MIDPOINT", 0, 1)
+dataid = o.reqHistData(c, mstr, "1 D", "5 mins", "MIDPOINT", 0, 1)
 
 print dataid
 
