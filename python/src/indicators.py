@@ -64,8 +64,8 @@ class CsteIndicator(Indicator):
     def value(self, bars):
         return self.mvalue
 
-# EMA
-class EMAIndicator(Indicator):
+# SMA
+class SMAIndicator(Indicator):
     def __init__(self, period, label):
         self.period = period
         self.label = label
@@ -81,4 +81,21 @@ class EMAIndicator(Indicator):
         except:
             return None
 
+class EMAIndicator(Indicator):
+    def __init__(self, period, label):
+        self.period = period
+        self.label = label
+        self.alpha = 2.0/(float(self.period)+1.0)
+ 
+    def value(self, bars):
+        sum = 0.0
+        bars2 = bars[0:self.period]
+       
+        try:
+            for i in bars2:
+                sum = sum*(1-alpha) + i[self.label] * alpha
+            
+            return sum
+        except:
+            return None
 
