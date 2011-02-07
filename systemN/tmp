@@ -1,4 +1,0 @@
-<llvm/mllvm.{byte,native}>: pkg_str
-<llvm/test*.{byte,native}>: g++, use_llvm, use_llvm_analysis, pkg_str
-<llvm/test*.{byte,native}>: use_llvm_executionengine, use_llvm_target
-<llvm/test*.{byte,native}>:  use_llvm_scalar_opts, use_bindings
