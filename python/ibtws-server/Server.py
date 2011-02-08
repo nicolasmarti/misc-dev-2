@@ -783,7 +783,10 @@ daemon=Pyro.core.Daemon()
 daemon.useNameServer(ns)
 
 # Ib init
-con = ibConnection("127.0.0.1")
+if len(sys.argv) == 0: 
+    con = ibConnection("127.0.0.1")
+else:
+    con = ibConnection(sys.argv[1])
 
 #config
 globalconfig = dict()
