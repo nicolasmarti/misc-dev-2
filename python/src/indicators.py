@@ -130,12 +130,12 @@ class RSIIndicator(Indicator):
        
         try:
             for i in bars2:
-                if i["CLOSE"] > i["OPEN"]:
-                    U.append({'U' : i["CLOSE"] - i["OPEN"]})
+                if i["close"] > i["open"]:
+                    U.append({'U' : i["close"] - i["open"]})
                     D.append({'D' : 0})
 
-                if i["CLOSE"] <= i["OPEN"]:
-                    D.append({'D' : i["OPEN"] - i["CLOSE"]})
+                if i["close"] <= i["open"]:
+                    D.append({'D' : i["open"] - i["close"]})
                     U.append({'U' : 0})
 
             U.reverse()
