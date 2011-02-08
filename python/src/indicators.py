@@ -1,4 +1,4 @@
-
+from math import *
 
 # the basic class
 class Indicator:
@@ -92,10 +92,62 @@ class EMAIndicator(Indicator):
         bars2 = bars[0:self.period]
        
         try:
-            for i in bars2:
+            for i in reversed(bars2):
                 sum = sum*(1-alpha) + i[self.label] * alpha
             
             return sum
         except:
             return None
 
+class MuSigEMAIndicator(Indicator):
+    def __init__(self, period, label):
+        self.period = period
+        self.label = label
+        self.alpha = 2.0/float(self.period)+1.0
+        
+    def value(self, bars):
+        mu = 0.0        
+        stdev = 0.0
+        bars2 = bars[0:self.period]
+       
+        try:
+            for i in reversed(bars2):
+                mu = mu*(1-alpha) + i[self.label] * alpha
+                stdev += (mu - i[self.label])**2
+                
+            return (mu, sqrt(stdev))
+        except:
+            return None
+        
+class RSIIndicator(Indicator):
+    def __init__(self, period):
+        self.period = period
+        
+    def value(self, bars):
+        U = []       
+        D = []
+        bars2 = bars[0:self.period]
+       
+        try:
+            for i in bars2:
+                if i["CLOSE"] > i["OPEN"]:
+                    U.append({'U' : i["CLOSE"] - i["OPEN"]})
+                    D.append({'D' : 0})
+
+                if i["CLOSE"] <= i["OPEN"]:
+                    D.append({'D' : i["OPEN"] - i["CLOSE"]})
+                    U.append({'U' : 0})
+
+            U.reverse()
+            D.reverse()
+
+            Uema = EMAIndicator(self.period, "U")
+            Dema = EMAIndicator(self.period, "D")
+            RS = Uema.value(U) / Dema.value(D)
+
+            RSI = 100 - 100/(1+RS)
+                
+            return RSI
+        except:
+            return None
+        
