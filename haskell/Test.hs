@@ -231,6 +231,31 @@ bindingtest = do {
                                  }
               ; runtest f
               }
+
+bindingtest2 :: IO ()
+bindingtest2 = do {
+              ; let f = \ mod -> do {
+                                 ; fct <- addFunction2 mod "main" $ fctType [] voidType
+                                 ; builder <- createEntryBuilder fct
+
+                                 ; endblock <- createBlock builder "endblock"
+
+                                 ; label <- valueFromLabel endblock
+
+                                 ; buildIndirectBr builder label [endblock]
+
+                                 ; moveBuilder builder endblock
+
+                                 ; _ <- buildRetVoid builder
+
+                                 ; writeModuleToFile mod "./bindingtest2.bc"
+
+                                 ; LLVM.dumpModule mod
+
+                                 ; return fct
+                                 }
+              ; runtest f
+              }
     
 -- test
 
@@ -416,6 +441,7 @@ timedEval v = do {
 
 data Testconfig = Testconfig { 
   testbinding :: Bool,
+  testbinding2 :: Bool,
   gcedtest :: Bool,
   dynarraytest :: Bool,
   sumtest :: Bool,
@@ -428,15 +454,16 @@ data Testconfig = Testconfig {
               
 testconfig :: Testconfig
 testconfig = Testconfig { 
-  testbinding = True,
-  gcedtest = True,
-  dynarraytest = True,
-  sumtest = True,  
-  stacktest = True,  
-  rectypetest = True,
-  runtimetest= True,
+  testbinding = False,
+  testbinding2 = True,
+  gcedtest = False,
+  dynarraytest = False,
+  sumtest = False,  
+  stacktest = False,  
+  rectypetest = False,
+  runtimetest= False,
   
-  testvm = True
+  testvm = False
   }             
              
 
@@ -447,6 +474,8 @@ main = do {
   ; let n = if null args then 100 else read $ args!!0
                                        
   ; when (testbinding testconfig) bindingtest
+
+  ; when (testbinding2 testconfig) bindingtest2
             
   ; when (testvm testconfig) $ do {
     
