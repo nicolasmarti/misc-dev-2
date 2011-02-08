@@ -1692,13 +1692,14 @@ buildBr builder c = do { _ <- LLVM.buildBr builder c
                        ; return ()
                        }
 
-buildIndirectBr :: LLVMBuilder -> LLVMValue -> IO ()
-buildIndirectBr builder label | isaLabelPtr label = do {
-                                                    ; _ <- LLVM.buildIndirectBr builder (valOf label) $ fromIntegral 0
-                                                    ; return ()
-                                                    }
-                              | otherwise = error $ "buildIndirectBr: not a label, " ++ show label
-
+buildIndirectBr :: LLVMBuilder -> LLVMValue -> [LLVMBlock] -> IO ()
+buildIndirectBr builder label blocks | isaLabelPtr label = do {
+                                                           ; indbr <- LLVM.buildIndirectBr builder (valOf label) $ fromIntegral 0
+                                                           ; _ <- mapM (\ b -> LLVM.addDestination indbr b) blocks
+                                                           ; return ()
+                                                           }
+                                     | otherwise = error $ "buildIndirectBr: not a label, " ++ show label
+                                                   
 buildUnreachable :: LLVMBuilder -> IO ()
 buildUnreachable builder = do { 
                            ; LLVM.buildUnreachable builder
