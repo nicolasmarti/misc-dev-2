@@ -12,8 +12,14 @@ all: $(examples:%=%.exe)
 %.run: %.exe
 	./$<
 
-%.exe: %.bc
-	llvm-ld -native -disable-opt -o $(basename $<).exe $<
+#%.exe: %.bc
+#	llvm-ld -native -disable-opt -o $(basename $<).exe $<
+
+%.exe: %.s
+	gcc -o $(basename $<).exe $<
+
+%.s: %.bc
+	llc -filetype=asm $<
 
 run:	$(examples:%=%.run)
 
