@@ -87,12 +87,13 @@ def loop(username, passwd):
         # manage the strategies
         for j, i in enumerate(strats):
 
-          print "slot " + str(j) + ": " + str(i)
+          #print "slot " + str(j) + ": " + str(i)
           
           # create the strat if not yet created, and activated
           if i["stratname"] == "strat1" and (not "strat" in i) and i["activated"] == "Y":
-            print "starting strat"
+            #print "starting strat"
             # eval parameters
+            print "params: " + i["params"]
             params = eval(i["params"])
             # create the strat
             strat = Strat1(params)
@@ -100,12 +101,13 @@ def loop(username, passwd):
             i["strat"] = strat
             i["strat"].daemon = True
             i["strat"].start()
-            print "activate slot: " + str(j)
+            #print "activate slot: " + str(j)
 
           # create the strat if not yet created, and activated
           if i["stratname"] == "strat2" and (not "strat" in i) and i["activated"] == "Y":
-            print "starting strat"
+            #print "starting strat"
             # eval parameters
+            print "params: " + i["params"]
             params = eval(i["params"])
             # create the strat
             strat = Strat2(params)
@@ -113,19 +115,19 @@ def loop(username, passwd):
             i["strat"] = strat
             i["strat"].daemon = True
             i["strat"].start()
-            print "activate slot: " + str(j)
+            #print "activate slot: " + str(j)
 
           # if deactivated, and a strat is already running: stop it
           if "strat" in i and i["activated"] <> "Y" and i["strat"].opened == True:
-            print "deactivating strat"
+            #print "deactivating strat"
             i["strat"].close()
-            print "deactivate slot: " + str(j)
+            #print "deactivate slot: " + str(j)
 
           # if activated, and a strat is stopped: run it
           if "strat" in i and i["activated"] == "Y" and i["strat"].opened == False:
-            print "reactivating strat"
+            #print "reactivating strat"
             i["strat"].open()
-            print "reactivate slot: " + str(j)
+            #print "reactivate slot: " + str(j)
 
       except Exception as inst:
         print "stratcommander error: " + str(inst)
@@ -134,6 +136,7 @@ def loop(username, passwd):
       # show the results
       for i, entry in enumerate(strats):
         try:
+          print "entry = " + str(entry)
 
           state = entry["strat"].state
           position = entry["strat"].c["position"]
