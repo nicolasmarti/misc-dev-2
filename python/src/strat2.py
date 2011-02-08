@@ -11,7 +11,7 @@ class Strat2(Thread):
     # params = [stck, Nlong, Nshort, pose, risk, ordertimout, barsize]
     def __init__(self, params):
 
-        self.c = Stock(params[0])
+        self.c = Stock(params["ticker"])
         self.state = "CLOSED"
         self.data = []
 
@@ -20,14 +20,14 @@ class Strat2(Thread):
         self.daemon = True
 
         # strat param
-        self.Nlong = params[1]
-        self.Nshort = params[2]
-        self.originpose = float(params[3])
-        self.pose = float(params[3])
-        self.risk = float(params[4])
+        self.originpose = float(params["cash"])
+        self.pose = float(params["cash"])
+        self.risk = float(params["risk"])
 
-        self.ordertimeout = timedelta(seconds=params[5])
-        self.barsize = timedelta(seconds=params[6])
+        self.ordertimeout = timedelta(seconds=params["timeout"])
+        self.barsize = timedelta(seconds=params["barsize"])
+
+        self.params = params
 
         self.opened = True
 
@@ -48,18 +48,24 @@ class Strat2(Thread):
 
     def run(self):
 
-        emaShort = EMAIndicator(self.Nshort, "close")
-        emaLong = EMAIndicator(self.Nlong, "close")
-        
-        entrysig = emaShort.croseup(emaLong)
-        exitsig = emaShort.croseup(emaLong)
+        musig = MuSigEMAIndicator(self.params["N"], "close")
+        rsiind = RSIIndicator(self.params["N"])
 
         while self.opened:
 
-            
+            try:
+                bars = self.c.bars
+                (mu, sig) = musig.value(bars)
+                rsi = rsiind.value(bars)
+
+                entrysig = ((sig/mu) > self.params["minvol"]) and (self.c.bars[0]["close"] - mu)/sig < self.params["kdown"]
+                exitsig = (self.c.bars[0]["close"] - mu)/sig > self.params["kup"]
+            except:
+                entrysig = False
+                exitsig = False
 
             try:
-                if self.state == "CLOSED" and entrysig(self.c.bars):
+                if self.state == "CLOSED" and entrysig:
                     self.state = "OPENING"
                     openorder = self.c.order(orderty = "LMT", quantity = int(self.pose / self.c.bars[0]["close"]))
                     openingtime = datetime.now()
@@ -87,7 +93,7 @@ class Strat2(Thread):
             # if we are opened, we leave if: 1) we are > kup, 2) we loose risk% of our pose 
             if self.state == "OPENED":
                     
-                if exitsig(self.c.bars) and self.c["upnl"] > 0:
+                if exitsig and self.c["upnl"] > 0:
                     self.state = "CLOSING"
                     closeorder = self.c.close(orderty = "LMT")
                     closingtime = datetime.now()

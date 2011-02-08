@@ -9,7 +9,7 @@ class Strat1(Thread):
     # params = [stck, N, kdown, kup, pose, risk, ordertimout, barsize]
     def __init__(self, params):
 
-        self.c = Stock(params[0])
+        self.c = Stock(params["ticker"])
         self.state = "CLOSED"
         self.data = []
 
@@ -18,15 +18,15 @@ class Strat1(Thread):
         self.daemon = True
 
         # strat param
-        self.N = params[1]
-        self.kdown = params[2]
-        self.kup = params[3]
-        self.originpose = float(params[4])
-        self.pose = float(params[4])
-        self.risk = float(params[5])
+        self.N = params["N"]
+        self.kdown = params["kdown"]
+        self.kup = params["kup"]
+        self.originpose = float(params["cash"])
+        self.pose = float(params["cash"])
+        self.risk = float(params["risk"])
 
-        self.ordertimeout = seconds=params[6]
-        self.barsize = timedelta(seconds=params[7])
+        self.ordertimeout = seconds=params["timeout"]
+        self.barsize = timedelta(seconds=params["barsize"])
 
         self.opened = True
 
