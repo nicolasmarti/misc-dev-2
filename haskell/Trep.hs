@@ -23,13 +23,14 @@ data TypeInfo = NoType
               | Infered Term
     
 data Term = Type
-          | Var Position String (Maybe Int) TypeInfo
-          | Cste Position String TypeInfo
+          | Var Position Name (Maybe Int) TypeInfo
+          | Cste Position Name TypeInfo
           
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
           
-          | Ind [Quantifier] Term [Term] Position TypeInfo
+          | Ind [Quantifier] Term [(Name, Term)] Position TypeInfo
+          | Constr Int Term Position TypeInfo
 
           | Let [(Quantifier, Term)] Term Position TypeInfo
 
@@ -57,7 +58,9 @@ data Pattern
 
 data Guard
 
-data DoStmt
+data DoStmt 
+
+type Name = String
 
 data Nature = Implicite
             | Explicite
