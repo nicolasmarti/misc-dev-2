@@ -8,97 +8,97 @@
 
 module LLVMBinding (
 
-  -- types and values
-  IntegerType(..), FloatingType(..), PrimitiveType(..), AggregateType(..), 
-  DerivedType(..), ManagedType(..), RecType(..), 
-  LLVMType(..), LLVMValue(..), LLVMModule, LLVMFunction, LLVMBuilder, LLVMBlock,
-  LLVMTypeable(..), LLVMValueable(..), LLVMComputable(..),
-  
-  -- helpers
-  valOf, typeOf, freeVar,
+    -- types and values
+    IntegerType(..), FloatingType(..), PrimitiveType(..), AggregateType(..), 
+    DerivedType(..), ManagedType(..), RecType(..), 
+    LLVMType(..), LLVMValue(..), LLVMModule, LLVMFunction, LLVMBuilder, LLVMBlock,
+    LLVMTypeable(..), LLVMValueable(..), LLVMComputable(..),
 
-  ptrType, int32Type, int64Type, int8Type, int16Type, int1Type, boolType,
-  voidType, labelType, labelPtrType, structType, packedStructType, arrayType, fctType,
-  dynDArrayType, dynArrayType, gcedDType, gcedType,
-  sumDType, sumType, closureDType, closureType, stackDType,
-  stackType, extractManagedType, typeCast, doubleType, floatType,
-  varType, defType,
-  rewrite_type, rollUp, recDef, regRecDef, unFold,
+    -- helpers
+    valOf, typeOf, freeVar,
 
-  -- basic LLVM opcode building
+    ptrType, int32Type, int64Type, int8Type, int16Type, int1Type, boolType,
+    voidType, labelType, labelPtrType, structType, packedStructType, arrayType, fctType,
+    dynDArrayType, dynArrayType, gcedDType, gcedType,
+    sumDType, sumType, closureDType, closureType, stackDType,
+    stackType, extractManagedType, typeCast, doubleType, floatType,
+    varType, defType,
+    rewrite_type, rollUp, recDef, regRecDef, unFold,
 
-  addTypeName, constString, constArray,
-  addFunction, addFunction2, createEntryBuilder, createBlock, createBuilder, cachedApplication,
-  moveBuilder, getParam, getFunction, getFunction2,  getNamedGlobal, getParentModule, getParentBlock,
-  moduleCreateWithName, verifyFunction,
-  buildCall, buildBitCast, buildPtrToInt, buildIntToPtr, buildIntCast,
-  buildGEP, buildStructGEP, buildAlloc, buildAlloc2, buildAlloca, buildFree, buildMemcpy, buildMemcpy2,
-  buildExtractElem, buildExtractValue,
-  buildLoad, buildStore,
-  buildAdd, buildSub, buildMul, buildUDiv, buildSDiv, buildNeg, buildSRem, buildURem,
-  buildFAdd, buildFSub, buildFMul, buildFDiv, buildFNeg, buildFRem,
-  buildAnd, buildOr, buildNot,
-  buildRetVoid, buildRet, buildSelect, buildPhi, addIncoming,
-  buildSwitch, buildSwitch2, IntTest(..), buildICmp, FloatTest(..), buildFCmp, buildCondBr, buildBr, buildIndirectBr, buildUnreachable, 
-  valueFromLabel, valueFromLabel2, buildIsNull, addGlobal, setInitializer, constNull, getUndef,
-  sizeOf,
+    -- basic LLVM opcode building
 
-  buildArrayMalloc,
+    addTypeName, constString, constArray,
+    addFunction, addFunction2, createEntryBuilder, createBlock, createBuilder, cachedApplication,
+    moveBuilder, getParam, getFunction, getFunction2,  getNamedGlobal, getParentModule, getParentBlock,
+    moduleCreateWithName, verifyFunction,
+    buildCall, buildBitCast, buildPtrToInt, buildIntToPtr, buildIntCast,
+    buildGEP, buildStructGEP, buildAlloc, buildAlloc2, buildAlloca, buildFree, buildMemcpy, buildMemcpy2,
+    buildExtractElem, buildExtractValue,
+    buildLoad, buildStore,
+    buildAdd, buildSub, buildMul, buildUDiv, buildSDiv, buildNeg, buildSRem, buildURem,
+    buildFAdd, buildFSub, buildFMul, buildFDiv, buildFNeg, buildFRem,
+    buildAnd, buildOr, buildNot,
+    buildRetVoid, buildRet, buildSelect, buildPhi, addIncoming,
+    buildSwitch, buildSwitch2, IntTest(..), buildICmp, FloatTest(..), buildFCmp, buildCondBr, buildBr, buildIndirectBr, buildUnreachable, 
+    valueFromLabel, valueFromLabel2, buildIsNull, addGlobal, setInitializer, constNull, getUndef,
+    sizeOf,
 
-  jumpToNewBlock,
+    buildArrayMalloc,
 
-  cachedFunction, 
-  
-  getVarArgs, endVarArgs, buildGetVarArg,
+    jumpToNewBlock,
 
-  -- execution functions
+    cachedFunction, 
 
-  getModuleEngine, getModuleInterp, runFunction, optimizeModule, optimizeFunction, registerRunTime,
+    getVarArgs, endVarArgs, buildGetVarArg,
 
-  -- helper functions
+    -- execution functions
 
-  integer2LLVMInteger, double2LLVMDouble, float2LLVMFloat, bool2LLVMBool,
+    getModuleEngine, getModuleInterp, runFunction, optimizeModule, optimizeFunction, registerRunTime,
 
-  -- higher level codegen
+    -- helper functions
 
-  buildForLoop, buildCounterLoop,
-  initData,
+    integer2LLVMInteger, double2LLVMDouble, float2LLVMFloat, bool2LLVMBool,
 
-  -- memory managed type
-  incRef, decRef, incRef', decRef', destroyManagedType, getRefCount, 
-  mutateRefFirstLevel,
-  createDynArray, lookupDynArray, mutateDynArray, dynArraySize, copyExtDynArray,
-  createGCed, getGCedData,
-  createSum, createSum2, destructSum, destructSum2, destructSum3, extractFromSum,
-  createStack, stackSize, stackCapacity, stackLookup, stackMutate, stackPop, stackPop', stackPush, stackPush', stackCopy,
-  createFinalizer, finalizerGetData,
-  createClosure, destroyClosure, applyClosure, computeClosure,
+    -- higher level codegen
 
-  -- saving loading modules
+    buildForLoop, buildCounterLoop,
+    initData,
 
-  writeModuleToFile, readModuleFromFile,
+    -- memory managed type
+    incRef, decRef, incRef', decRef', destroyManagedType, getRefCount, 
+    mutateRefFirstLevel,
+    createDynArray, lookupDynArray, mutateDynArray, dynArraySize, copyExtDynArray,
+    createGCed, getGCedData,
+    createSum, createSum2, destructSum, destructSum2, destructSum3, extractFromSum,
+    createStack, stackSize, stackCapacity, stackLookup, stackMutate, stackPop, stackPop', stackPush, stackPush', stackCopy,
+    createFinalizer, finalizerGetData,
+    createClosure, destroyClosure, applyClosure, computeClosure,
 
-  -- error function in haskell ....
+    -- saving loading modules
 
-  buildException, buildException2,
-  llvmexception, imported_llvmexception,
+    writeModuleToFile, readModuleFromFile,
 
-  -- debug message
+    -- error function in haskell ....
 
-  buildDebugMsg,
-  llvmdebugmsg, imported_llvmdebugmsg,
+    buildException, buildException2,
+    llvmexception, imported_llvmexception,
 
-  -- implementation of printf
+    -- debug message
 
-  buildPrintf, 
+    buildDebugMsg,
+    llvmdebugmsg, imported_llvmdebugmsg,
 
-  -- memory allocation profiling facility
+    -- implementation of printf
 
-  buildRegisterAlloc, llvmRegisterAlloc, imported_llvmRegisterAlloc,
-  buildRegisterFree, llvmRegisterFree, imported_llvmRegisterFree,
-  showMemUsage, freeGCMem, 
+    buildPrintf, 
 
-  ) where
+    -- memory allocation profiling facility
+
+    buildRegisterAlloc, llvmRegisterAlloc, imported_llvmRegisterAlloc,
+    buildRegisterFree, llvmRegisterFree, imported_llvmRegisterFree,
+    showMemUsage, freeGCMem, 
+
+    ) where
 
 
 import qualified LLVM.FFI.Core as LLVM
@@ -156,15 +156,15 @@ data IntegerType = IntegerType Integer -- the size in bit
                  deriving (Eq, Ord)
 
 instance Show IntegerType where
-  show (IntegerType i) = "i" ++ show i
+    show (IntegerType i) = "i" ++ show i
 
 data FloatingType = TFloat
                   | TDouble
                   deriving (Eq, Ord)
 
 instance Show FloatingType where
-  show TFloat = "float"
-  show TDouble = "double"
+    show TFloat = "float"
+    show TDouble = "double"
 
 data PrimitiveType = TLabel
                    | TLabelPtr
@@ -174,11 +174,11 @@ data PrimitiveType = TLabel
                    deriving (Eq, Ord)
 
 instance Show PrimitiveType where
-  show TLabel = "label"
-  show TLabelPtr = "label*"
-  show (TInteger i) = show i
-  show (TFloating f) = show f
-  show TVoid = "void"
+    show TLabel = "label"
+    show TLabelPtr = "label*"
+    show (TInteger i) = show i
+    show (TFloating f) = show f
+    show TVoid = "void"
 
 data AggregateType = TArray Integer LLVMType
                    | TStructure [LLVMType]
@@ -187,11 +187,11 @@ data AggregateType = TArray Integer LLVMType
                    deriving (Eq, Ord)
 
 instance Show AggregateType where
-  show (TArray i ty) = "[" ++ show i ++ " x " ++ show ty ++ "]"
-  show (TStructure tys) = "{ " ++ intercalate ", " (map show tys) ++ " }"
-  show (TPackedStructure tys) = "< { " ++ intercalate ", " (map show tys) ++ " } >"
-  show (TVector i (Left ty)) = "<" ++ show i ++ " x " ++ show ty ++ ">"
-  show (TVector i (Right ty)) = "<" ++ show i ++ " x " ++ show ty ++ ">"
+    show (TArray i ty) = "[" ++ show i ++ " x " ++ show ty ++ "]"
+    show (TStructure tys) = "{ " ++ intercalate ", " (map show tys) ++ " }"
+    show (TPackedStructure tys) = "< { " ++ intercalate ", " (map show tys) ++ " } >"
+    show (TVector i (Left ty)) = "<" ++ show i ++ " x " ++ show ty ++ ">"
+    show (TVector i (Right ty)) = "<" ++ show i ++ " x " ++ show ty ++ ">"
 
 data DerivedType = TAggregate AggregateType
                  | TFunction [LLVMType] Bool LLVMType
@@ -199,9 +199,9 @@ data DerivedType = TAggregate AggregateType
                  deriving (Eq, Ord)
 
 instance Show DerivedType where
-  show (TAggregate ty) = show ty
-  show (TFunction tys vararg ty) = show ty ++ " (" ++ intercalate ", " (map show tys) ++ if vararg then "...)" else "" ++ ")"
-  show (TPointer ty) = show ty ++ "*"
+    show (TAggregate ty) = show ty
+    show (TFunction tys vararg ty) = show ty ++ " (" ++ intercalate ", " (map show tys) ++ if vararg then "...)" else "" ++ ")"
+    show (TPointer ty) = show ty ++ "*"
 
 -- these types are explicitely garbage collected
 data ManagedType = TDynArray LLVMType
@@ -213,12 +213,12 @@ data ManagedType = TDynArray LLVMType
                deriving (Eq, Ord)
 
 instance Show ManagedType where
-  show (TDynArray ty) = "[? x " ++ show ty ++ "]"
-  show (TGCed ty) = "[[" ++ show ty ++ "]]"
-  show (TSum tys) = "(" ++ intercalate " | " (map show tys) ++ ")"
-  show (TStack ty) = "stack(" ++ show ty ++ ")"
-  show (TClosure tys) = intercalate " -> " (map show $ tys)
-  show (TFinalizer ty) = "finalizer(" ++ show ty ++ ")"
+    show (TDynArray ty) = "[? x " ++ show ty ++ "]"
+    show (TGCed ty) = "[[" ++ show ty ++ "]]"
+    show (TSum tys) = "(" ++ intercalate " | " (map show tys) ++ ")"
+    show (TStack ty) = "stack(" ++ show ty ++ ")"
+    show (TClosure tys) = intercalate " -> " (map show $ tys)
+    show (TFinalizer ty) = "finalizer(" ++ show ty ++ ")"
 
 -- definition with alias (for recursive types)
 data RecType = TDef String LLVMType
@@ -226,8 +226,8 @@ data RecType = TDef String LLVMType
              deriving (Eq, Ord)
 
 instance Show RecType where
-  show (TDef s ty) = s -- "(" ++ s ++ " := " ++ show ty ++ ")"
-  show (TVar s) = s
+    show (TDef s ty) = s -- "(" ++ s ++ " := " ++ show ty ++ ")"
+    show (TVar s) = s
 
 -- all the LLVM types
 data LLVMType = TPrimitive PrimitiveType
@@ -237,34 +237,34 @@ data LLVMType = TPrimitive PrimitiveType
               deriving (Eq, Ord)
 
 instance Show LLVMType where
-  show (TPrimitive ty) = show ty
-  show (TDerived ty) = show ty
-  show (TManaged ty) = show ty
-  show (TRecType ty) = show ty
+    show (TPrimitive ty) = show ty
+    show (TDerived ty) = show ty
+    show (TManaged ty) = show ty
+    show (TRecType ty) = show ty
 
 -- some typeclass
 class (Show a) => LLVMTypeable a where
-  fromLLVMType :: LLVM.TypeRef -> IO a
+    fromLLVMType :: LLVM.TypeRef -> IO a
 
 
-  toLLVMType2 :: HashTable.HashTable String LLVM.TypeRef -> a -> IO LLVM.TypeRef
+    toLLVMType2 :: HashTable.HashTable String LLVM.TypeRef -> a -> IO LLVM.TypeRef
 
-  toLLVMType :: a -> IO LLVM.TypeRef
-  toLLVMType x = do {
-                 ; hash <- HashTable.new (==) HashTable.hashString
-                 ; toLLVMType2 hash x
+    toLLVMType :: a -> IO LLVM.TypeRef
+    toLLVMType x = do {
+                   ; hash <- HashTable.new (==) HashTable.hashString
+                   ; toLLVMType2 hash x
+                   }
+
+    ptrOf :: a -> IO LLVM.TypeRef
+    ptrOf x = do { ty <- toLLVMType x
+                 ; return $ LLVM.pointerType ty $ fromIntegral 0
                  }
-
-  ptrOf :: a -> IO LLVM.TypeRef
-  ptrOf x = do { ty <- toLLVMType x
-               ; return $ LLVM.pointerType ty $ fromIntegral 0
-               }
 
 
 
 instance LLVMTypeable LLVM.TypeRef where
-  toLLVMType2 h = return
-  fromLLVMType = return
+    toLLVMType2 h = return
+    fromLLVMType = return
 
 -- equivalence ... needed for dynamic type test
 infix  4 ===
@@ -284,15 +284,15 @@ data LLVMValue = LLVMValue LLVM.ValueRef LLVMType
                deriving (Eq, Ord)
 
 class (LLVMTypeable a) => LLVMValueable a where
-  toLLVMValue :: a -> IO LLVM.ValueRef
+    toLLVMValue :: a -> IO LLVM.ValueRef
 
 
 instance LLVMTypeable LLVMValue where
-  toLLVMType2 h (LLVMValue _ ty) = toLLVMType ty
+    toLLVMType2 h (LLVMValue _ ty) = toLLVMType ty
 
-  fromLLVMType ty = do { ty' <- fromLLVMType ty
-                       ; return $ LLVMValue (LLVM.constNull ty) ty'
-                       }
+    fromLLVMType ty = do { ty' <- fromLLVMType ty
+                         ; return $ LLVMValue (LLVM.constNull ty) ty'
+                         }
 
 instance LLVMValueable LLVMValue where
   toLLVMValue (LLVMValue val _) = return val
