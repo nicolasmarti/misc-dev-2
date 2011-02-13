@@ -4,11 +4,11 @@
 
 module Trep (
 
-             Position (..), Term(..),
+    Position (..), Term(..),
 
-             main
+    main
              
-            ) where
+    ) where
 
 
 import VM
@@ -24,17 +24,20 @@ data TypeInfo = NoType
     
 data Term = Type
           | Var Position Name (Maybe Int) TypeInfo
+            
+          | AVar Position (Maybe Term) TypeInfo
+            
           | Cste Position Name TypeInfo
           
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
           
-          | Ind [Quantifier] Term [(Name, Term)] Position TypeInfo
+          | Ind Name [Quantifier] Term [(Name, Term)] Position TypeInfo
           | Constr Int Term Position TypeInfo
 
           | Let [(Quantifier, Term)] Term Position TypeInfo
 
-          | App Func [(Nature, Term)] Position TypeInfo
+          | App Term [(Nature, Term)] Position TypeInfo
 
           | Case Term [([(Pattern, [Guard])], Term)] Position TypeInfo
 
@@ -47,18 +50,23 @@ data Func = Term
             
 data OpProp = OpProp Assoc BindStrentgh            
 
-data Assoc = Left 
-           | Right
+type BindStrentgh = Int
 
-data BindStrentgh = BindStrentgh Int
+data Assoc = AssocLeft 
+           | AssocRight
 
-data Quantifier
+type Quantifier = ([Name], Term, Nature)
 
-data Pattern
+data Pattern = PAVar Position TypeInfo
+             | PVar Position Name TypeInfo
+             | PApp Name [(Nature, Pattern)] Position TypeInfo
+             | PAlias Position Name Pattern TypeInfo
 
-data Guard
+type Guard = (Term, Position, TypeInfo)
 
-data DoStmt 
+data DoStmt = DoLet Name Position TypeInfo Term
+            | DoBind Name Position TypeInfo Term
+            | DoVal Term Position TypeInfo
 
 type Name = String
 
