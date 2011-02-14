@@ -46,6 +46,7 @@ let parseintrule : int lexingrule = (regexp "[0-9]+", fun (s:string) -> int_of_s
 
 type expr =
   | Val of int
+  | Lazy of expr
   | Neg of expr
   | Plus of expr * expr
   | Minus of expr * expr
@@ -58,6 +59,7 @@ let rec print_expr (e: expr) =
     match e with
       | Val i -> printf "%d" i
       | Neg e ->  printf "(- "; print_expr e; printf ")"
+      | Lazy e -> print_expr e; printf "&"
       | Plus (e1, e2) -> printf "("; print_expr e1; printf " + "; print_expr e2; printf ")"
       | Minus (e1, e2) -> printf "("; print_expr e1; printf " - "; print_expr e2; printf ")"
       | Mult (e1, e2) -> printf "("; print_expr e1; printf " * "; print_expr e2; printf ")"
@@ -69,13 +71,13 @@ let prefixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 1
 Hashtbl.add prefixes "-" (2, fun x -> Neg x);;
 
 let postfixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
-Hashtbl.add postfixes "&" (8, fun x -> Neg x);;
+Hashtbl.add postfixes "&" (3, fun x -> Lazy x);;
 
 let infixes: (string, (priority * associativity * (expr -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
 Hashtbl.add infixes "+" (1, Left, fun x y -> Plus (x, y));;
 Hashtbl.add infixes "-" (2, Left, fun x y -> Minus (x, y));;
-Hashtbl.add infixes "*" (3, Right, fun x y -> Mult (x, y));;
-Hashtbl.add infixes "/" (3, Right, fun x y -> Div (x, y));;
+Hashtbl.add infixes "*" (4, Right, fun x y -> Mult (x, y));;
+Hashtbl.add infixes "/" (4, Right, fun x y -> Div (x, y));;
 
 
 let valparser : expr parsingrule = 
@@ -92,7 +94,7 @@ let myp : expr opparser = {
   postfixes = postfixes;
 };;
 
-let text = "- 1 + - 1& * - 10 + 9&";;
+let text = "- 1 + - 1& * - 10 + 9& * 4 &";;
 let lines = stream_of_string text;;
 let pb = build_parserbuffer lines;;
 

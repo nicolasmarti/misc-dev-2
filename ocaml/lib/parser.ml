@@ -662,9 +662,60 @@ let insert_prefix (prefix: (string * priority * ('a -> 'a))) (t: 'a parsetree) :
 ;;
 
 (* inserting a postfix: TODO *)
-let insert_postfix (prefix: (string * priority * ('a -> 'a))) (t: 'a parsetree) : 'a parsetree =
+let rec insert_postfix (postfix: (string * priority * ('a -> 'a))) (t: 'a parsetree) : 'a parsetree =
  (*let (n, _, _) = prefix in printf "Insert prefix: '%s'\n" n;*)
-  raise Failure
+  let (name, prio, f) = postfix in
+  match t with
+      (* we are on a primary value, without root *)
+    | Node (Primary a, None) as r ->
+      Node (Postfix (name, prio, f, Some r), None)
+    (* we are on a primary value, with root *)
+    | Node (Primary a, Some root) ->
+      insert_postfix postfix (zip_up_parsetree t)
+    (* we are on a prefix, if we bind more we insert ourself inbetween, else we zipup (or becoming root if there's not) *)
+    | Node (Prefix (name2, prio2, f2, child), root) as r -> (
+
+      if (prio > prio2) then (
+	
+	let newroot = Node (Prefix 
+			      (name2, prio2, f2, 
+			       Some (Node (Postfix (name, prio, f, child), None))
+			      ), root) in
+	zip_up_parsetree newroot
+
+      ) else (
+
+	match root with
+	  | None -> Node (Postfix (name, prio, f, 
+				   Some r), None)
+	  | Some _ ->
+	    insert_postfix postfix (zip_up_parsetree t)
+	    
+      )
+    )
+      (* we are on a prefix: either we bind more, and then insert on the right child
+	 either we bind less and we insert after zipping up (or become root if there's not)
+      *)
+    | Node (Infix (name2, prio2, assoc2, f2, childl, childr), root) as r -> (
+
+      if (prio > prio2) then (
+	
+	Node (Infix (name2, prio2, assoc2, f2, childl, 
+		     Some (
+		       Node (Postfix (name, prio, f, childr), None)
+		     )), root
+	)
+
+      ) else (
+
+	match root with
+	  | None -> Node (Postfix (name, prio, f, Some r), None)
+
+	  | Some _ ->
+	    insert_postfix postfix (zip_up_parsetree t)
+      )
+
+    )
 ;;
  
 (* we insert an infix in the tree, depending the case we might need to go up / down in the tree*)
@@ -725,7 +776,7 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
        (* we are on a postfix --> it becomes our child *)
      | Node (Postfix (name2, prio2, f2, Some child), root) ->
 	 let newroot = Node (Infix (name, prio, assoc, f,
-				    Some (Node (Postfix (name2, prio2, f2, Some child), root)),
+				    Some (Node (Postfix (name2, prio2, f2, Some child), None)),
 				    Some (Leaf None)
 				   ),
 			     root
