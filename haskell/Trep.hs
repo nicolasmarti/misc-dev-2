@@ -27,7 +27,7 @@ import qualified Text.PrettyPrint.HughesPJ as Pretty(char, parens, braces, brack
 import qualified Text.PrettyPrint.HughesPJClass as Pretty(char, parens, braces, brackets)
 
 import Data.Bits
-
+import Data.Ratio
 
 -- *******************************************************************
 -- AST for Trep
@@ -66,13 +66,18 @@ data Term = Type Position
           | Operator OpProp String Position TypeInfo
           deriving (Eq, Show, Ord, Read)
 
-termPrec :: Term -> Rational
+termPrec :: Term -> BindStrentgh
 termPrec (Operator op _ _ _) = opPrec op
 termPrec (Var _ _ _ _) = 100
 termPrec (Cste _ _ _ _) = 100
 termPrec (AVar _ _ _) = 100
 termPrec (App _ _ _ _) = -1
 termPrec _ = -2
+
+termAssoc :: Term -> OpAssoc
+termAssoc (Operator op _ _ _) = opAssoc op
+termAssoc (App _ _ _ _) = OpAssocRight
+termAssoc _ = OpAssocNone
 
 data OpProp = OpInfix OpAssoc BindStrentgh
             | OpPrefix BindStrentgh
@@ -81,10 +86,33 @@ data OpProp = OpInfix OpAssoc BindStrentgh
 
 type BindStrentgh = Int
 
-opPrec :: OpProp -> Rational
+opPrec :: OpProp -> BindStrentgh
 opPrec (OpInfix _ s) = fromIntegral s
 opPrec (OpPrefix s) = fromIntegral s
 opPrec (OpPostfix s) = fromIntegral s
+
+opAssoc :: OpProp -> OpAssoc
+opAssoc (OpInfix s _) = s
+opAssoc (OpPrefix s) = OpAssocNone
+opAssoc (OpPostfix s) = OpAssocNone
+
+decomposeRational :: Rational -> (BindStrentgh, OpAssoc)
+decomposeRational r = (fromIntegral $ numerator r, 
+                       case denominator r of 
+                           3557 -> OpAssocNone
+                           3559 -> OpAssocRight
+                           3571 -> OpAssocLeft
+                      )
+                      
+composeRational :: (BindStrentgh, OpAssoc) -> Rational
+composeRational (prec, assoc) = (fromIntegral prec) % (case assoc of 
+                                          OpAssocNone -> 3557
+                                          OpAssocRight -> 3559
+                                          OpAssocLeft -> 3571
+                                       )
+
+termRationalPrec :: Term -> Rational
+termRationalPrec te = composeRational (termPrec te, termAssoc te)
 
 data OpAssoc = OpAssocNone
              | OpAssocLeft
@@ -482,62 +510,74 @@ instance Pretty Pattern where
                   ) empty args
     pPrintPrec lvl prec (PAlias _ name underp _) = text name <> text "@" <> Pretty.parens (pPrintPrec lvl prec underp)
 
+
+-- False Left, True right
+needParens :: Rational -> Term -> Bool
+needParens r te = 
+    let (prec, assoc) = decomposeRational r in
+    let precte = termPrec te in
+    let assocte = termAssoc te in
+    if (precte < prec || (precte == prec && assocte == OpAssocRight)) then True else False
+
+lowPrec :: Rational
+lowPrec = (-1000) % 3557
+
 instance Pretty Term where
     pPrintPrec lvl@(PrettyLevel i) prec te@(Type pos) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (text "Type" <+> (if posShowLvl i then pPrintPrec lvl prec pos else empty))
 
     pPrintPrec lvl@(PrettyLevel i) prec  te@(Var pos name debruijn ty) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (text name <+> (if typeShowLvl i then pPrintPrec lvl prec ty else empty) <> (if posShowLvl i then pPrintPrec lvl prec pos else empty))
 
     pPrintPrec lvl@(PrettyLevel i) prec  te@(AVar pos _ ty) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (text "_" <+> (if typeShowLvl i then pPrintPrec lvl prec ty else empty) <+> (if posShowLvl i then pPrintPrec lvl prec pos else empty))
 
     pPrintPrec lvl@(PrettyLevel i) prec  te@(Lambda quants body pos ty) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (fsep [
             text "\\" <+> foldl (\ acc hd -> acc <+> pPrintPrec lvl prec hd) empty quants <+> text "->", 
-            nest 2 $ pPrintPrec lvl (-100) body, 
+            nest 2 $ pPrintPrec lvl lowPrec body, 
             (if typeShowLvl i then pPrintPrec lvl prec ty else empty), 
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ]
         )
 
     pPrintPrec lvl@(PrettyLevel i) prec  te@(Forall quants body pos ty) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (fsep [
-            text "V" <+> foldl (\ acc hd -> acc <+> pPrintPrec lvl (-100) hd) empty quants <+> text "->", 
+            text "V" <+> foldl (\ acc hd -> acc <+> pPrintPrec lvl lowPrec hd) empty quants <+> text "->", 
             nest 2 $ pPrintPrec lvl prec body, 
             (if typeShowLvl i then pPrintPrec lvl prec ty else empty),
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ])
 
-    pPrintPrec lvl@(PrettyLevel i) prec  te@(Let [(var, def)] body pos ty) = 
-        (if (prec >= termPrec te) then Pretty.parens else id)
+    pPrintPrec lvl@(PrettyLevel i) prec te@(Let [(var, def)] body pos ty) = 
+        (if needParens prec te then Pretty.parens else id)
         (fsep [
-            text "let" <+> text var <+> text "=" <+> pPrintPrec lvl (-100) def <+> text "in", 
-            nest 2 $ pPrintPrec lvl (-100) body, 
+            text "let" <+> text var <+> text "=" <+> pPrintPrec lvl lowPrec def <+> text "in", 
+            nest 2 $ pPrintPrec lvl lowPrec body, 
             (if typeShowLvl i then pPrintPrec lvl prec ty else empty),
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ])
     
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =
-        (if (prec >= termPrec te) then Pretty.parens else id)
-        (hsep [pPrintPrec lvl (fromIntegral opprec) $ snd (args'!!0), text s, pPrintPrec lvl (fromIntegral opprec) $ snd (args'!!1)])
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
+        (if needParens prec te then Pretty.parens else id)
+        (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!1)])
     
     pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty)) =
         Pretty.parens $ text s
 
     pPrintPrec lvl@(PrettyLevel i) prec te@(App fct args pos ty) =
-        (if (prec >= termPrec te) then Pretty.parens else id)
+        (if needParens prec te then Pretty.parens else id)
         (hsep [
             pPrintPrec lvl prec fct,
             nest 2 $ hsep $ map (\ hd -> ((case fst hd of
-                                               Explicite -> (if (termPrec te >= termPrec (snd hd)) then Pretty.parens else id) $ pPrintPrec lvl (-100) $ snd hd
-                                               Implicite -> if impliciteShowLvl i then Pretty.braces $ pPrintPrec lvl (-100) $ snd hd else empty
-                                               Oracled -> if oracledShowLvl i then Pretty.brackets $ pPrintPrec lvl (-100) $ snd hd else empty
+                                               Explicite -> (if (needParens (termRationalPrec te) $ snd hd) then Pretty.parens else id) $ pPrintPrec lvl lowPrec $ snd hd
+                                               Implicite -> if impliciteShowLvl i then Pretty.braces $ pPrintPrec lvl lowPrec $ snd hd else empty
+                                               Oracled -> if oracledShowLvl i then Pretty.brackets $ pPrintPrec lvl lowPrec $ snd hd else empty
                                           ) 
                                          )
                                 ) args,
@@ -546,12 +586,12 @@ instance Pretty Term where
             ])
 
     pPrintPrec lvl@(PrettyLevel i) prec te@(Case fct cases pos ty) =
-        (if (prec >= termPrec te) then Pretty.parens else id)
-        (fsep [text "case" <+> pPrintPrec lvl (-100) fct <+> text "of", 
+        (if needParens prec te then Pretty.parens else id)
+        (fsep [text "case" <+> pPrintPrec lvl lowPrec fct <+> text "of", 
               foldl (\ acc ([(pat, [])], def) -> 
                      acc $+$
-                     fsep [nest 2 $ text "|" <+> pPrintPrec lvl (-100) pat <+> text "=>", 
-                           nest 4 $ pPrintPrec lvl (-100) def 
+                     fsep [nest 2 $ text "|" <+> pPrintPrec lvl lowPrec pat <+> text "=>", 
+                           nest 4 $ pPrintPrec lvl lowPrec def 
                           ]
                     ) empty cases,
               (if typeShowLvl i then pPrintPrec lvl prec ty else empty), 
@@ -569,13 +609,13 @@ main :: IO ()
 main = do {
     ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | _ => x | g f@(_) {y} => _]) :: V {A B C :: Type} A -> A"
     ; let toparse1 = "~ True && f > s || False"
-    ; let toparse2 = "a + b + c * d"          
+    ; let toparse2 = "a + (b + c) * d"          
     ; let sourcename = "test"
     ; let lvl = PrettyLevel $ 4 + 8
-    ; let prec = (-100)
+    ; let prec = lowPrec
     ; let style = Style { mode = PageMode, lineLength = 80, ribbonsPerLine=1.0 }
     ; let parserState = ParseState { operators = [("+", OpInfix OpAssocLeft 10), ("*", OpInfix OpAssocLeft 11), (">", OpInfix OpAssocLeft 9), ("||", OpInfix OpAssocLeft  6), ("&&", OpInfix OpAssocLeft 7), ("~", OpPrefix 8)] }
-    ; case parse (trepParser parserState) sourcename toparse2 of
+    ; case parse (trepParser parserState) sourcename toparse1 of
         Left err -> error $ show err
         Right (term, ty) -> do {
             ; putStrLn $ toparse
