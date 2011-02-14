@@ -345,6 +345,7 @@ let foldp (l: ('a parsingrule) list) : 'a parsingrule =
 type associativity =
  | Left
  | Right
+ | NoAssoc
 ;;
  
 (*
