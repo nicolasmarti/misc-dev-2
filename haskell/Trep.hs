@@ -71,11 +71,17 @@ termPrec (Operator op _ _ _) = opPrec op
 termPrec (Var _ _ _ _) = 100
 termPrec (Cste _ _ _ _) = 100
 termPrec (AVar _ _ _) = 100
+termPrec (App (Operator (OpInfix assoc opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = opprec
+termPrec (App (Operator (OpPrefix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
+termPrec (App (Operator (OpPostfix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
 termPrec (App _ _ _ _) = -1
 termPrec _ = -2
 
 termAssoc :: Term -> OpAssoc
 termAssoc (Operator op _ _ _) = opAssoc op
+termAssoc (App (Operator (OpInfix assoc opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = assoc
+termAssoc (App (Operator (OpPrefix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
+termAssoc (App (Operator (OpPostfix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
 termAssoc (App _ _ _ _) = OpAssocRight
 termAssoc _ = OpAssocNone
 
@@ -566,6 +572,14 @@ instance Pretty Term where
     pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!1)])
+
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPrefix opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+        (if needParens prec te then Pretty.parens else id)
+        (hsep [text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0)])
+
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+        (if needParens prec te then Pretty.parens else id)
+        (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s])
     
     pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty)) =
         Pretty.parens $ text s
@@ -608,7 +622,7 @@ instance Pretty Term where
 main :: IO ()
 main = do {
     ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | _ => x | g f@(_) {y} => _]) :: V {A B C :: Type} A -> A"
-    ; let toparse1 = "~ True && f > s || False"
+    ; let toparse1 = "~ (True && (f > s || False))"
     ; let toparse2 = "a + (b + c) * d"          
     ; let sourcename = "test"
     ; let lvl = PrettyLevel $ 4 + 8
