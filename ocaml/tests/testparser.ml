@@ -68,11 +68,15 @@ let rec print_expr (e: expr) =
 let prefixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
 Hashtbl.add prefixes "-" (2, fun x -> Neg x);;
 
+let postfixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
+Hashtbl.add postfixes "&" (8, fun x -> Neg x);;
+
 let infixes: (string, (priority * associativity * (expr -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
 Hashtbl.add infixes "+" (1, Left, fun x y -> Plus (x, y));;
 Hashtbl.add infixes "-" (2, Left, fun x y -> Minus (x, y));;
 Hashtbl.add infixes "*" (3, Right, fun x y -> Mult (x, y));;
 Hashtbl.add infixes "/" (3, Right, fun x y -> Div (x, y));;
+
 
 let valparser : expr parsingrule = 
   (tryrule ((fun _ x -> Val x) |> (spaces) >> (applylexingrule parseintrule)))
@@ -85,9 +89,10 @@ let myp : expr opparser = {
   primary = valparser;
   prefixes = prefixes;
   infixes = infixes;
+  postfixes = postfixes;
 };;
 
-let text = "- 1 + - 1 * - 10 + 9";;
+let text = "- 1 + - 1& * - 10 + 9&";;
 let lines = stream_of_string text;;
 let pb = build_parserbuffer lines;;
 

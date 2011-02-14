@@ -468,7 +468,8 @@ type priority = int;;
 type 'a opparser = {
  primary: 'a parsingrule;
  prefixes: (string, (priority * ('a -> 'a))) Hashtbl.t;
- infixes: (string, (priority * associativity * ('a -> 'a -> 'a))) Hashtbl.t
+ infixes: (string, (priority * associativity * ('a -> 'a -> 'a))) Hashtbl.t;
+ postfixes: (string, (priority * ('a -> 'a))) Hashtbl.t;  
 };;
  
 (* the last arguments point to the father node *)
@@ -479,13 +480,22 @@ type 'a parsetree = Leaf of ('a parsetree) option
 and 'a node = | Primary of 'a
               | Prefix of string * priority * ('a -> 'a) * ('a parsetree) option
               | Infix of string * priority * associativity * ('a -> 'a -> 'a) * ('a parsetree) option * ('a parsetree) option
+              | Postfix of string * priority * ('a -> 'a) * ('a parsetree) option
 ;;
  
+(* create a basic node from a prefix *)
 let node_from_prefix (prefix: (string * priority * ('a -> 'a))) : 'a node =
  let (name, p, f) = prefix in
    Prefix (name, p, f, Some (Leaf None))
 ;;
+
+(* create a basic node from a prefix *)
+let node_from_postfix (postfix: (string * priority * ('a -> 'a))) : 'a node =
+ let (name, p, f) = postfix in
+   Postfix (name, p, f, Some (Leaf None))
+;;
  
+(* create a basic node from an infix *)
 let node_from_infix (infix: (string * priority * associativity * ('a -> 'a -> 'a))) : 'a node =
  let (name, p, a, f) = infix in
    Infix (name, p, a, f, Some (Leaf None), Some (Leaf None))
@@ -494,8 +504,11 @@ let node_from_infix (infix: (string * priority * associativity * ('a -> 'a -> 'a
 (* go up one level *)
 let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
  match t with
+     (* we are in a leaf *)
    | Leaf (Some root) -> (
+       (* we inspect the father node *)
         match root with
+	    (* it is a Prefix *)
           | Node (Prefix (name, prio, f, None), 
                   root
                  ) -> 
@@ -505,6 +518,17 @@ let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
                        ), 
                 root
               )
+	    (* it is a Postfix *)
+          | Node (Postfix (name, prio, f, None), 
+                  root
+                 ) -> 
+              Node (
+                Postfix (name, prio, f, 
+                        Some (Leaf None)
+                       ), 
+                root
+              )
+		(* it is an infix, and we are the left node *)
           | Node (Infix (name, prio, assoc, f, None, Some right), 
                   root
                  ) -> 
@@ -514,6 +538,7 @@ let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
                           ), 
                     root
                    )
+		(* it is an infix, and we are the right node *)
           | Node (Infix (name, prio, assoc, f, Some left, None), 
                   root
                  ) -> 
@@ -521,8 +546,11 @@ let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
                            Some (Leaf None)
                           ), root)
      )
+       (* we are a node *)
    | Node (node, Some root) -> (
+       (* look at the root *) 
         match root with
+	    (* it is a prefix *)
           | Node (Prefix (name, prio, f, None), 
                   root
                  ) -> 
@@ -532,6 +560,17 @@ let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
                        ), 
                 root
               )
+	    (* it is a postfix *)
+          | Node (Postfix (name, prio, f, None), 
+                  root
+                 ) -> 
+              Node (
+                Postfix (name, prio, f, 
+                        Some (Node (node, None))
+                       ), 
+                root
+              )
+	    (* it is an infix, we are the left child *)
           | Node (Infix (name, prio, assoc, f, None, Some right), 
                   root
                  ) -> 
@@ -541,6 +580,7 @@ let zip_up_parsetree (t: 'a parsetree) : 'a parsetree =
                           ), 
                     root
                    )
+	    (* it is an infix, we are the right child *)
           | Node (Infix (name, prio, assoc, f, Some left, None), 
                   root
                  ) -> 
@@ -565,6 +605,16 @@ let zip_down_prefix (t: 'a parsetree) : 'a parsetree =
           Leaf (Some (Node (Prefix (name, prio, f, None), root)))
      | Node (node, None) ->
           Node (node, Some (Node (Prefix (name, prio, f, None), root)))
+;;
+
+(* go down on postfix *)
+let zip_down_postfix (t: 'a parsetree) : 'a parsetree =
+ let Node (Postfix (name, prio, f, Some child), root) = t in
+   match child with
+     | Leaf None ->
+          Leaf (Some (Node (Postfix (name, prio, f, None), root)))
+     | Node (node, None) ->
+          Node (node, Some (Node (Postfix (name, prio, f, None), root)))
 ;;
  
 (* go down on infix. True with choice: left, False: right *)
@@ -610,20 +660,31 @@ let insert_prefix (prefix: (string * priority * ('a -> 'a))) (t: 'a parsetree) :
         let newroot = Node (node_from_prefix prefix, root) in
           zip_down_prefix newroot
 ;;
+
+(* inserting a postfix: TODO *)
+let insert_postfix (prefix: (string * priority * ('a -> 'a))) (t: 'a parsetree) : 'a parsetree =
+ (*let (n, _, _) = prefix in printf "Insert prefix: '%s'\n" n;*)
+  raise Failure
+;;
  
+(* we insert an infix in the tree, depending the case we might need to go up / down in the tree*)
 let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> 'a))) (t: 'a parsetree) : 'a parsetree =
  (*let (n, _, _, _) = infix in printf "Insert infix: '%s'\n" n;*)
  let (name, prio, assoc, f) = infix in
    match t with
+       (* we are on a primary without root, we create an infix with the primary as the left child and go down the left one*)
      | Node (Primary a, None) ->
           let newroot = Node (Infix (name, prio, assoc, f, Some (Node (Primary a, None)), Some (Leaf None)), None) in
             zip_down_infix_choice newroot false
  
+       (* we are on a primary with a root, we zip_up the tree and redo *)
      | Node (Primary a, Some root) ->
           let newroot = zip_up_parsetree t in
             insert_infix infix newroot
- 
+
+       (* we are on a prefix *)
      | Node (Prefix (name2, prio2, f2, Some child), root) ->
+	 (* if it binds less than the infix, we insert the infix as its new child (its previous child becomes the infix left child) *)
           if (prio2 < prio) then (
  
             let newroot = Node (Prefix (name2, prio2, f2, Some (
@@ -641,6 +702,7 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
  
           ) else (
  
+	    (* else the infix becomes replace the current node, which becomes its left child *)
             match root with
               | None -> (
  
@@ -659,13 +721,26 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
                   let newroot = zip_up_parsetree t in
                     insert_infix infix newroot                  
           )
- 
+
+       (* we are on a postfix --> it becomes our child *)
+     | Node (Postfix (name2, prio2, f2, Some child), root) ->
+	 let newroot = Node (Infix (name, prio, assoc, f,
+				    Some (Node (Postfix (name2, prio2, f2, Some child), root)),
+				    Some (Leaf None)
+				   ),
+			     root
+			    ) in
+	   zip_down_infix_choice newroot false
+
+       (* we are on an infix *) 
      | Node (Infix (name2, prio2, assoc2, f2, Some left, Some right), root) ->
+	  (* which either bind more, or both are of equal prio and assoc = Left*)
           if (prio2 > prio || (prio2 = prio && assoc = Left)) then (
  
             match root with
+		(* the current node is the root of the tree*)
               | None -> (
-                  
+                  (* the current node become the left child of the inserted infix*)
                   let newroot = Node (Infix (name, prio, assoc, f, 
                                              Some (Node (Infix (name2, prio2, assoc2, f2, Some left, Some right), 
                                                          None 
@@ -678,6 +753,7 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
                     zip_down_infix_choice newroot false
  
                 )
+		  (* there is a root, so we zip up the tree*)
               | Some root -> (
  
                   let newroot = zip_up_parsetree t in
@@ -687,6 +763,7 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
  
           ) else (
  
+	    (* else the new infix is place at the right hand of the current node, the previous right child becoming its right one*)
             let newroot = Node (Infix (name2, prio2, assoc2, f2,
                                        Some left,
                                        Some (Node (Infix (name, prio, assoc, f, 
@@ -710,6 +787,8 @@ let rec tree_semantics (t: 'a parsetree) : 'a =
  match t with
    | Node (Primary a, _) -> a
    | Node (Prefix (_, _, f, Some child), _) ->
+        f (tree_semantics child)
+   | Node (Postfix (_, _, f, Some child), _) ->
         f (tree_semantics child)
    | Node (Infix (_, _, _, f, Some left, Some right), _) ->
         f (tree_semantics left) (tree_semantics right)
@@ -761,6 +840,36 @@ let parse_prefix (prefixes: (string, (priority * ('a -> 'a))) Hashtbl.t) (t: 'a 
                              ) sorted_list in
    foldp parser_list
 ;;
+
+let parse_postfix (postfixes: (string, (priority * ('a -> 'a))) Hashtbl.t) (t: 'a parsetree) :  ('a parsetree) parsingrule =
+ let list = Hashtbl.fold (fun key (value1, value2) acc ->
+                             (key, value1, value2)::acc
+                          ) postfixes [] in
+ let sorted_list = List.sort (fun (x1, y1, z1) (x2, y2, z2) -> 
+                                 if String.length x1 < String.length x2 then (                                 
+                                   if x1 = String.sub x2 (String.length x1) 0 then
+                                     if String.length x1 = String.length x2 then 0 else 1
+                                   else
+                                     -1
+                                 ) else (
+                                   if x2 = String.sub x1 (String.length x2) 0 then
+                                     if String.length x1 = String.length x2 then 0 else -1
+                                   else
+                                     1
+                                 )
+                              ) list in
+ let parser_list = List.map (fun (x, y, z) -> ( 
+                                (fun pb ->
+                                   let _ = keyword x () pb in
+                                     try
+                                       insert_postfix (x, y, z) t
+                                     with
+                                       | _ -> raise NoMatch
+                                )
+                              )
+                             ) sorted_list in
+   foldp parser_list
+;;
  
 let parse_infix (infixes: (string, (priority * associativity * ('a -> 'a -> 'a))) Hashtbl.t) (t: 'a parsetree) : ('a parsetree) parsingrule =
  let list = Hashtbl.fold (fun key (value1, value2, value3) acc ->
@@ -796,7 +905,8 @@ let opparse (op: 'a opparser) : 'a parsingrule =
    let parser1 = parse_primary op.primary in
    let parser2 = parse_prefix op.prefixes in
    let parser3 = parse_infix op.infixes in
-   let total_parser = fun (t: 'a parsetree) -> ((tryrule (parser1 t)) <|> (tryrule (parser2 t)) <|> (tryrule (parser3 t))) in
+   let parser4 = parse_postfix op.postfixes in
+   let total_parser = fun (t: 'a parsetree) -> ((tryrule (parser1 t)) <|> (tryrule (parser2 t)) <|> (tryrule (parser3 t)) <|> (tryrule (parser4 t))) in
    let init_tree = Leaf None in
    let final_tree = zip_up_parsetree_until_root (fixpoint total_parser init_tree pb) in
      try
