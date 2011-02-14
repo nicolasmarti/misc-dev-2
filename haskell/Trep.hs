@@ -59,7 +59,8 @@ data Term = Type Position
 
           | App Term [(Nature, Term)] Position TypeInfo
 
-          | Case Term [([(Pattern, [Guard])], Term)] Position TypeInfo
+            {- the Maybe Term is for recopying the Term in order to properly TypeCheck -}
+          | Case Term [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
 
           | DoNotation [DoStmt] Position TypeInfo
 
@@ -233,6 +234,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
         parseType = do {
             ; whiteSpace myTokenParser
             ; (_, pos) <- withPosition $ reserved myTokenParser "Type"
+            ; whiteSpace myTokenParser                          
             ; return (Type pos)
             }
 
@@ -240,6 +242,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
         parseVar = do {
             ; whiteSpace myTokenParser
             ; ((s, pos), ty) <- withTypeInfo $ withPosition $ identifier myTokenParser
+            ; whiteSpace myTokenParser                                
             ; return $ Var pos s Nothing ty
             }
 
@@ -251,18 +254,23 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                 ; (notFollowedBy $ do { identifier myTokenParser; return ' '}) <?> "_ should not be followed by any characters"
                 ; return ()
                 }
+            ; whiteSpace myTokenParser
             ; return $ AVar pos Nothing ty
             }
 
         parseQuantifier :: Parser Quantifier
         parseQuantifier = do {
-            ; let oneVarQuantifier = do {
+            ; let oneVarQuantifier = do {                      
+                      ; whiteSpace myTokenParser
                       ; res <- withPosition $ identifier myTokenParser
+                      ; whiteSpace myTokenParser
                       ; return $ Quantifier ([res], NoType, Implicite)
                       }
             ; let severalVarQuantifier = do {
+                      ; whiteSpace myTokenParser
                      ; vars <- many1 $ withPosition $ identifier myTokenParser
                      ; ty <- parseTypeAnnotation
+                     ; whiteSpace myTokenParser
                      ; return (vars, ty)
                      }
             ; try oneVarQuantifier
@@ -289,6 +297,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                 ; quants <- many1 parseQuantifier
                 ; reservedOp myTokenParser "->"
                 ; body <- parseTerm
+                ; whiteSpace myTokenParser
                 ; return (quants, body)
                 }
             ; return $ Lambda quants body pos ty
@@ -408,6 +417,12 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                        <|> try parsePatternLvl1
         
 
+        parseGuard :: Parser Guard
+        parseGuard = do {
+            ; ((te, pos), ty) <- withTypeInfo $ withPosition $ parseTerm
+            ; return (te, pos, ty)
+            }
+
         parseCase :: Parser Term
         parseCase = do {
             ; whiteSpace myTokenParser
@@ -417,15 +432,30 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                 ; whiteSpace myTokenParser
                 ; reserved myTokenParser "of"
                 ; cases <- many (do {
-                                     ; reservedOp myTokenParser "|"
-                                     ; whiteSpace myTokenParser 
-                                     ; pat <- parsePattern
-                                     ; whiteSpace myTokenParser                                                 
-                                     ; reservedOp myTokenParser "=>"
+                                     -- ([(Pattern, [Guard], Maybe Term)], Term)
+                                     ; pats <- many1 $ do { 
+                                         -- (Pattern, [Guard], Maybe Term)
+                                         ;reservedOp myTokenParser "|"
+                                         ; whiteSpace myTokenParser 
+                                         ; pat <- parsePattern
+                                         ; whiteSpace myTokenParser   
+
+                                         ; guards <- many $ do {
+                                             ; whiteSpace myTokenParser 
+                                             ; reserved myTokenParser "where"
+                                             ; parseGuard
+                                             }          
+
+                                         ; return (pat, guards, Nothing)
+                                         }
+                                               
+                                     ; whiteSpace myTokenParser                                      
+                                     ; reservedOp myTokenParser "=>"                                               
                                      ; whiteSpace myTokenParser                                          
                                      ; def <- parseTerm
-                                     ; return ([(pat, [])], def)
-                                     }) 
+                                     ; return (pats, def)
+                                     }
+                                ) 
                 ; return (te, cases)
                 }
             ; return $ Case te cases pos ty
@@ -602,15 +632,18 @@ instance Pretty Term where
     pPrintPrec lvl@(PrettyLevel i) prec te@(Case fct cases pos ty) =
         (if needParens prec te then Pretty.parens else id)
         (fsep [text "case" <+> pPrintPrec lvl lowPrec fct <+> text "of", 
-              foldl (\ acc ([(pat, [])], def) -> 
-                     acc $+$
-                     fsep [nest 2 $ text "|" <+> pPrintPrec lvl lowPrec pat <+> text "=>", 
-                           nest 4 $ pPrintPrec lvl lowPrec def 
-                          ]
+              foldl (\ acc (cases, def) -> 
+                     acc $+$ foldl ( \ acc (pat, guards, _) -> acc $+$ fsep [nest 2 $ text "|" <+> pPrintPrec lvl lowPrec pat <+> foldl (\ acc (g, _, _) -> acc $+$ text "where" <+> pPrintPrec lvl lowPrec g) empty guards <+> text "=>" <+> pPrintPrec lvl lowPrec def]) empty cases
                     ) empty cases,
               (if typeShowLvl i then pPrintPrec lvl prec ty else empty), 
               (if posShowLvl i then pPrintPrec lvl prec pos else empty)
              ])
+
+
+-- *******************************************************************
+-- 
+-- *******************************************************************
+
 
 -- *******************************************************************
 -- Tests ...
@@ -621,15 +654,15 @@ instance Pretty Term where
 
 main :: IO ()
 main = do {
-    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | _ => x | g f@(_) {y} => _]) :: V {A B C :: Type} A -> A"
+    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y}=> _ | _ where True => x]) :: V {A B C :: Type} A -> A"
     ; let toparse1 = "~ (True && (f > s || False))"
     ; let toparse2 = "a + (b + c) * d"          
     ; let sourcename = "test"
     ; let lvl = PrettyLevel $ 4 + 8
     ; let prec = lowPrec
-    ; let style = Style { mode = PageMode, lineLength = 80, ribbonsPerLine=1.0 }
+    ; let style = Style { mode = PageMode, lineLength = 100, ribbonsPerLine=1.0 }
     ; let parserState = ParseState { operators = [("+", OpInfix OpAssocLeft 10), ("*", OpInfix OpAssocLeft 11), (">", OpInfix OpAssocLeft 9), ("||", OpInfix OpAssocLeft  6), ("&&", OpInfix OpAssocLeft 7), ("~", OpPrefix 8)] }
-    ; case parse (trepParser parserState) sourcename toparse1 of
+    ; case parse (trepParser parserState) sourcename toparse of
         Left err -> error $ show err
         Right (term, ty) -> do {
             ; putStrLn $ toparse
