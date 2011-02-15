@@ -57,7 +57,7 @@ data Term = Type Position
 
           | AVar Position (Maybe Term) TypeInfo
 
-          | Cste Position [Name] TypeInfo (Maybe Term)
+          | Cste Position [Name] TypeInfo (Maybe TopLevelDefinition)
 
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
@@ -154,7 +154,7 @@ type Name = String
 
 data Nature = Hidden
             | Explicite
-            | Oracled
+            | Implicit
             deriving (Eq, Show, Ord, Read)
 
 -- *******************************************************************
@@ -292,7 +292,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                           }
                       )
               <|> try (do { (vars, ty) <- squares myTokenParser severalVarQuantifier
-                          ; return $ Quantifier (vars, ty, Oracled)
+                          ; return $ Quantifier (vars, ty, Implicit)
                           }
                       )
             }
@@ -356,7 +356,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                                              }
                                          )
                                  <|> try (do { arg <- squares myTokenParser parseTerm
-                                             ; return (Oracled, arg)
+                                             ; return (Implicit, arg)
                                              }
                                          )
                                 )
@@ -407,7 +407,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                                              }
                                          )
                                  <|> try (do { arg <- squares myTokenParser parsePatternLvl1
-                                             ; return (Oracled, arg)
+                                             ; return (Implicit, arg)
                                              }
                                          )
                                 )
@@ -597,7 +597,7 @@ instance Pretty Quantifier where
     pPrintPrec lvl prec (Quantifier ([(var, pos)], NoType, Hidden)) = text var
     pPrintPrec lvl prec (Quantifier (vars, ty, Explicite)) = Pretty.parens $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
     pPrintPrec lvl prec (Quantifier (vars, ty, Hidden)) = Pretty.braces $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
-    pPrintPrec lvl prec (Quantifier (vars, ty, Oracled)) = Pretty.brackets $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
+    pPrintPrec lvl prec (Quantifier (vars, ty, Implicit)) = Pretty.brackets $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
 
 
 instance Pretty Pattern where
@@ -609,7 +609,7 @@ instance Pretty Pattern where
         <+> foldl (\ acc hd -> acc <+> ((case fst hd of
                                              Explicite -> id
                                              Hidden -> Pretty.braces
-                                             Oracled -> Pretty.brackets
+                                             Implicit -> Pretty.brackets
                                         ) $ pPrintPrec lvl prec $ snd hd
                                        )
                   ) empty args
@@ -704,7 +704,7 @@ instance Pretty Term where
             nest 2 $ hsep $ map (\ hd -> ((case fst hd of
                                                Explicite -> (if (needParens (termRationalPrec te) $ snd hd) then Pretty.parens else id) $ pPrintPrec lvl lowPrec $ snd hd
                                                Hidden -> if impliciteShowLvl i then Pretty.braces $ pPrintPrec lvl lowPrec $ snd hd else empty
-                                               Oracled -> if oracledShowLvl i then Pretty.brackets $ pPrintPrec lvl lowPrec $ snd hd else empty
+                                               Implicit -> if oracledShowLvl i then Pretty.brackets $ pPrintPrec lvl lowPrec $ snd hd else empty
                                           ) 
                                          )
                                 ) args,
@@ -734,14 +734,20 @@ type Substitution = Map.Map Int Term
 
 data TopLevelDefinition = DefSig Name Position TypeInfo
                         | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+                        
                         | DefInductive Name [Quantifier] Term [(Name, Term)] Position TypeInfo
                         | DefConstr Name Int Term Position TypeInfo
+                        
+                        | DefTypeClass Name [Quantifier] Term [(Name, Term, Maybe Term)] Position TypeInfo
+                        | DefInstance Name [Quantifier] Term [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+                        
                         | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
-
+                        
+                        deriving (Eq, Show, Ord, Read)
 
 data TCEnv = TCEnv { 
     -- quantified variables
-    qv :: [(Name, Term, Nature)],
+    qv :: [Quantifier],
     fv :: [(Name, Maybe Term)],
     subst :: Substitution,
     -- substituable variable, only used for unification
@@ -763,22 +769,24 @@ data TCEnv = TCEnv {
     envIndex :: ()
 
     }
-
+           deriving (Eq, Show, Ord, Read)
+                    
 -- here we need a monad that supports
 -- 1) state
 -- 2) log
 -- 3) error / exception
 -- 4) IO ???
 
-data TCErr
-
+data TCErr = TCErr ()
+           deriving (Eq, Show, Ord, Read)
 
 instance Error TCErr where
     -- strMsg :: String -> a
     strMsg = error ""
     
     
-data TCLog 
+data TCLog = TCLog ()
+           deriving (Eq, Show, Ord, Read)
 
 
 instance Monoid TCLog where 
@@ -790,6 +798,7 @@ instance Monoid TCLog where
 
 data ModuleTree = ModuleDir (Map.Map Name ModuleTree)
                 | ModuleDef TCEnv
+                deriving (Eq, Show, Ord, Read)
 
 type ModulePath = [Name]
 
@@ -804,6 +813,7 @@ data TCGlobal = TCGlobal {
     moduleIndex :: ()
     
     }
+              deriving (Eq, Show, Ord, Read)
 
 type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO))) a
 
@@ -844,15 +854,48 @@ runTypeM fct globals env = do {
 
 -- some usefull functions on terms
 
+-- the set of free variable in a term
+termFreeVar :: Term -> Int -> Set.Set Int
+termFreeVar _ _ = error "termFreeVar: NYI"
 
 
 -- reduction
 
+data ReductionStrategy = Lazy
+                       | Eager
+                         
+data ReductionConfig = ReductionConfig {
+    -- lazy or eager
+    strat:: ReductionStrategy,
+    -- beta reduction (lambda with app)
+    beta: Bool,
+    -- strong beta reduction (reduction under quantifier)
+    betaStrong: Bool,
+    -- unfold definition in Cste Term and reduce on them
+    delta: Bool,
+    -- reduce case of
+    iota: Bool,
+    -- if a iota reduction leads to a not exec case of --> backtrack before unfolding (== simpl reduction tactic of Coq)
+    deltaIotaWeak: Bool,
+    -- reduce the let
+    zeta: Bool,
+    -- eta reduction ( \x. f x --> f | x not free in f)
+    eta: Bool
+    }
+
+reduceTerm :: Term -> ReductionConfig -> TypeM Term
+reduceTerm te config = error "NYI"
 
 -- unification
 
+unifyTerm :: Term -> Term -> TypeM Term
+unifyTerm t1 t2 = error "NYI"
 
 -- termchecking
+
+termcheck :: Term -> TypeM Term
+termcheck te = error "NYI"
+
 
 
 -- *******************************************************************
