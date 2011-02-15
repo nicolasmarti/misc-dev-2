@@ -26,6 +26,7 @@ import Text.PrettyPrint.HughesPJClass hiding (char, parens, braces)
 import qualified Text.PrettyPrint.HughesPJ as Pretty(char, parens, braces, brackets)
 import qualified Text.PrettyPrint.HughesPJClass as Pretty(char, parens, braces, brackets)
 
+import Data.List(intercalate)
 import Data.Bits
 import Data.Ratio
 import Data.Monoid
@@ -56,7 +57,7 @@ data Term = Type Position
 
           | AVar Position (Maybe Term) TypeInfo
 
-          | Cste Position Name TypeInfo (Maybe Term)
+          | Cste Position [Name] TypeInfo (Maybe Term)
 
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
@@ -136,7 +137,7 @@ data Quantifier = Quantifier ([(Name, Position)], TypeInfo, Nature)
                 deriving (Eq, Show, Ord, Read)
 
 data Pattern = PAVar Position TypeInfo
-             | PCste Position Name TypeInfo
+             | PCste Position [Name] TypeInfo
              | PVar Position Name TypeInfo
              | PApp Name [(Nature, Pattern)] Position TypeInfo
              | PAlias Position Name Pattern TypeInfo
@@ -151,7 +152,7 @@ data DoStmt = DoLet Name Position TypeInfo Term
 
 type Name = String
 
-data Nature = Implicite
+data Nature = Hidden
             | Explicite
             | Oracled
             deriving (Eq, Show, Ord, Read)
@@ -272,7 +273,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                       ; whiteSpace myTokenParser
                       ; res <- withPosition $ identifier myTokenParser
                       ; whiteSpace myTokenParser
-                      ; return $ Quantifier ([res], NoType, Implicite)
+                      ; return $ Quantifier ([res], NoType, Hidden)
                       }
             ; let severalVarQuantifier = do {
                       ; whiteSpace myTokenParser
@@ -287,7 +288,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                           }
                       )
               <|> try (do { (vars, ty) <- braces myTokenParser severalVarQuantifier
-                          ; return $ Quantifier (vars, ty, Implicite)
+                          ; return $ Quantifier (vars, ty, Hidden)
                           }
                       )
               <|> try (do { (vars, ty) <- squares myTokenParser severalVarQuantifier
@@ -351,7 +352,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                                           }
                                       )
                                  <|> try (do { arg <- braces myTokenParser parseTerm
-                                             ; return (Implicite, arg)
+                                             ; return (Hidden, arg)
                                              }
                                          )
                                  <|> try (do { arg <- squares myTokenParser parseTerm
@@ -402,7 +403,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                                           }
                                       )
                                  <|> try (do { arg <- braces myTokenParser parsePatternLvl1
-                                             ; return (Implicite, arg)
+                                             ; return (Hidden, arg)
                                              }
                                          )
                                  <|> try (do { arg <- squares myTokenParser parsePatternLvl1
@@ -414,7 +415,6 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                 }
             ; fct <- (case fct of
                          PVar pos name ty -> return name 
-                         PCste pos name ty -> return name                    
                          _ -> fail "wrong head of pattern"
                      )
             ; return $ PApp fct args pos ty
@@ -594,21 +594,21 @@ instance Pretty TypeInfo where
     pPrintPrec lvl prec (Infered te) = text ":?:" <+> pPrintPrec lvl prec te
 
 instance Pretty Quantifier where
-    pPrintPrec lvl prec (Quantifier ([(var, pos)], NoType, Implicite)) = text var
+    pPrintPrec lvl prec (Quantifier ([(var, pos)], NoType, Hidden)) = text var
     pPrintPrec lvl prec (Quantifier (vars, ty, Explicite)) = Pretty.parens $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
-    pPrintPrec lvl prec (Quantifier (vars, ty, Implicite)) = Pretty.braces $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
+    pPrintPrec lvl prec (Quantifier (vars, ty, Hidden)) = Pretty.braces $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
     pPrintPrec lvl prec (Quantifier (vars, ty, Oracled)) = Pretty.brackets $ foldl (<+>) empty (map (text . fst) vars) <+> (pPrintPrec lvl prec ty)
 
 
 instance Pretty Pattern where
     pPrintPrec lvl prec (PAVar _ _) = text "_"
-    pPrintPrec lvl prec (PCste _ name _) = text name
+    pPrintPrec lvl prec (PCste _ names _) = text $ intercalate "." names
     pPrintPrec lvl prec (PVar _ name _) = text name
     pPrintPrec lvl prec (PApp fct args pos ty) = 
         text fct  
         <+> foldl (\ acc hd -> acc <+> ((case fst hd of
                                              Explicite -> id
-                                             Implicite -> Pretty.braces
+                                             Hidden -> Pretty.braces
                                              Oracled -> Pretty.brackets
                                         ) $ pPrintPrec lvl prec $ snd hd
                                        )
@@ -703,7 +703,7 @@ instance Pretty Term where
             pPrintPrec lvl prec fct,
             nest 2 $ hsep $ map (\ hd -> ((case fst hd of
                                                Explicite -> (if (needParens (termRationalPrec te) $ snd hd) then Pretty.parens else id) $ pPrintPrec lvl lowPrec $ snd hd
-                                               Implicite -> if impliciteShowLvl i then Pretty.braces $ pPrintPrec lvl lowPrec $ snd hd else empty
+                                               Hidden -> if impliciteShowLvl i then Pretty.braces $ pPrintPrec lvl lowPrec $ snd hd else empty
                                                Oracled -> if oracledShowLvl i then Pretty.brackets $ pPrintPrec lvl lowPrec $ snd hd else empty
                                           ) 
                                          )
@@ -734,9 +734,10 @@ type Substitution = Map.Map Int Term
 
 data TopLevelDefinition = DefSig Name Position TypeInfo
                         | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
-                        | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
                         | DefInductive Name [Quantifier] Term [(Name, Term)] Position TypeInfo
                         | DefConstr Name Int Term Position TypeInfo
+                        | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+
 
 data TCEnv = TCEnv { 
     -- quantified variables
@@ -756,7 +757,10 @@ data TCEnv = TCEnv {
     termStorage :: [[Term]],
 
     -- definitions (prototypes + cases + ...)
-    def :: Map.Map Name TopLevelDefinition    
+    def :: Map.Map Name TopLevelDefinition,
+    
+    -- some index
+    envIndex :: ()
 
     }
 
@@ -768,15 +772,57 @@ data TCEnv = TCEnv {
 
 data TCErr
 
-instance Error TCErr
 
-data TCLog
+instance Error TCErr where
+    -- strMsg :: String -> a
+    strMsg = error ""
+    
+    
+data TCLog 
 
-instance Monoid TCLog
 
-data TCGlobal 
+instance Monoid TCLog where 
+    -- mempty :: a
+    mempty = error ""
+    -- mappend :: a -> a -> a
+    mappend = error ""
+    
+
+data ModuleTree = ModuleDir (Map.Map Name ModuleTree)
+                | ModuleDef TCEnv
+
+type ModulePath = [Name]
+
+data TCGlobal = TCGlobal {
+    -- the loaded module tree
+    moduleTree :: ModuleTree,
+    
+    -- the map from alias to Module Name
+    moduleAlias :: Map.Map ModulePath ModulePath,
+    
+    -- some index
+    moduleIndex :: ()
+    
+    }
 
 type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO))) a
+
+-- from MonadError
+-- throwError :: e -> m a
+-- catchError :: m a -> (e -> m a) -> m a
+
+-- from MonadReader
+-- ask :: m r
+-- localSource :: (r -> r) -> m a -> m a
+
+-- from MonadWriter
+-- tell :: w -> m ()
+-- listen :: m a -> m (a, w)
+-- pass :: m (a, w -> w) -> m a
+
+-- from MonadState
+-- get :: m s
+-- put :: s -> m ()
 
 -- some function for the BIG Monad
 
@@ -794,6 +840,7 @@ runTypeM fct globals env = do {
         Left err -> return $ Left (err, log)
         Right res -> return $ Right (res, env, log)
     }
+
 
 -- some usefull functions on terms
 
