@@ -28,6 +28,15 @@ import qualified Text.PrettyPrint.HughesPJClass as Pretty(char, parens, braces, 
 
 import Data.Bits
 import Data.Ratio
+import Data.Monoid
+import Control.Monad.Reader
+import Control.Monad.Writer
+import Control.Monad.Error
+import Control.Monad.State
+import Control.Monad.RWS
+
+import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 -- *******************************************************************
 -- AST for Trep
@@ -51,9 +60,6 @@ data Term = Type Position
 
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
-
-          | Ind Name [Quantifier] Term [(Name, Term)] Position TypeInfo
-          | Constr Int Term Position TypeInfo
 
           | Let [(Name, Term)] Term Position TypeInfo
 
@@ -149,10 +155,6 @@ data Nature = Implicite
             | Explicite
             | Oracled
             deriving (Eq, Show, Ord, Read)
-
-
-data TopLevel = DefSig Name Position TypeInfo
-              | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position
 
 -- *******************************************************************
 -- Parser / Pretty printer
@@ -655,16 +657,73 @@ instance Pretty Term where
 
 
 -- *******************************************************************
--- reduction, unification, typeChecking
+-- reduction, unification, termchecking
 -- *******************************************************************
 
 -- an environment -> valid for a module
 
-data Environment = Environment { 
+type Substitution = Map.Map Int Term
+
+
+data TopLevelDefinition = DefSig Name Position TypeInfo
+                        | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+                        | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+                        | DefInductive Name [Quantifier] Term [(Name, Term)] Position TypeInfo
+                        | DefConstr Name Int Term Position TypeInfo
+
+data TCEnv = TCEnv { 
     -- quantified variables
     qv :: [(Name, Term, Nature)],
-    fv :: [(Name, Maybe Term)]
+    fv :: [(Name, Maybe Term)],
+    subst :: Substitution,
+    -- substituable variable, only used for unification
+    sv :: Set.Set Int,
+    
+    -- this is for keeping track of size equation (for terminaison checking)
+    sizeEq :: (),
+    
+    -- destruction equation, needed for reasoning on dependent types
+    destructEq :: [(Term, Term)],
+    
+    -- term storage, for keeping currently working terms, in order to have unification propagated on all the typechecking tree
+    termStorage :: [[Term]],
+    
+    -- definitions (prototypes + cases + ...)
+    def :: Map.Map Name TopLevelDefinition    
+    
     }
+
+-- here we need a monad that supports
+-- 1) state
+-- 2) log
+-- 3) error / exception
+-- 4) IO ???
+
+data TCErr
+
+instance Error TCErr
+
+data TCLog
+
+instance Monoid TCLog
+
+data TCGlobal 
+
+type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO))) a
+
+-- some function for the BIG Monad
+
+-- some usefull functions on terms
+
+
+
+-- reduction
+
+
+-- unification
+
+
+-- termchecking
 
 
 -- *******************************************************************
@@ -677,14 +736,14 @@ data Environment = Environment {
 main :: IO ()
 main = do {
     ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y}=> _ | _ where True => (+) x]) :: V {A B C :: Type} A -> A"
-    ; let toparse1 = "~ (True && (f > s || False))"
-    ; let toparse2 = "a + (b + c) * d"          
+    ; let toparse1 = "~ (True || (f > s)) && False"
+    ; let toparse2 = "a + ((b + c) + d) * d"          
     ; let sourcename = "test"
     ; let lvl = PrettyLevel $ 4 + 8
     ; let prec = lowPrec
     ; let style = Style { mode = PageMode, lineLength = 100, ribbonsPerLine=1.0 }
     ; let parserState = ParseState { operators = [("+", OpInfix OpAssocLeft 10), ("*", OpInfix OpAssocLeft 11), (">", OpInfix OpAssocLeft 9), ("||", OpInfix OpAssocLeft  6), ("&&", OpInfix OpAssocLeft 7), ("~", OpPrefix 8)] }
-    ; case parse (trepParser parserState) sourcename toparse of
+    ; case parse (trepParser parserState) sourcename toparse2 of
         Left err -> error $ show err
         Right (term, ty) -> do {
             ; putStrLn $ toparse
