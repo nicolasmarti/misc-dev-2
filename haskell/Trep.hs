@@ -150,6 +150,10 @@ data Nature = Implicite
             | Oracled
             deriving (Eq, Show, Ord, Read)
 
+
+data TopLevel = DefSig Name Position TypeInfo
+              | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position
+
 -- *******************************************************************
 -- Parser / Pretty printer
 -- *******************************************************************
@@ -224,6 +228,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                         <|> try parseForall
                         <|> try parseLet
                         <|> try parseCase
+                        <|> try parseOp2
                         <|> try (parens myTokenParser $ parseTerm)
 
         parseTermLvl2 :: Parser Term
@@ -495,7 +500,16 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
             ; return te
             }
 
-
+        parseOp2 :: Parser Term
+        parseOp2 = do {
+            ; (((s, o), ty), pos) <- foldl (<|>) (fail "this is the end ...") $ map (\ (s, o) -> try $ withPosition $ withTypeInfo $ do {
+                                                                                         ; whiteSpace myTokenParser                                      
+                                                                                         ; parens myTokenParser $ reservedOp myTokenParser s; return ()
+                                                                                         ; whiteSpace myTokenParser                                                                                                                         
+                                                                                         ; return (s, o)
+                                                                                         }) $ operators st
+            ; return $ Operator o s pos ty
+            }
 
 
 -- precision is an Int
@@ -641,8 +655,16 @@ instance Pretty Term where
 
 
 -- *******************************************************************
--- 
+-- reduction, unification, typeChecking
 -- *******************************************************************
+
+-- an environment -> valid for a module
+
+data Environment = Environment { 
+    -- quantified variables
+    qv :: [(Name, Term, Nature)],
+    fv :: [(Name, Maybe Term)]
+    }
 
 
 -- *******************************************************************
@@ -654,7 +676,7 @@ instance Pretty Term where
 
 main :: IO ()
 main = do {
-    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y}=> _ | _ where True => x]) :: V {A B C :: Type} A -> A"
+    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y}=> _ | _ where True => (+) x]) :: V {A B C :: Type} A -> A"
     ; let toparse1 = "~ (True && (f > s || False))"
     ; let toparse2 = "a + (b + c) * d"          
     ; let sourcename = "test"
