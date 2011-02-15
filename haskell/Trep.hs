@@ -231,6 +231,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                         <|> try parseLet
                         <|> try parseCase
                         <|> try parseOp2
+                        <|> try parseDo
                         <|> try (parens myTokenParser $ parseTerm)
 
         parseTermLvl2 :: Parser Term
@@ -513,6 +514,58 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
             ; return $ Operator o s pos ty
             }
 
+        parseDo :: Parser Term
+        parseDo = do {
+            ; ((stmts, pos), ty) <- withTypeInfo $ withPosition $ do {
+                ; whiteSpace myTokenParser 
+                ; reserved myTokenParser "do"
+                ; whiteSpace myTokenParser               
+                ; reservedOp myTokenParser "{"  
+                ; whiteSpace myTokenParser               
+                ; stmts <- many1 (try (do { 
+                                           ; (((var, te), ty), pos) <- withPosition $ withTypeInfo $ do {whiteSpace myTokenParser
+                                                                                                        ; reservedOp myTokenParser ";"  
+                                                                                                        ; whiteSpace myTokenParser  
+                                                                                                        ; reserved myTokenParser "let"
+                                                                                                        ; whiteSpace myTokenParser               
+                                                                                                        ; id <- identifier myTokenParser
+                                                                                                        ; reservedOp myTokenParser "="  
+                                                                                                        ; whiteSpace myTokenParser  
+                                                                                                        ; te <- parseTerm
+                                                                                                        ; return (id, te)
+                                                                                                        }
+                                           ; return $ DoLet var pos ty te
+                                           }
+                                      )
+                                  <|> try (do { 
+                                               ; (((var, te), ty), pos) <- withPosition $ withTypeInfo $ do {whiteSpace myTokenParser
+                                                                                                            ; reservedOp myTokenParser ";"  
+                                                                                                            ; whiteSpace myTokenParser  
+                                                                                                            ; id <- identifier myTokenParser
+                                                                                                            ; reservedOp myTokenParser "<-"  
+                                                                                                            ; whiteSpace myTokenParser  
+                                                                                                            ; te <- parseTerm
+                                                                                                            ; return (id, te)
+                                                                                                            }
+                                               ; return $ DoBind var pos ty te
+                                               }
+                                      )
+                                  <|> try (do { 
+                                               ; ((te, ty), pos) <- withPosition $ withTypeInfo $ do {whiteSpace myTokenParser
+                                                                                                            ; reservedOp myTokenParser ";"  
+                                                                                                            ; whiteSpace myTokenParser  
+                                                                                                            ; parseTerm
+                                                                                                            }
+                                               ; return $ DoVal te pos ty
+                                               }
+                                      )
+                                 )                                  
+                ; whiteSpace myTokenParser               
+                ; reservedOp myTokenParser "}"  
+                ; return stmts
+                }
+            ; return $ DoNotation stmts pos ty
+            }
 
 -- precision is an Int
 -- using bits ...
@@ -614,7 +667,7 @@ instance Pretty Term where
             (if typeShowLvl i then pPrintPrec lvl prec ty else empty),
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ])
-    
+ 
     pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!1)])
@@ -626,9 +679,23 @@ instance Pretty Term where
     pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s])
+ 
     
     pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty)) =
         Pretty.parens $ text s
+
+    pPrintPrec lvl@(PrettyLevel i) prec (te@(DoNotation stmts pos ty)) =
+        (if needParens prec te then Pretty.parens else id) $ (text "do {" $+$ 
+                                                              (nest 4 $ foldl ($+$) empty $ map (\ stmt -> 
+                                                                                                 case stmt of 
+                                                                                                     DoLet n pos ty te -> text ";" <+> text n <+> text "=" <+> pPrintPrec lvl lowPrec te
+                                                                                                     DoBind n pos ty te -> text ";" <+> text n <+> text "<-" <+> pPrintPrec lvl lowPrec te
+                                                                                                     DoVal te pos ty -> text ";" <+> pPrintPrec lvl lowPrec te
+                                                                                                 ) stmts)
+                                                              $+$ text "}"
+                                                             )
+
+
 
     pPrintPrec lvl@(PrettyLevel i) prec te@(App fct args pos ty) =
         (if needParens prec te then Pretty.parens else id)
@@ -649,7 +716,7 @@ instance Pretty Term where
         (if needParens prec te then Pretty.parens else id)
         (fsep [text "case" <+> pPrintPrec lvl lowPrec fct <+> text "of", 
               foldl (\ acc (cases, def) -> 
-                     acc $+$ foldl ( \ acc (pat, guards, _) -> acc $+$ fsep [nest 2 $ text "|" <+> pPrintPrec lvl lowPrec pat <+> foldl (\ acc (g, _, _) -> acc $+$ text "where" <+> pPrintPrec lvl lowPrec g) empty guards <+> text "=>" <+> pPrintPrec lvl lowPrec def]) empty cases
+                     acc $+$ foldl ( \ acc (pat, guards, _) -> acc $+$ fsep [nest 2 $ text "|" <+> pPrintPrec lvl lowPrec pat <+> foldl (\ acc (g, _, _) -> acc $+$ text "where" <+> pPrintPrec lvl lowPrec g) empty guards <+> text "=>"]) empty cases <+> pPrintPrec lvl lowPrec def
                     ) empty cases,
               (if typeShowLvl i then pPrintPrec lvl prec ty else empty), 
               (if posShowLvl i then pPrintPrec lvl prec pos else empty)
@@ -678,19 +745,19 @@ data TCEnv = TCEnv {
     subst :: Substitution,
     -- substituable variable, only used for unification
     sv :: Set.Set Int,
-    
+
     -- this is for keeping track of size equation (for terminaison checking)
     sizeEq :: (),
-    
+
     -- destruction equation, needed for reasoning on dependent types
     destructEq :: [(Term, Term)],
-    
+
     -- term storage, for keeping currently working terms, in order to have unification propagated on all the typechecking tree
     termStorage :: [[Term]],
-    
+
     -- definitions (prototypes + cases + ...)
     def :: Map.Map Name TopLevelDefinition    
-    
+
     }
 
 -- here we need a monad that supports
@@ -750,7 +817,7 @@ runTypeM fct globals env = do {
 
 main :: IO ()
 main = do {
-    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y}=> _ | _ where True => (+) x]) :: V {A B C :: Type} A -> A"
+    ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y} => do { ; let x = a ; y <- z {z}; d d } | _ where True => (+) x]) :: V {A B C :: Type} A -> A"
     ; let toparse1 = "~ (True || (f > s)) && False"
     ; let toparse2 = "a + ((b + c) + d) * d"          
     ; let sourcename = "test"
@@ -758,7 +825,7 @@ main = do {
     ; let prec = lowPrec
     ; let style = Style { mode = PageMode, lineLength = 100, ribbonsPerLine=1.0 }
     ; let parserState = ParseState { operators = [("+", OpInfix OpAssocLeft 10), ("*", OpInfix OpAssocLeft 11), (">", OpInfix OpAssocLeft 9), ("||", OpInfix OpAssocLeft  6), ("&&", OpInfix OpAssocLeft 7), ("~", OpPrefix 8)] }
-    ; case parse (trepParser parserState) sourcename toparse2 of
+    ; case parse (trepParser parserState) sourcename toparse of
         Left err -> error $ show err
         Right (term, ty) -> do {
             ; putStrLn $ toparse
