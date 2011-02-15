@@ -713,6 +713,21 @@ type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO)))
 
 -- some function for the BIG Monad
 
+runTypeM :: TypeM a -> TCGlobal -> TCEnv -> IO (Either (TCErr, TCLog) (a, TCEnv, TCLog))
+runTypeM fct globals env = do {
+    -- runErrorT :: m (Either e a)
+    ; let res1 = runErrorT fct -- ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO)) (Either TCerr, a)
+    -- runReaderT :: r -> m a
+    ; let res2 = runReaderT res1 globals -- WriterT TCLog (StateT TCEnv IO) (Either TCerr a)
+    -- runWriterT :: m (a, w)      
+    ; let res3 = runWriterT res2 -- StateT TCEnv IO ((Either TCerr a), TCLog)
+    -- runStateT :: s -> m (a, s)      
+    ; (((res4), log), env) <- runStateT res3 env -- IO (((Either TCerr a), TCLog), TCenv)
+    ; case res4 of
+        Left err -> return $ Left (err, log)
+        Right res -> return $ Right (res, env, log)
+    }
+
 -- some usefull functions on terms
 
 
