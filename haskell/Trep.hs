@@ -57,10 +57,14 @@ data TypeInfo = NoType
               deriving (Eq, Show, Ord, Read)
 
 data Term = Type Position TypeInfo
+
+            -- the correct index is set at typecheck time
           | Var Position Name (Maybe Int) TypeInfo
 
+            -- the correct term is set at typecheck time
           | AVar Position (Maybe Term) TypeInfo
 
+          -- the proper implementation is set at typecheck time
           | Cste Position [Name] TypeInfo (Maybe TopLevelDefinition)
 
           | Lambda [Quantifier] Term Position TypeInfo
@@ -75,7 +79,8 @@ data Term = Type Position TypeInfo
 
           | DoNotation [DoStmt] Position TypeInfo
 
-          | Operator OpProp String Position TypeInfo
+          -- the proper implementation is set at typecheck time
+          | Operator OpProp String Position TypeInfo (Maybe TopLevelDefinition)
           deriving (Eq, Show, Ord, Read)
 
 -- Warning: this overwrite the previous type info
@@ -90,26 +95,24 @@ addTypeInfo (Type pos _) ty = Type pos ty
 addTypeInfo (AVar pos mt _) ty = AVar pos mt ty
 addTypeInfo (Cste pos name _ mt) ty = Cste pos name ty mt
 addTypeInfo (Lambda qs body pos _) ty = Lambda qs body pos ty
-addTypeInfo (Forall qs body pos _) ty = Forall qs body pos ty
-
-        
+addTypeInfo (Forall qs body pos _) ty = Forall qs body pos ty        
         
 termPrec :: Term -> BindStrentgh
-termPrec (Operator op _ _ _) = opPrec op
+termPrec (Operator op _ _ _ _) = opPrec op
 termPrec (Var _ _ _ _) = 100
 termPrec (Cste _ _ _ _) = 100
 termPrec (AVar _ _ _) = 100
-termPrec (App (Operator (OpInfix assoc opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = opprec
-termPrec (App (Operator (OpPrefix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
-termPrec (App (Operator (OpPostfix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
+termPrec (App (Operator (OpInfix assoc opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = opprec
+termPrec (App (Operator (OpPrefix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
+termPrec (App (Operator (OpPostfix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
 termPrec (App _ _ _ _) = -1
 termPrec _ = -2
 
 termAssoc :: Term -> OpAssoc
-termAssoc (Operator op _ _ _) = opAssoc op
-termAssoc (App (Operator (OpInfix assoc opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = assoc
-termAssoc (App (Operator (OpPrefix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
-termAssoc (App (Operator (OpPostfix opprec) _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
+termAssoc (Operator op _ _ _ _) = opAssoc op
+termAssoc (App (Operator (OpInfix assoc opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = assoc
+termAssoc (App (Operator (OpPrefix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
+termAssoc (App (Operator (OpPostfix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
 termAssoc (App _ _ _ _) = OpAssocRight
 termAssoc _ = OpAssocNone
 
@@ -504,7 +507,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                (s, o@(OpInfix assoc str)) -> (Infix (do { (op, pos) <- withPosition $ reserved myTokenParser s
                                                                         ; return $ \ (t1, Position src1 (start1, end1)) 
                                                                                      (t2, Position src2 (start2, end2)) -> 
-                                                                                            (App (Operator o s pos NoType) [(Explicite, t1), (Explicite, t2)] (Position src1 (start1, end2)) NoType, (Position src1 (start1, end2)))
+                                                                                            (App (Operator o s pos NoType Nothing) [(Explicite, t1), (Explicite, t2)] (Position src1 (start1, end2)) NoType, (Position src1 (start1, end2)))
                                                                         }
                                                               ) (case assoc of
                                                                      OpAssocNone -> AssocNone
@@ -515,7 +518,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                (s, o@(OpPrefix str)) -> (Prefix ( do {
                                                                       ; (op, pos@(Position srco (starto, endo))) <- withPosition $ reserved myTokenParser s
                                                                       ; return $ \ (t, Position src (start, end)) ->
-                                                                                        (App (Operator o s pos NoType) [(Explicite, t)] (Position src (starto, end)) NoType, (Position src (starto, end)))
+                                                                                        (App (Operator o s pos NoType Nothing) [(Explicite, t)] (Position src (starto, end)) NoType, (Position src (starto, end)))
                                                                       }
                                                                 ), str)                           
                            ) in
@@ -537,7 +540,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                                                                          ; whiteSpace myTokenParser                                                                                                                         
                                                                                          ; return (s, o)
                                                                                          }) $ operators st
-            ; return $ Operator o s pos ty
+            ; return $ Operator o s pos ty Nothing
             }
 
         parseDo :: Parser Term
@@ -694,20 +697,20 @@ instance Pretty Term where
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ])
  
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!1)])
 
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPrefix opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPrefix opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0)])
 
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s])
  
     
-    pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty)) =
+    pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty _)) =
         Pretty.parens $ text s
 
     pPrintPrec lvl@(PrettyLevel i) prec (te@(DoNotation stmts pos ty)) =
@@ -832,13 +835,18 @@ data TCEnv = TCEnv {
     }
            deriving (Eq, Show, Ord, Read)
                     
+getTCEnvDefinition :: Name -> TCEnv -> TypeM TopLevelDefinition
+getTCEnvDefinition name env = do {
+    ; case Map.lookup name (def env) of
+        Nothing -> throwError $ ErrNoDef name
+        Just def -> return def    
+    }
+
 emptyTCEnv :: TCEnv
 emptyTCEnv = TCEnv { qv = [], fv = [], sv = Set.empty, subst = Map.empty, sizeEq = (), destructEq = [], termStorage = [[]], def = Map.empty, envIndex = ()}
 
 tcEnv2ParseState :: TCEnv -> ParseState
 tcEnv2ParseState env = ParseState { operators = Map.fold (\ hd acc -> topleveldef2oplist hd ++ acc) [] $ def env }
-
-
 
 -- here we need a monad that supports
 -- 1) state
@@ -847,7 +855,9 @@ tcEnv2ParseState env = ParseState { operators = Map.fold (\ hd acc -> toplevelde
 -- 4) IO ???
 
 data TCErr = PlainErr String
-           deriving (Eq, Show, Ord, Read)
+           | ErrNoDef String
+           | ErrNoModule ModulePath
+             deriving (Eq, Show, Ord, Read)
 
 instance Error TCErr where
     -- strMsg :: String -> a
@@ -871,6 +881,18 @@ data ModuleTree = ModuleDir (Map.Map Name ModuleTree)
 
 type ModulePath = [Name]
 
+getModule :: ModulePath -> ModuleTree -> TypeM TCEnv
+getModule path tree = catchError (getModule' path tree) (\ (ErrNoModule _) -> throwError $ ErrNoModule path)
+        where
+            getModule' :: ModulePath -> ModuleTree -> TypeM TCEnv
+            getModule' [] (ModuleDef env) = return env
+            getModule' path@(hd:tl) (ModuleDir dir) = do {
+                ; case Map.lookup hd dir of
+                    Nothing -> throwError $ ErrNoModule path
+                    Just m -> getModule' tl m
+                }
+            getModule' path _ = throwError $ ErrNoModule path
+
 data TCGlobal = TCGlobal {
     -- the loaded module tree
     moduleTree :: ModuleTree,
@@ -883,6 +905,14 @@ data TCGlobal = TCGlobal {
     
     }
               deriving (Eq, Show, Ord, Read)
+                       
+getGlobalModule :: ModulePath -> TypeM TCEnv                       
+getGlobalModule path = do {
+    ; globals <- getGlobals
+    ; case Map.lookup path (moduleAlias globals) of
+        Nothing -> getModule path $ moduleTree globals
+        Just aliaspath -> getModule aliaspath $ moduleTree globals
+    }
 
 emptyTCGlobal :: TCGlobal
 emptyTCGlobal = TCGlobal { moduleTree = ModuleDir Map.empty, moduleAlias = Map.empty, moduleIndex = ()}
@@ -910,14 +940,14 @@ type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO)))
 
 addTopLevelDefinition :: String -> TopLevelDefinition -> TypeM ()
 addTopLevelDefinition name topdef = do {
-    ; st <- get
-    ; put $ st { def = Map.insert name topdef (def st) }          
+    ; env <- getEnv
+    ; setEnv $ env { def = Map.insert name topdef (def env) }          
     }
 
 checkNameUniqueNess :: String -> TypeM ()
 checkNameUniqueNess name = do {
-    ; st <- get
-    ; case Map.lookup name (def st) of
+    ; env <- getEnv
+    ; case Map.lookup name (def env) of
         Nothing -> return ()
         Just def -> throwError $ strMsg $ "the name " ++ name ++ " is already defined in the current module"
     }
@@ -937,6 +967,24 @@ runTypeM fct globals env = do {
         Right res -> return $ Right (res, env, log)
     }
 
+getEnv :: TypeM TCEnv
+getEnv = get
+
+setEnv :: TCEnv -> TypeM ()
+setEnv = put
+
+getGlobals :: TypeM TCGlobal
+getGlobals = ask
+
+getDefinition :: [Name] -> TypeM TopLevelDefinition
+getDefinition [name] = do {
+    ; env <- getEnv
+    ; getTCEnvDefinition name env
+    }
+getDefinition name = do {
+    ; env <- getGlobalModule $ init name
+    ; getTCEnvDefinition (last name) env
+    }
 
 -- some usefull functions on terms
 
@@ -970,7 +1018,42 @@ data ReductionConfig = ReductionConfig {
     }
 
 reduceTerm :: Term -> ReductionConfig -> TypeM Term
-reduceTerm te config = error "NYI"
+reduceTerm te config = reduce' te
+    where
+        reduce' :: Term -> TypeM Term
+        
+        reduce' te@(Type _ _) = return te
+        
+        reduce' te@(Var pos name index ty) | Just index' <- index, index' < 0 = return te
+                                           | Just index' <- index, index' >= 0 = return te
+
+                                           -- we did not type checked yet
+                                           | Nothing <- index = return te
+
+        -- the typechecking has not been done -> we take the first def that matches
+        reduce' te@(Cste pos name ty Nothing) | delta config = do {
+            ; def <- getDefinition name
+            ; return $ Cste pos name ty $ Just def
+            }
+                                              | otherwise = return te
+
+        -- 
+        reduce' te@(Lambda quants body pos ty) | betaStrong config = error "NYI"
+                                               | otherwise = return te
+
+        reduce' te@(Forall quants body pos ty) | betaStrong config = error "NYI"
+                                               | otherwise = return te
+
+        reduce' te@(App fct args pos ty) = error "NYI"
+
+        reduce' te@(Case cte cases pos ty) | iota config = error "NYI"
+                                           | otherwise = return te
+
+        -- 
+        reduce' te@(DoNotation stmts pos ty) = error "NYI"
+
+        reduce' te@(Operator op s pos ty mte) = return te
+
 
 -- unification
 
@@ -996,13 +1079,13 @@ processTopLevelDefinition def@(DefSig id pos ty) = do {
     ; te' <- termcheck $ addAnnotation ty $ Type NoPosition NoType
     -- add the def
     ; addTopLevelDefinition id def
-    
+
     -- just some debug output
     ; let style = Style { mode = PageMode, lineLength = 100, ribbonsPerLine=1.0 }
     ; let lvl = PrettyLevel $ 4 + 8
     ; let prec = lowPrec          
     ; liftIO $ putStrLn $ renderStyle style $ pPrintPrec lvl prec def
-      
+
     ; return ()
     }
 
