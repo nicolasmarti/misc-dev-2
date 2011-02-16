@@ -2,17 +2,14 @@
 
 -- 
 
-module Trep (main) where
-
+module Unification where
 
 import Def
 import TypeM
-import Parser
-import Pprinter
-import Env
-import Reduction
-import Unification
-import TermCheck
+import Control.Monad.Error
 
-main :: IO ()
-main = return ()
+unifyTerm :: Term -> Term -> TypeM Term
+unifyTerm t1 t2 = error "NYI"
+
+unifyPattern :: Pattern -> Term -> TypeM [(Name, Term)]
+unifyPattern pat te = error "NYI"

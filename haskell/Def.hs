@@ -117,10 +117,18 @@ type Substitution = Map.Map Int Term
 
 data TCEnv = TCEnv { 
     
-    -- quantified variables
+    -- quantified variables, index >= 0
     qv :: [Quantifier],
+    
+    -- free variable, index < 0
     fv :: [(Name, Maybe Term)],
+    
+    -- pattern variable, index == Nothing
+    pv :: [(Name, Term)],
+    
+    -- the sum of substitution
     subst :: Substitution,
+    
     -- substituable variable, only used for unification
     sv :: Set.Set Int,
 

@@ -1,6 +1,6 @@
 {-# LANGUAGE ExistentialQuantification, FlexibleInstances, RankNTypes, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies, TypeSynonymInstances, UndecidableInstances, EmptyDataDecls, PatternGuards #-}
 
--- this is a little language to be compile in VM
+-- 
 
 module Trep (
 

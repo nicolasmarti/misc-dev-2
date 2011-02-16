@@ -2,17 +2,9 @@
 
 -- 
 
-module Trep (main) where
-
+module Env where
 
 import Def
-import TypeM
-import Parser
-import Pprinter
-import Env
-import Reduction
-import Unification
-import TermCheck
 
-main :: IO ()
-main = return ()
+
+

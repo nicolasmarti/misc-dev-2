@@ -2,17 +2,15 @@
 
 -- 
 
-module Trep (main) where
-
+module TermCheck where
 
 import Def
 import TypeM
-import Parser
-import Pprinter
-import Env
-import Reduction
-import Unification
-import TermCheck
+import Control.Monad.Error
 
-main :: IO ()
-main = return ()
+termcheckTerm :: Term -> TypeM Term
+termcheckTerm te = error "NYI"
+
+termcheckPattern :: Pattern -> TypeM [(Name, Term)]
+termcheckPattern pat = error "NYI"
+

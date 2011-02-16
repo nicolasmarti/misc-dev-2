@@ -19,8 +19,9 @@ import Def
 -- 4) IO ???
 
 data TCErr = PlainErr String
-           | ErrNoDef String
-           | ErrNoModule ModulePath
+           | ErrNoDef String Position
+           | ErrNoModule ModulePath Position
+           | ErrTermNotTypeChecked Position
              deriving (Eq, Show, Ord, Read)
 
 instance Error TCErr where
