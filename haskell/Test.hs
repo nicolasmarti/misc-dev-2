@@ -455,7 +455,7 @@ data Testconfig = Testconfig {
 testconfig :: Testconfig
 testconfig = Testconfig { 
   testbinding = False,
-  testbinding2 = True,
+  testbinding2 = False,
   gcedtest = False,
   dynarraytest = False,
   sumtest = False,  
@@ -463,7 +463,7 @@ testconfig = Testconfig {
   rectypetest = False,
   runtimetest= False,
   
-  testvm = False
+  testvm = True
   }             
              
 
