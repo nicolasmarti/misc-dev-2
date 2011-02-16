@@ -36,9 +36,9 @@ data Quantifier = Quantifier ([(Name, Position)], TypeInfo, Nature)
                 deriving (Eq, Show, Ord, Read)
 
 data Pattern = PAVar Position TypeInfo
-             | PCste Position [Name] TypeInfo
+             | PCste Position Name TypeInfo (Maybe DefPtr)
              | PVar Position Name TypeInfo
-             | PApp Name [(Nature, Pattern)] Position TypeInfo
+             | PApp Name (Maybe DefPtr) [(Nature, Pattern)] Position TypeInfo
              | PAlias Position Name Pattern TypeInfo
              deriving (Eq, Show, Ord, Read)
 
@@ -65,7 +65,7 @@ data Term = Type Position TypeInfo
           | AVar Position (Maybe Term) TypeInfo
 
           -- the proper implementation path is set at typecheck time
-          | Cste Position [Name] TypeInfo (Maybe [Name])
+          | Cste Position Name TypeInfo (Maybe DefPtr)
 
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
@@ -80,7 +80,7 @@ data Term = Type Position TypeInfo
           | DoNotation [DoStmt] Position TypeInfo
 
           -- the proper implementation path is set at typecheck time
-          | Operator OpProp String Position TypeInfo (Maybe [Name])
+          | Operator OpProp String Position TypeInfo (Maybe DefPtr)
           deriving (Eq, Show, Ord, Read)
 
 -- ************************************************************
@@ -91,12 +91,7 @@ data Definition = DefSig Name Position Term
                 | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
 
                 | DefInductive Name [Quantifier] Term [(Name, Term)] Position TypeInfo
-                | DefConstr Name Int Term Position TypeInfo
-
-                | DefTypeClass Name [Quantifier] Term [(Name, Term, Maybe Term)] Position TypeInfo
-                | DefInstance Name [Quantifier] Term [(Name, [([(Pattern, [Guard], Maybe Term)], Term)])] Position TypeInfo
-
-                | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
+                | DefConstr Name Int Position TypeInfo
 
                 | DefNotation String OpProp
 
@@ -107,16 +102,18 @@ data Definition = DefSig Name Position Term
 -- module: build and typechecked
 -- ************************************************************
 
+type ModulePath = [Name]
+
 data TCModule = TCModule ModulePath (Map.Map Name Definition)
            deriving (Eq, Show, Ord, Read)
+
+type DefPtr = (ModulePath, Name)
 
 -- *******************************************************************************
 -- environment: represent the working data structure for currently building module
 -- *******************************************************************************
 
 type Substitution = Map.Map Int Term
-
-type ModulePath = [Name]
 
 data TCEnv = TCEnv { 
     

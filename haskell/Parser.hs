@@ -275,7 +275,7 @@ termParser st = parseTerm <?> "Expected a Term"
                          PVar pos name ty -> return name 
                          _ -> fail "wrong head of pattern"
                      )
-            ; return $ PApp fct args pos ty
+            ; return $ PApp fct Nothing args pos ty
             }        
 
         parsePattern :: Parser Pattern

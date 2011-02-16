@@ -47,9 +47,9 @@ instance Pretty Quantifier where
 
 instance Pretty Pattern where
     pPrintPrec lvl prec (PAVar _ _) = text "_"
-    pPrintPrec lvl prec (PCste _ names _) = text $ intercalate "." names
+    pPrintPrec lvl prec (PCste _ name _ _) = text name
     pPrintPrec lvl prec (PVar _ name _) = text name
-    pPrintPrec lvl prec (PApp fct args pos ty) = 
+    pPrintPrec lvl prec (PApp fct _ args pos ty) = 
         text fct  
         <+> foldl (\ acc hd -> acc <+> ((case fst hd of
                                              Explicite -> id
