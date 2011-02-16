@@ -1,0 +1,6 @@
+
+def Bool :: Type
+
+def True :: Bool
+
+def False :: Bool

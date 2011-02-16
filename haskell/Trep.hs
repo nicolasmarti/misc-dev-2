@@ -39,6 +39,10 @@ import Control.Monad.RWS
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+import System.IO
+
+import Debug.Trace
+
 -- *******************************************************************
 -- AST for Trep
 -- *******************************************************************
@@ -52,7 +56,7 @@ data TypeInfo = NoType
               | Infered Term
               deriving (Eq, Show, Ord, Read)
 
-data Term = Type Position
+data Term = Type Position TypeInfo
           | Var Position Name (Maybe Int) TypeInfo
 
           | AVar Position (Maybe Term) TypeInfo
@@ -74,6 +78,22 @@ data Term = Type Position
           | Operator OpProp String Position TypeInfo
           deriving (Eq, Show, Ord, Read)
 
+-- Warning: this overwrite the previous type info
+addAnnotation :: Term -> Term -> Term
+addAnnotation te ty = addTypeInfo te ty'
+    where
+        ty' :: TypeInfo 
+        ty' = Annotation ty NoPosition
+        
+addTypeInfo :: Term -> TypeInfo -> Term
+addTypeInfo (Type pos _) ty = Type pos ty
+addTypeInfo (AVar pos mt _) ty = AVar pos mt ty
+addTypeInfo (Cste pos name _ mt) ty = Cste pos name ty mt
+addTypeInfo (Lambda qs body pos _) ty = Lambda qs body pos ty
+addTypeInfo (Forall qs body pos _) ty = Forall qs body pos ty
+
+        
+        
 termPrec :: Term -> BindStrentgh
 termPrec (Operator op _ _ _) = opPrec op
 termPrec (Var _ _ _ _) = 100
@@ -167,7 +187,9 @@ myTokenParser = makeTokenParser $ haskellStyle {
     reservedNames  = ["let","in","case","of","if","then","else",
                       "Type", "do","import",
                       "infix","infixl","infixr", "module",
-                      "where", "V"]
+                      "where", "V", 
+                      "def"
+                     ]
     }
 
 -- the state for parsing :
@@ -178,30 +200,34 @@ data ParseState = ParseState {
 dummyPState :: ParseState
 dummyPState = ParseState { operators = [] }
 
-trepParser :: ParseState -> Parser (Term, TypeInfo)
-trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
-    where
-        getSource :: Parser String
-        getSource = do { pos <- getPosition
-                       ; return $ sourceName pos
-                       }
 
-        getpos :: Parser (Int, Int)
-        getpos = do { pos <- getPosition
-                    ; let line = sourceLine pos
-                    ; let col = sourceColumn pos
-                    ; return (line, col)
-                    }
+getSource :: Parser String
+getSource = do { pos <- getPosition
+               ; return $ sourceName pos
+               }
 
-        withPosition :: Parser a -> Parser (a, Position)
-        withPosition p = do {
-            ; fname <- getSource
-            ; (startline, startcol) <- getpos
-            ; res <- p
-            ; (endline, endcol) <- getpos
-            ; return (res, Position (Just fname) ((startline, startcol), (endline, endcol)))
+getpos :: Parser (Int, Int)
+getpos = do { pos <- getPosition
+            ; let line = sourceLine pos
+            ; let col = sourceColumn pos
+            ; return (line, col)
             }
 
+
+withPosition :: Parser a -> Parser (a, Position)
+withPosition p = do {
+    ; fname <- getSource
+    ; (startline, startcol) <- getpos
+    ; res <- p
+    ; (endline, endcol) <- getpos
+    ; return (res, Position (Just fname) ((startline, startcol), (endline, endcol)))
+    }
+
+
+termParser :: ParseState -> Parser Term
+termParser st = parseTerm <?> "Expected a Term"
+    where
+        
         parseTypeAnnotation :: Parser TypeInfo
         parseTypeAnnotation = try (do {
                                        ; whiteSpace myTokenParser
@@ -244,7 +270,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
             ; whiteSpace myTokenParser
             ; (_, pos) <- withPosition $ reserved myTokenParser "Type"
             ; whiteSpace myTokenParser                          
-            ; return (Type pos)
+            ; return (Type pos NoType)
             }
 
         parseVar :: Parser Term
@@ -392,7 +418,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                                         ; return $ PAVar pos ty
                                         })
                            <|> try (parens myTokenParser parsePattern)
-                           
+
         parsePatternApp :: Parser Pattern
         parsePatternApp = do {                
             ; whiteSpace myTokenParser
@@ -419,11 +445,11 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
                      )
             ; return $ PApp fct args pos ty
             }        
-        
+
         parsePattern :: Parser Pattern
         parsePattern = try parsePatternApp
                        <|> try parsePatternLvl1
-        
+
 
         parseGuard :: Parser Guard
         parseGuard = do {
@@ -456,7 +482,7 @@ trepParser st = (withTypeInfo parseTerm) <?> "Expected a Term"
 
                                          ; return (pat, guards, Nothing)
                                          }
-                                               
+
                                      ; whiteSpace myTokenParser                                      
                                      ; reservedOp myTokenParser "=>"                                               
                                      ; whiteSpace myTokenParser                                          
@@ -628,7 +654,7 @@ lowPrec :: Rational
 lowPrec = (-1000) % 3557
 
 instance Pretty Term where
-    pPrintPrec lvl@(PrettyLevel i) prec te@(Type pos) = 
+    pPrintPrec lvl@(PrettyLevel i) prec te@(Type pos _) = 
         (if needParens prec te then Pretty.parens else id)
         (text "Type" <+> (if posShowLvl i then pPrintPrec lvl prec pos else empty))
 
@@ -723,16 +749,7 @@ instance Pretty Term where
              ])
 
 
--- *******************************************************************
--- reduction, unification, termchecking
--- *******************************************************************
-
--- an environment -> valid for a module
-
-type Substitution = Map.Map Int Term
-
-
-data TopLevelDefinition = DefSig Name Position TypeInfo
+data TopLevelDefinition = DefSig Name Position Term
                         | DefCase Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
                         
                         | DefInductive Name [Quantifier] Term [(Name, Term)] Position TypeInfo
@@ -743,7 +760,51 @@ data TopLevelDefinition = DefSig Name Position TypeInfo
                         
                         | DefOracle Name [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
                         
+                        | DefNotation String OpProp
+                          
                         deriving (Eq, Show, Ord, Read)
+
+topleveldef2oplist :: TopLevelDefinition -> [(String, OpProp)]
+topleveldef2oplist (DefNotation s op) = [(s, op)]
+topleveldef2oplist _ = []
+
+topLevelParser :: ParseState -> Parser TopLevelDefinition
+topLevelParser st = toplevelParser <?> "Expected a TopLevel Definition"
+    where
+        toplevelParser :: Parser TopLevelDefinition
+        toplevelParser = try parseSig
+        
+        
+        parseSig :: Parser TopLevelDefinition
+        parseSig = do {
+            ; whiteSpace myTokenParser            
+            ; reserved myTokenParser "def"
+            ; whiteSpace myTokenParser                          
+            ; ((id, ty), pos) <- withPosition $ do { 
+                ; id <- identifier myTokenParser
+                ; whiteSpace myTokenParser            
+                ; reservedOp myTokenParser "::"
+                ; whiteSpace myTokenParser            
+                ; (ty, pos) <- withPosition $ termParser st
+                ; return (id, ty)
+                }
+            ; return $ DefSig id pos ty              
+            }
+
+
+instance Pretty TopLevelDefinition where
+    pPrintPrec lvl@(PrettyLevel i) prec te@(DefSig id pos ty) = 
+        text "def" <+> text id <+> pPrintPrec lvl prec ty
+
+
+
+-- *******************************************************************
+-- reduction, unification, termchecking
+-- *******************************************************************
+
+-- an environment -> valid for a module
+
+type Substitution = Map.Map Int Term
 
 data TCEnv = TCEnv { 
     -- quantified variables
@@ -771,18 +832,26 @@ data TCEnv = TCEnv {
     }
            deriving (Eq, Show, Ord, Read)
                     
+emptyTCEnv :: TCEnv
+emptyTCEnv = TCEnv { qv = [], fv = [], sv = Set.empty, subst = Map.empty, sizeEq = (), destructEq = [], termStorage = [[]], def = Map.empty, envIndex = ()}
+
+tcEnv2ParseState :: TCEnv -> ParseState
+tcEnv2ParseState env = ParseState { operators = Map.fold (\ hd acc -> topleveldef2oplist hd ++ acc) [] $ def env }
+
+
+
 -- here we need a monad that supports
 -- 1) state
 -- 2) log
 -- 3) error / exception
 -- 4) IO ???
 
-data TCErr = TCErr ()
+data TCErr = PlainErr String
            deriving (Eq, Show, Ord, Read)
 
 instance Error TCErr where
     -- strMsg :: String -> a
-    strMsg = error ""
+    strMsg = PlainErr
     
     
 data TCLog = TCLog ()
@@ -815,6 +884,9 @@ data TCGlobal = TCGlobal {
     }
               deriving (Eq, Show, Ord, Read)
 
+emptyTCGlobal :: TCGlobal
+emptyTCGlobal = TCGlobal { moduleTree = ModuleDir Map.empty, moduleAlias = Map.empty, moduleIndex = ()}
+
 type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO))) a
 
 -- from MonadError
@@ -835,6 +907,20 @@ type TypeM a = ErrorT TCErr (ReaderT TCGlobal (WriterT TCLog (StateT TCEnv IO)))
 -- put :: s -> m ()
 
 -- some function for the BIG Monad
+
+addTopLevelDefinition :: String -> TopLevelDefinition -> TypeM ()
+addTopLevelDefinition name topdef = do {
+    ; st <- get
+    ; put $ st { def = Map.insert name topdef (def st) }          
+    }
+
+checkNameUniqueNess :: String -> TypeM ()
+checkNameUniqueNess name = do {
+    ; st <- get
+    ; case Map.lookup name (def st) of
+        Nothing -> return ()
+        Just def -> throwError $ strMsg $ "the name " ++ name ++ " is already defined in the current module"
+    }
 
 runTypeM :: TypeM a -> TCGlobal -> TCEnv -> IO (Either (TCErr, TCLog) (a, TCEnv, TCLog))
 runTypeM fct globals env = do {
@@ -868,19 +954,19 @@ data ReductionConfig = ReductionConfig {
     -- lazy or eager
     strat:: ReductionStrategy,
     -- beta reduction (lambda with app)
-    beta: Bool,
+    beta:: Bool,
     -- strong beta reduction (reduction under quantifier)
-    betaStrong: Bool,
+    betaStrong:: Bool,
     -- unfold definition in Cste Term and reduce on them
-    delta: Bool,
+    delta:: Bool,
     -- reduce case of
-    iota: Bool,
+    iota:: Bool,
     -- if a iota reduction leads to a not exec case of --> backtrack before unfolding (== simpl reduction tactic of Coq)
-    deltaIotaWeak: Bool,
+    deltaIotaWeak:: Bool,
     -- reduce the let
-    zeta: Bool,
+    zeta:: Bool,
     -- eta reduction ( \x. f x --> f | x not free in f)
-    eta: Bool
+    eta:: Bool
     }
 
 reduceTerm :: Term -> ReductionConfig -> TypeM Term
@@ -894,7 +980,7 @@ unifyTerm t1 t2 = error "NYI"
 -- termchecking
 
 termcheck :: Term -> TypeM Term
-termcheck te = error "NYI"
+termcheck te = trace "termcheck not yet implemented  == id " $ return te
 
 
 
@@ -902,11 +988,42 @@ termcheck te = error "NYI"
 -- Tests ...
 -- *******************************************************************
 
+processTopLevelDefinition :: TopLevelDefinition -> TypeM ()
+processTopLevelDefinition def@(DefSig id pos ty) = do {
+    -- check that id is not already defined (locally)
+    ; checkNameUniqueNess id
+    -- check that ty :: Type
+    ; te' <- termcheck $ addAnnotation ty $ Type NoPosition NoType
+    -- add the def
+    ; addTopLevelDefinition id def
+    
+    -- just some debug output
+    ; let style = Style { mode = PageMode, lineLength = 100, ribbonsPerLine=1.0 }
+    ; let lvl = PrettyLevel $ 4 + 8
+    ; let prec = lowPrec          
+    ; liftIO $ putStrLn $ renderStyle style $ pPrintPrec lvl prec def
+      
+    ; return ()
+    }
 
+parserTrepFile :: String -> TypeM ()
+parserTrepFile file = do {
+    ; h <- liftIO $ openFile file ReadMode
+    ; s <- liftIO $ hGetContents h
+    --; liftIO $ putStrLn s
+    ; let parserState = ParseState { operators = []}
+    ; defs <- (case parse (many $ topLevelParser parserState) file s of
+                   Left err -> throwError $ strMsg $ show err
+                   Right defs -> return defs
+               ) 
+    ; _ <- mapM processTopLevelDefinition defs
+    ; return ()
+    }
 
 
 main :: IO ()
 main = do {
+    {-
     ; let toparse = "(\\ {A B C :: Type} a -> let x = a :: A in x x {x} [y + case x of | g f@(_) {y} where True where False | d {y} => do { ; let x = a ; y <- z {z}; d d } | _ where True => (+) x]) :: V {A B C :: Type} A -> A"
     ; let toparse1 = "~ (True || (f > s)) && False"
     ; let toparse2 = "a + ((b + c) + d) * d"          
@@ -922,5 +1039,10 @@ main = do {
             ; putStrLn $ show term
             ; putStrLn $ renderStyle style $ fsep [pPrintPrec lvl prec term, nest 2 $  pPrintPrec lvl prec ty]
             }
+    -}
+    ; res <- runTypeM (parserTrepFile "test.trep") emptyTCGlobal emptyTCEnv
+    ; case res of 
+        Left (err, log) -> error $ show err
+        Right ((), env, log) -> return ()
     }
 
