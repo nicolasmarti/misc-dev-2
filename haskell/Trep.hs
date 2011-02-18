@@ -10,6 +10,7 @@ import TypeM
 import Parser
 import Pprinter
 import Env
+import Definition
 import Reduction
 import Unification
 import TermCheck

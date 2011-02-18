@@ -113,20 +113,20 @@ instance Pretty Term where
             (if posShowLvl i then pPrintPrec lvl prec pos else empty)
             ])
  
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpInfix assoc opprec) s pos1 ty1 _ _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!1)])
 
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPrefix opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPrefix opprec) s pos1 ty1 _ _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [text s, pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0)])
 
-    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1 _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
+    pPrintPrec lvl@(PrettyLevel i) prec te@(App op@(Operator (OpPostfix opprec) s pos1 ty1 _ _) args pos2 ty2) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 =        
         (if needParens prec te then Pretty.parens else id)
         (hsep [pPrintPrec lvl (termRationalPrec te) $ snd (args'!!0), text s])
  
     
-    pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty _)) =
+    pPrintPrec lvl@(PrettyLevel i) prec (te@(Operator o s pos ty _ _)) =
         Pretty.parens $ text s
 
     pPrintPrec lvl@(PrettyLevel i) prec (te@(DoNotation stmts pos ty)) =

@@ -11,5 +11,7 @@ import Control.Monad.Error
 unifyTerm :: Term -> Term -> TypeM Term
 unifyTerm t1 t2 = error "NYI"
 
-unifyPattern :: Pattern -> Term -> TypeM [(Name, Term)]
+-- the pattern variables are directly pushed in the env, thus return ()
+unifyPattern :: Pattern -> Term -> TypeM ()
 unifyPattern pat te = error "NYI"
+
