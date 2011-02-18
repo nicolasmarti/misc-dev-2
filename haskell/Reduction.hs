@@ -105,8 +105,7 @@ reduceTerm te config = reduce' te
             ; return $ Operator op s pos ty (Just defptr) $ Just def
             }
         -- we have a defptr and the def --> return as it
-        reduce' te@(Operator op s pos ty (Just defptr) (Just def)) = return te
-        
+        reduce' te@(Operator op s pos ty (Just defptr) (Just def)) = return te        
         
         -- Do Notation: Not sure how to do that right now ...
         reduce' te@(DoNotation stmts pos ty) = error "Do Notation is not yet supported"
