@@ -67,6 +67,8 @@ data Term = Type Position TypeInfo
           | AVar Position (Maybe Term) TypeInfo
 
           -- the proper implementation path is set at typecheck time
+          -- the defptr is aliased (it is the result of the typechecking, hence context sensitive)
+          -- the definition is only for reduction needed by the typechecker
           | Cste Position Name TypeInfo (Maybe DefPtr) (Maybe Definition)
 
           | Lambda [Quantifier] Term Position TypeInfo
@@ -83,6 +85,8 @@ data Term = Type Position TypeInfo
           | DoNotation [DoStmt] Position TypeInfo
 
           -- the proper implementation path is set at typecheck time
+          -- the defptr is aliased (it is the result of the typechecking, hence context sensitive)            
+          -- the definition is only for reduction needed by the typechecker
           | Operator OpProp String Position TypeInfo (Maybe DefPtr) (Maybe Definition)
           deriving (Eq, Show, Ord)
 
