@@ -41,7 +41,15 @@ reduceTerm te config = reduce' te
                                            | Nothing <- index = return te
 
         -- the typechecking has not been done -> it is an error
+        reduce' te@(AVar pos Nothing ty) = throwError $ ErrTermNotTypeChecked pos
+        
+        reduce' te@(AVar pos (Just te') ty) = reduce' te'
+
+        -- the typechecking has not been done -> it is an error
         reduce' te@(Cste pos name ty Nothing) = throwError $ ErrTermNotTypeChecked pos
+        
+        reduce' te@(Cste pos name ty _) | not (delta config) = return te
+        reduce' te@(Cste pos name ty (Just defptr)) | not (delta config) = return te
 
         -- 
         reduce' te@(Lambda quants body pos ty) | betaStrong config = error "NYI"
