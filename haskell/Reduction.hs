@@ -7,6 +7,7 @@ module Reduction where
 import Def
 import TypeM
 import Control.Monad.Error
+import Definition
 
 data ReductionStrategy = Lazy
                        | Eager
@@ -46,25 +47,67 @@ reduceTerm te config = reduce' te
         reduce' te@(AVar pos (Just te') ty) = reduce' te'
 
         -- the typechecking has not been done -> it is an error
-        reduce' te@(Cste pos name ty Nothing) = throwError $ ErrTermNotTypeChecked pos
+        reduce' te@(Cste pos name ty Nothing _) = throwError $ ErrTermNotTypeChecked pos
         
-        reduce' te@(Cste pos name ty _) | not (delta config) = return te
-        reduce' te@(Cste pos name ty (Just defptr)) | not (delta config) = return te
+        -- no delta reduction --> return it without the definition
+        reduce' te@(Cste pos name ty (Just defptr) _) | not (delta config) = return $ Cste pos name ty (Just defptr) Nothing
+        
+        -- delta reduction --> if no def then find one
+        reduce' te@(Cste pos name ty (Just defptr) Nothing) | (delta config) = do {
+            ; def <- getDefinition defptr pos
+            ; return $ Cste pos name ty (Just defptr) $ Just def
+            }
 
-        -- 
-        reduce' te@(Lambda quants body pos ty) | betaStrong config = error "NYI"
+        -- delta reduction and we have the def -> return as it
+        reduce' te@(Cste pos name ty (Just defptr) (Just def)) | (delta config) = return te
+
+        -- Lambda: with strong beta -> reduce the body, else nothing
+        reduce' te@(Lambda quants body pos ty) | betaStrong config = do {
+            -- first push the quantifiers in the environment
+            ; error "pushQuants quants"
+            -- then reduce the body
+            ; body' <- reduce' body
+            -- then pop the quantifications           
+            ; quants' <- error "popQuants $ length quants"
+            -- finally rebuild the term
+            ; return $ Lambda quants' body' pos ty
+            }
+        
                                                | otherwise = return te
 
-        reduce' te@(Forall quants body pos ty) | betaStrong config = error "NYI"
+        -- Forall: idem as Lambda
+        reduce' te@(Forall quants body pos ty) | betaStrong config = do {
+            -- first push the quantifiers in the environment
+            ; error "pushQuants quants"
+            -- then reduce the body
+            ; body' <- reduce' body
+            -- then pop the quantifications           
+            ; quants' <- error "popQuants $ length quants"
+            -- finally rebuild the term
+            ; return $ Forall quants' body' pos ty
+            }
+            
                                                | otherwise = return te
+        
+        -- the typechecking has not been done -> it is an error
+        reduce' te@(Operator op s pos ty Nothing _) = throwError $ ErrTermNotTypeChecked pos
+        
+        -- we have a defptr but no def --> look for it
+        reduce' te@(Operator op s pos ty (Just defptr) Nothing) = do {
+            ; def <- getDefinition defptr pos
+            ; return $ Operator op s pos ty (Just defptr) $ Just def
+            }
+        -- we have a defptr and the def --> return as it
+        reduce' te@(Operator op s pos ty (Just defptr) (Just def)) = return te
+        
+        
+        -- Do Notation: Not sure how to do that right now ...
+        reduce' te@(DoNotation stmts pos ty) = error "Do Notation is not yet supported"
 
-        reduce' te@(App fct args pos ty) = error "NYI"
-
+        -- Case: TODO
         reduce' te@(Case cte cases pos ty) | iota config = error "NYI"
                                            | otherwise = return te
 
-        -- 
-        reduce' te@(DoNotation stmts pos ty) = error "NYI"
+        -- App: the big part ... not yet done
+        reduce' te@(App fct args pos ty) = error "NYI"
 
-        -- the typechecking has not been done -> it is an error
-        reduce' te@(Operator op s pos ty Nothing) = throwError $ ErrTermNotTypeChecked pos

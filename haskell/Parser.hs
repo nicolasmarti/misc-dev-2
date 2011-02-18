@@ -336,7 +336,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                (s, o@(OpInfix assoc str)) -> (Infix (do { (op, pos) <- withPosition $ reserved myTokenParser s
                                                                         ; return $ \ (t1, Position src1 (start1, end1)) 
                                                                                      (t2, Position src2 (start2, end2)) -> 
-                                                                                            (App (Operator o s pos NoType Nothing) [(Explicite, t1), (Explicite, t2)] (Position src1 (start1, end2)) NoType, (Position src1 (start1, end2)))
+                                                                                            (App (Operator o s pos NoType Nothing Nothing) [(Explicite, t1), (Explicite, t2)] (Position src1 (start1, end2)) NoType, (Position src1 (start1, end2)))
                                                                         }
                                                               ) (case assoc of
                                                                      OpAssocNone -> AssocNone
@@ -347,7 +347,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                (s, o@(OpPrefix str)) -> (Prefix ( do {
                                                                       ; (op, pos@(Position srco (starto, endo))) <- withPosition $ reserved myTokenParser s
                                                                       ; return $ \ (t, Position src (start, end)) ->
-                                                                                        (App (Operator o s pos NoType Nothing) [(Explicite, t)] (Position src (starto, end)) NoType, (Position src (starto, end)))
+                                                                                        (App (Operator o s pos NoType Nothing Nothing) [(Explicite, t)] (Position src (starto, end)) NoType, (Position src (starto, end)))
                                                                       }
                                                                 ), str)                           
                            ) in
@@ -369,7 +369,7 @@ termParser st = parseTerm <?> "Expected a Term"
                                                                                          ; whiteSpace myTokenParser                                                                                                                         
                                                                                          ; return (s, o)
                                                                                          }) $ operators st
-            ; return $ Operator o s pos ty Nothing
+            ; return $ Operator o s pos ty Nothing Nothing
             }
 
         parseDo :: Parser Term

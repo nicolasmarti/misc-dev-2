@@ -18,26 +18,26 @@ addAnnotation te ty = addTypeInfo te ty'
 addTypeInfo :: Term -> TypeInfo -> Term
 addTypeInfo (Type pos _) ty = Type pos ty
 addTypeInfo (AVar pos mt _) ty = AVar pos mt ty
-addTypeInfo (Cste pos name _ mt) ty = Cste pos name ty mt
+addTypeInfo (Cste pos name _ md mt) ty = Cste pos name ty md mt
 addTypeInfo (Lambda qs body pos _) ty = Lambda qs body pos ty
 addTypeInfo (Forall qs body pos _) ty = Forall qs body pos ty        
         
 termPrec :: Term -> BindStrentgh
-termPrec (Operator op _ _ _ _) = opPrec op
+termPrec (Operator op _ _ _ _ _) = opPrec op
 termPrec (Var _ _ _ _) = 100
-termPrec (Cste _ _ _ _) = 100
+termPrec (Cste _ _ _ _ _) = 100
 termPrec (AVar _ _ _) = 100
-termPrec (App (Operator (OpInfix assoc opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = opprec
-termPrec (App (Operator (OpPrefix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
-termPrec (App (Operator (OpPostfix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
+termPrec (App (Operator (OpInfix assoc opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = opprec
+termPrec (App (Operator (OpPrefix opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
+termPrec (App (Operator (OpPostfix opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = opprec
 termPrec (App _ _ _ _) = -1
 termPrec _ = -2
 
 termAssoc :: Term -> OpAssoc
-termAssoc (Operator op _ _ _ _) = opAssoc op
-termAssoc (App (Operator (OpInfix assoc opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = assoc
-termAssoc (App (Operator (OpPrefix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
-termAssoc (App (Operator (OpPostfix opprec) _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
+termAssoc (Operator op _ _ _ _ _) = opAssoc op
+termAssoc (App (Operator (OpInfix assoc opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 2 = assoc
+termAssoc (App (Operator (OpPrefix opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
+termAssoc (App (Operator (OpPostfix opprec) _ _ _ _ _) args _ _) | args' <- filter (\ (nat, _) -> nat == Explicite) args, length args' == 1 = OpAssocNone
 termAssoc (App _ _ _ _) = OpAssocRight
 termAssoc _ = OpAssocNone
 

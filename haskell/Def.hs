@@ -65,7 +65,7 @@ data Term = Type Position TypeInfo
           | AVar Position (Maybe Term) TypeInfo
 
           -- the proper implementation path is set at typecheck time
-          | Cste Position Name TypeInfo (Maybe DefPtr)
+          | Cste Position Name TypeInfo (Maybe DefPtr) (Maybe Definition)
 
           | Lambda [Quantifier] Term Position TypeInfo
           | Forall [Quantifier] Term Position TypeInfo
@@ -74,13 +74,14 @@ data Term = Type Position TypeInfo
 
           | App Term [(Nature, Term)] Position TypeInfo
 
-            {- the Maybe Term is for recopying the Term in order to properly TypeCheck -}
+          -- the Maybe Term is for recopying the Term in order to properly TypeCheck 
+          -- this is not more necessary as we have now a representation for Pattern Var (+ ref in Env
           | Case Term [([(Pattern, [Guard], Maybe Term)], Term)] Position TypeInfo
 
           | DoNotation [DoStmt] Position TypeInfo
 
           -- the proper implementation path is set at typecheck time
-          | Operator OpProp String Position TypeInfo (Maybe DefPtr)
+          | Operator OpProp String Position TypeInfo (Maybe DefPtr) (Maybe Definition)
           deriving (Eq, Show, Ord, Read)
 
 -- ************************************************************
