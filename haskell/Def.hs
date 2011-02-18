@@ -7,23 +7,25 @@ module Def where
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+import LLVMBinding
+
 -- ************************************************************
 -- Term and related
 -- ************************************************************
 
 data Position = NoPosition
               | Position (Maybe String) {- file name-} ((Int, Int), (Int, Int))
-              deriving (Eq, Show, Ord, Read)
+              deriving (Eq, Show, Ord)
 
 data TypeInfo = NoType
               | Annotation Term Position
               | Infered Term
-              deriving (Eq, Show, Ord, Read)
+              deriving (Eq, Show, Ord)
 
 data OpProp = OpInfix OpAssoc BindStrentgh
             | OpPrefix BindStrentgh
             | OpPostfix BindStrentgh              
-              deriving (Eq, Show, Ord, Read)
+              deriving (Eq, Show, Ord)
 
 type BindStrentgh = Int
 
@@ -33,28 +35,28 @@ data OpAssoc = OpAssocNone
               deriving (Eq, Show, Ord, Read)               
                        
 data Quantifier = Quantifier ([(Name, Position)], TypeInfo, Nature)
-                deriving (Eq, Show, Ord, Read)
+                deriving (Eq, Show, Ord)
 
 data Pattern = PAVar Position TypeInfo
              | PCste Position Name TypeInfo (Maybe DefPtr)
              | PVar Position Name TypeInfo
              | PApp Name (Maybe DefPtr) [(Nature, Pattern)] Position TypeInfo
              | PAlias Position Name Pattern TypeInfo
-             deriving (Eq, Show, Ord, Read)
+             deriving (Eq, Show, Ord)
 
 type Guard = (Term, Position, TypeInfo)
 
 data DoStmt = DoLet Name Position TypeInfo Term
             | DoBind Name Position TypeInfo Term
             | DoVal Term Position TypeInfo
-            deriving (Eq, Show, Ord, Read)
+            deriving (Eq, Show, Ord)
 
 type Name = String
 
 data Nature = Hidden
             | Explicite
             | Implicit
-            deriving (Eq, Show, Ord, Read)
+            deriving (Eq, Show, Ord)
 
 data Term = Type Position TypeInfo
 
@@ -82,7 +84,7 @@ data Term = Type Position TypeInfo
 
           -- the proper implementation path is set at typecheck time
           | Operator OpProp String Position TypeInfo (Maybe DefPtr) (Maybe Definition)
-          deriving (Eq, Show, Ord, Read)
+          deriving (Eq, Show, Ord)
 
 -- ************************************************************
 -- Definition: constituant of a module
@@ -95,8 +97,13 @@ data Definition = DefSig Name Position Term
                 | DefConstr Name Int Position TypeInfo
 
                 | DefNotation String OpProp
+                  
+                  -- this one does not appear in a module
+                  -- just to be use in Cste
+                  -- primitives are LLVM (constante) value 
+                | PrimitiveValue LLVMValue
 
-                deriving (Eq, Show, Ord, Read)
+                deriving (Eq, Show, Ord)
 
 
 -- ************************************************************
@@ -106,7 +113,7 @@ data Definition = DefSig Name Position Term
 type ModulePath = [Name]
 
 data TCModule = TCModule ModulePath (Map.Map Name Definition)
-           deriving (Eq, Show, Ord, Read)
+           deriving (Eq, Show, Ord)
 
 type DefPtr = (ModulePath, Name)
 
@@ -149,7 +156,7 @@ data TCEnv = TCEnv {
     moduleAlias :: Map.Map ModulePath (Set.Set ModulePath)
     
     }
-           deriving (Eq, Show, Ord, Read)
+           deriving (Eq, Show, Ord)
 
 -- *******************************************************************************
 -- global: a global set of values used for typechecking / unification / ...
@@ -157,7 +164,7 @@ data TCEnv = TCEnv {
 
 data ModuleTree = ModuleDir (Map.Map Name ModuleTree)
                 | ModuleDef TCModule
-                deriving (Eq, Show, Ord, Read)
+                deriving (Eq, Show, Ord)
 
 
 data TCGlobal = TCGlobal {
@@ -166,5 +173,5 @@ data TCGlobal = TCGlobal {
     moduleTree :: ModuleTree
 
     }
-              deriving (Eq, Show, Ord, Read)
+              deriving (Eq, Show, Ord)
 

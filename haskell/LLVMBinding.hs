@@ -27,6 +27,8 @@ module LLVMBinding (
 
     -- basic LLVM opcode building
 
+    isConstant, 
+    
     addTypeName, constString, constArray,
     addFunction, addFunction2, createEntryBuilder, createBlock, createBuilder, cachedApplication,
     moveBuilder, getParam, getFunction, getFunction2,  getNamedGlobal, getParentModule, getParentBlock,
@@ -98,6 +100,9 @@ module LLVMBinding (
     buildRegisterFree, llvmRegisterFree, imported_llvmRegisterFree,
     showMemUsage, freeGCMem, 
 
+    -- outSide function
+    isTrue,
+    
     ) where
 
 
@@ -867,6 +872,19 @@ readModuleFromFile name = do {
 
                                                    }
                           }
+
+isConstant :: LLVMValue -> IO Bool
+isConstant val = do {
+    ; res <- LLVM.isConstant $ valOf val
+    ; return $ res /= 0
+    }
+                 
+isNull :: LLVMValue -> IO Bool                 
+isNull val = do {
+    ; res <- LLVM.isNull $ valOf val
+    ; return $ res /= 0
+    }
+
 
 --addTypeName :: ModuleRef -> CString -> TypeRef -> IO CInt
 addTypeName :: LLVMModule -> LLVMType -> String -> IO ()
@@ -3608,4 +3626,13 @@ freeGCMem = do {
             }
 
 
+---------------------------------------------------
 
+isTrue :: LLVMValue -> Bool
+isTrue = unsafePerformIO . isTrue'
+    where
+        isTrue' :: LLVMValue -> IO Bool
+        isTrue' val | typeOf val == boolType = do {
+            ; b <- isConstant val
+            ; if b then isNull val else return False
+            }

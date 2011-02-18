@@ -8,6 +8,9 @@ import Def
 import TypeM
 import Control.Monad.Error
 import Definition
+import Unification
+
+import LLVMBinding
 
 data ReductionStrategy = Lazy
                        | Eager
@@ -41,8 +44,8 @@ reduceTerm te config = reduce' te
                                            | Just index' <- index, index' >= 0 = return te
                                            | Nothing <- index = return te
 
-        -- the typechecking has not been done -> it is an error
-        reduce' te@(AVar pos Nothing ty) = throwError $ ErrTermNotTypeChecked pos
+        -- the variable is either a pattern variable, or the typechecking was not performed
+        reduce' te@(AVar pos Nothing ty) = error "TODO"
         
         reduce' te@(AVar pos (Just te') ty) = reduce' te'
 
@@ -63,12 +66,14 @@ reduceTerm te config = reduce' te
 
         -- Lambda: with strong beta -> reduce the body, else nothing
         reduce' te@(Lambda quants body pos ty) | betaStrong config = do {
+            -- here we needs to reduce the quants types
+            ; quants' <- error "compute quants"
             -- first push the quantifiers in the environment
             ; error "pushQuants quants"
             -- then reduce the body
             ; body' <- reduce' body
             -- then pop the quantifications           
-            ; quants' <- error "popQuants $ length quants"
+            ; error "popQuants $ length quants"
             -- finally rebuild the term
             ; return $ Lambda quants' body' pos ty
             }
@@ -77,12 +82,14 @@ reduceTerm te config = reduce' te
 
         -- Forall: idem as Lambda
         reduce' te@(Forall quants body pos ty) | betaStrong config = do {
+            -- here we needs to reduce the quants types
+            ; quants' <- error "compute quants"
             -- first push the quantifiers in the environment
             ; error "pushQuants quants"
             -- then reduce the body
             ; body' <- reduce' body
             -- then pop the quantifications           
-            ; quants' <- error "popQuants $ length quants"
+            ; error "popQuants $ length quants"
             -- finally rebuild the term
             ; return $ Forall quants' body' pos ty
             }
@@ -104,8 +111,47 @@ reduceTerm te config = reduce' te
         -- Do Notation: Not sure how to do that right now ...
         reduce' te@(DoNotation stmts pos ty) = error "Do Notation is not yet supported"
 
-        -- Case: TODO
-        reduce' te@(Case cte cases pos ty) | iota config = error "NYI"
+        -- Case: 
+        reduce' te@(Case cte cases pos ty) | iota config = do {
+            -- first we reduce the term
+            ; cte' <- reduce' cte
+            -- the rest is to be done depending on the deltaIotaWeakness
+            -- if we are betaiotaweek we simply throw an error
+            -- else we keep at least the cte'          
+            ; let cont = if deltaIotaWeak config then id else flip catchError (\ _ -> return $ Case cte' cases pos ty)
+                      
+            ; cont $ do {
+                -- we look for a proper term to execute (warning: the pattern vars are pushed in the environment)
+                -- by traversing the cases
+                ; thecase <- traverseTypeM (\ (patterns, cont) -> do {
+                                                -- we look for a pattern (and guard) that matches
+                                                -- by traversing the patterns
+                                                ; traverseTypeM (\ (pattern, guards, _) -> do {
+                                                                     -- first unify the pattern with the term
+                                                                     ; unifyPattern pattern cte'
+                                                                     -- then traverse the guards to know if one is valid
+                                                                     ; traverseTypeM (\ (guard, _, _) -> do {
+                                                                                          ; guard' <- reduce' guard
+                                                                                          ; case guard' of
+                                                                                              Cste _ _ _ _ (Just (PrimitiveValue val)) | isTrue val -> return ()
+                                                                                              _ -> throwError ErrNoReduciblePattern
+                                                                                          }
+                                                                                     ) ErrNoReduciblePattern guards
+                                                                     ; return ()
+                                                                     }
+                                                                ) ErrNoReduciblePattern $ patterns
+                                                ; return cont
+                                                }                                                          
+                                   ) ErrNoReduciblePattern $ cases
+                -- we reduce it             
+                ; reduce' thecase
+
+                -- here the patterns of the case are still pushed in the env
+                -- however the reduction on the term assure that all their instances has been reduced
+                -- so we can safely pop them
+                ; error "pop pattern vars"
+                }
+            }
                                            | otherwise = return te
 
         -- App: the big part ... not yet done

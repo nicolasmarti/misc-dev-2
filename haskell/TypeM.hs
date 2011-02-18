@@ -22,7 +22,13 @@ data TCErr = PlainErr String
            | ErrNoDef String Position
            | ErrNoModule ModulePath Position
            | ErrTermNotTypeChecked Position
-             deriving (Eq, Show, Ord, Read)
+             
+           | ErrNoUnificationPatternTerm Pattern Term
+           | ErrNoUnificationTermTerm Pattern Term             
+             
+           | ErrNoReduciblePattern
+             
+             deriving (Eq, Show, Ord)
 
 instance Error TCErr where
     -- strMsg :: String -> a
@@ -30,7 +36,7 @@ instance Error TCErr where
     
     
 data TCLog = TCLog ()
-           deriving (Eq, Show, Ord, Read)
+           deriving (Eq, Show, Ord)
 
 
 instance Monoid TCLog where 
@@ -73,3 +79,8 @@ runTypeM fct globals env = do {
         Left err -> return $ Left (err, log)
         Right res -> return $ Right (res, env, log)
     }
+
+-- a function that takes the first non failing computation
+traverseTypeM :: (a -> TypeM b) -> TCErr -> [a] -> TypeM b
+traverseTypeM f err [] = throwError err
+traverseTypeM f err (hd:tl) = catchError (f hd) (\ _ -> traverseTypeM f err tl)
