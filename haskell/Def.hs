@@ -119,7 +119,8 @@ type ModulePath = [Name]
 data TCModule = TCModule ModulePath (Map.Map Name Definition)
            deriving (Eq, Show, Ord)
 
-type DefPtr = (ModulePath, Name)
+-- bool semantics: True aliased, False absolute
+type DefPtr = (Bool, ModulePath, Name)
 
 -- *******************************************************************************
 -- environment: represent the working data structure for currently building module

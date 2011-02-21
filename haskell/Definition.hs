@@ -24,17 +24,18 @@ mergeDefinitions = error "NYI"
 -- get a merged definition from a def pointer
 -- used in reduction
 getDefinition :: DefPtr -> Position -> TypeM Definition
-getDefinition (path, name) pos = do {
+getDefinition (aliased, path, name) pos = do {
     ; env <- getEnv
     -- first grab local def, incase the modulepath is []
-    ; let localdef = if path == [] then case Map.lookup name (def env) of Nothing -> []  
-                                                                          Just d -> [d]  else []
+    ; let localdef = if path == [] && not aliased then case Map.lookup name (def env) of Nothing -> []  
+                                                                                         Just d -> [d]  else []
     -- then we grab all the def in the imported module
     -- first we grab the set of module path from the alias
-    ; modulepathes <- (case Map.lookup path (moduleAlias env) of
-                           Nothing -> throwError $ ErrNoModule path pos
-                           Just modulepathes -> return modulepathes
-                      )
+    ; modulepathes <- if aliased then return $ Set.singleton path else 
+                          (case Map.lookup path (moduleAlias env) of
+                               Nothing -> throwError $ ErrNoModule path pos
+                               Just modulepathes -> return modulepathes
+                          )
     -- we just grab all the definitions                  
     ; listdefs <- foldM (\ acc hd -> flip catchError (\ _ -> return acc) $ do {
                              ; moduletree <- ask >>= return . moduleTree 
