@@ -82,14 +82,12 @@ reduceTerm te config = reduce' te
 
         -- Forall: idem as Lambda
         reduce' te@(Forall quants body pos ty) | betaStrong config = do {
-            -- here we needs to reduce the quants types
-            ; quants' <- error "compute quants"
-            -- first push the quantifiers in the environment
-            ; error "pushQuants quants"
+            -- here we needs to reduce and push the quants types
+            ; error "compute quants"
             -- then reduce the body
             ; body' <- reduce' body
             -- then pop the quantifications           
-            ; error "popQuants $ length quants"
+            ; quants' <- error "popQuants $ length quants"
             -- finally rebuild the term
             ; return $ Forall quants' body' pos ty
             }
@@ -156,3 +154,12 @@ reduceTerm te config = reduce' te
         -- App: the big part ... not yet done
         reduce' te@(App fct args pos ty) = error "NYI"
 
+        -- the other related function
+        reducequants :: [Quantifier] -> TypeM ()
+        reducequants qs = do {
+            ; _ <- mapM reducequant qs
+            ; return ()
+            }
+        
+        reducequant :: Quantifier -> TypeM ()
+        reducequant _ = error "NYI"
