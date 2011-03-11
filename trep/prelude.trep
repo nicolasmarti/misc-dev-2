@@ -1,0 +1,128 @@
+Bool : native i1 :: Type
+True : native 1 :: Bool
+False : native 0 :: Bool
+
+(&&) : infix 10 left, native and :: Bool -> Bool -> Bool
+False && _ = False
+_ && False = False
+True && True = True
+
+(||) : infix 9 left, native or :: Bool -> Bool -> Bool 
+True && _ = True
+_ && True = True
+True && True = True
+
+(~) : prefix 11, native neg :: Bool -> Bool
+~ True = False
+~ False = True
+
+---------------------------------------
+
+(==) : infix 20 :: {A :: Type} -> A -> A -> Bool
+x == x = True
+
+(<) : infix 20 :: {A :: Type} -> A -> A -> Bool
+(>) : infix 20 :: {A :: Type} -> A -> A -> Bool
+
+(>=) : infix 20 :: {A :: Type} -> A -> A -> Bool
+x >= y = x == y || x > y
+
+(<=) : infix 20 :: {A :: Type} -> A -> A -> Bool
+x <= y = x == y || x > y
+
+---------------------------------------
+
+(+) : infix 30 left :: {A :: Type} -> A -> A -> A
+(-) : infix 30 left :: {A :: Type} -> A -> A -> A
+(*) : infix 40 left :: {A :: Type} -> A -> A -> A
+(/) : infix 40 left :: {A :: Type} -> A -> A -> A
+(-) : prefix 50 :: {A::Type} -> A -> A
+
+---------------------------------------
+
+(.) : infix 5 right :: {A B C :: Type} -> (B -> C) -> (A -> B) -> A -> C
+f . g = \ x -> f (g x)
+
+($) : infix 6 right :: {A B :: Type} -> (A -> B) -> A -> B
+f $ x = f x
+
+---------------------------------------
+
+List :: Type -> Type
+(:) : infix right 60 :: {A::Type} -> A -> List A -> List A
+nil :: {A :: Type} -> List A
+
+Maybe :: Type -> Type
+Nothing :: {A :: Type} -> Maybe A
+Just :: {A :: Type} -> A -> Maybe A
+
+Tree :: Type -> Type
+node :: {A :: Type} -> A -> Maybe (Tree A) -> Maybe (Tree A) -> Tree A
+
+---------------------------------------
+
+map :: {T :: Type -> Type} -> {A::Type} -> {B::Type} -> (A -> B) -> T A -> T B
+
+map f nil = nil
+map f (hd:tl) = (f hd):(map f tl)
+
+map f Nothing = Nothing
+map f (Just x) = Just $ f x
+
+map f (node d l r) = node (f d) (map f l) (map f r)
+
+---------------------------------------
+
+foldl :: {T :: Type -> Type} -> {A B :: Type} -> (A -> B -> A) -> A -> T B -> A
+foldr :: {T :: Type -> Type} -> {A B :: Type} -> (B -> A -> A) -> A -> T B -> A
+
+foldl f acc nil = acc
+foldl f acc (hd:tl) = foldl f (f acc hd) tl
+
+foldr f acc nil = acc
+foldr f acc (hd:tl) = f hd (foldr f acc tl)
+
+---------------------------------------
+
+Int : native i64 :: Type
+(+) {Int} : native add
+
+---------------------------------------
+
+size :: {A::Type} -> A -> Int
+
+size nil = 0
+size (hd:tl) = 1 + size tl
+
+---------------------------------------
+-- Monad
+
+return :: {M :: Type -> Type} -> {A :: Type} -> A -> M A
+(>>=) : infix 5 :: {M :: Type -> Type} -> {A B :: Type} -> M A -> (A -> M B) -> M B
+
+---------------------------------------
+-- State Monad
+
+Unit :: Type
+unit = Type
+
+-- reuse (*) here for
+-- should be ok, as a * b :: Type -> a :: Type and b :: Type by (*) type
+(,) : infix 4 right :: {A B :: Type} -> A -> B -> A * B
+
+StateMonad :: (stateT :: Type) -> (retT :: Type) -> Type
+stateMonad :: {stateT :: Type} -> {retT :: Type} -> (stateT -> (stateT * retT)) -> StateMonad stateT reT
+
+set :: {stateT :: Type} -> stateT -> StateMonad stateT Unit
+set x = stateMonad (\ st -> (x, unit))
+
+get :: {stateT :: Type} -> {A :: Type} -> StateMonad stateT stateT
+get = stateMonad (\ st -> (st, st))
+
+return x = stateMonad (\ st -> (st, x))
+(stateMonad f') >>= f = stateMonad (\ st -> let (st', x) = f' st in f x st')
+
+
+
+
+
