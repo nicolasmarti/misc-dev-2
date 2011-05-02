@@ -36,22 +36,22 @@ type nature = Explicit (* ( ... ) *)
 	      | Implicit (* [ ... ] *)
 
 
-type sourceLocation = name option * (int * int) * (int * int);;
+type sourceLocation = string option * (int * int) * (int * int);;
+
+type definitionId = string array * string
 
 type property = Associativity of associativity
 		| Precedence of precedence
-		| Pure
-		| Impure
-		| Deterministic
-		| NonDeterministic
-		| Partial
-		| Complete
+		| Pure | Impure
+		| Deterministic | NonDeterministic
+		| Partial | Complete
 		| StructuralTermination of int array
-		| StrictlyPositive
-		| Constructor
+		| Constructor | Inductive
+		| ModuleImpl | ModuleSig
+		| WellFormed
 
 type term = Type of univ_level
-	    | Var of name * index 
+	    | Var of name * index option
 	    | AVar of index
 	    | Cste of name
 	    | Alias of name * term
@@ -74,7 +74,89 @@ and equation = (pattern * guard array) array (* := l.h.s *) * term (* := r.h.s *
 
 and guard = term
 
-and definition = name * property array * term (* signature *) * equation array (* definitions *) * definition array (* where *)
+and definition = Declaration of name * property array * quantifier array (* args (bind the name in where) *) * term (* reminiscent signature *) * equation array (* definitions *) * definition array (* with *)
+		 | Definition of name * property array * quantifier array (* args (bind the name in where) *) * term (* reminiscent signature *) * equation array (* definitions *) * definition array (* where *)
+(*
+
+(=) {A: Type} (a: Type) :: A -> Type : noassoc, prio 50, inductive
+   with
+     eqrefl :: a = a
+
+(*
+eqrefl :: {A :: Type} -> {a :: Type} -> a = a
+*)
+
+Eq (A:: Type) :: Type
+  with
+    (==):: A -> A -> Bool
+
+(*
+(==) :: {A:: Type} -> [Eq A] -> A -> A -> Bool
+*)
+
+Ord (A:: Type) :: Type
+   with
+
+     Ordering :: Type
+        with
+          EQ :: Ordering
+          LT :: Ordering
+          GT :: Ordering
+
+     compare :: A -> A -> Ordering
+     
+     (<) :: A -> A -> Bool
+       where
+         x < y := case compare x y of
+                    | LT := True
+                    | _ := False
+
+     (>) :: A -> A -> Bool
+       where
+         x < y := case compare x y of
+                    | GT := True
+                    | _ := False
+
+     EqA :: Eq A
+       where
+          x == y := case compare x y of
+                      | EQ := True
+                      | _ := False
+
+(*
+Ordering :: Type
+compare :: {A :: Type} -> [Ord A] -> A -> A -> Ordering
+(<) :: {A :: Type} -> [Ord A] -> A -> A -> Bool
+(>) :: {A :: Type} -> [Ord A] -> A -> A -> Bool
+EqA :: {A :: Type} -> [Ord A] -> Eq A
+*)
+
+Bool :: Type
+  with 
+    True :: Bool
+    False :: Bool
+  
+
+    [~) :: Bool -> Bool
+      where
+        ~ True := False
+        ~ False := True
+
+(*
+  [~) :: Bool -> Bool
+*)
+
+EqBool :: Eq Bool
+  where
+    True == True := True
+    False == False := True
+
+max :: {A :: Type} -> [Ord A] -> A -> A -> A
+  where
+    max {A} [H] x y = if x < y then y else x
+
+*)
+
 
 
 
