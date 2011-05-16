@@ -261,6 +261,20 @@ let keyword (s: string) (v: 'a) : 'a parsingrule =
    (spaces >> (applylexingrule (regexp_string s, (fun _ -> v)))) pb
 ;;
  
+let paren (p: 'a parsingrule) : 'a parsingrule =
+  spaces >>> (
+    fun pb ->
+      let _ = applylexingrule (regexp "(", fun (s:string) -> ()) pb in
+      let res = 
+	try 
+	  p pb 
+	with 
+	  | _ -> raise NoMatch
+      in
+      let _ = applylexingrule (regexp ")", fun (s:string) -> ()) pb in
+	res
+  )
+;;
      
  
 (* parser asserting that next there is not a string inside the list *)
@@ -420,6 +434,15 @@ let keyworderr (s: string) (v: 'a) : 'a parsingrule =
    (spaces >> (applylexingrule (regexp_string s, (fun _ -> v))) <!> error) pb
 ;;
  
+let (<!!>) p s pb =
+  try 
+    p pb
+  with
+    | NoMatch -> 
+	let coo = pos_coo pb pb.beginpointer in
+	printf "%s" (String.concat "" [s; " @ "; string_of_int (snd coo); "\n"]); raise NoMatch
+;;
+
 let rec errors2string (pb: parserbuffer) : string =
  let errors = 
    let cmp (e1, _, _, _) (e2, _, _, _) =
@@ -651,6 +674,7 @@ let insert_primary (a: 'a) (t: 'a parsetree) : 'a parsetree =
  match t with
    | Leaf root ->
         Node (Primary a, root)
+   | _ -> printf "insert_primary: not a Leaf root\n"; raise Failure
 ;;
  
 (* inserting a prefix: the next place to add is the Leaf *)
@@ -844,6 +868,17 @@ let rec tree_semantics (t: 'a parsetree) : 'a =
         f (tree_semantics child)
    | Node (Infix (_, _, _, f, Some left, Some right), _) ->
         f (tree_semantics left) (tree_semantics right)
+   | Node (Prefix (_, _, f, None), _) ->
+       printf "Prefix without child\n"; raise Failure
+   | Node (Postfix (_, _, f, None), _) ->
+       printf "Postfix without child\n"; raise Failure
+   | Node (Infix (_, _, _, f, None, Some right), _) ->
+       printf "Infix without left child\n"; raise Failure
+   | Node (Infix (_, _, _, f, _, None), _) ->
+       printf "Infix without right child\n"; raise Failure
+   | Leaf _ -> printf "there is a leaf ...\n"; raise Failure
+
+
 ;;
  
 (* fold : ('a -> 'b -> 'c -> 'c) -> ('a, 'b) t -> 'c -> 'c 
@@ -952,18 +987,25 @@ let parse_infix (infixes: (string, (priority * associativity * ('a -> 'a -> 'a))
    foldp parser_list
 ;;
  
-let opparse (op: 'a opparser) : 'a parsingrule =
+
+let rec opparse (op: 'a opparser) : 'a parsingrule =
  (fun pb -> 
-   let parser1 = parse_primary op.primary in
+   let parser1 = parse_primary ((tryrule (paren (opparse op))) <|> (tryrule op.primary)) in
    let parser2 = parse_prefix op.prefixes in
    let parser3 = parse_infix op.infixes in
    let parser4 = parse_postfix op.postfixes in
    let total_parser = fun (t: 'a parsetree) -> ((tryrule (parser1 t)) <|> (tryrule (parser2 t)) <|> (tryrule (parser3 t)) <|> (tryrule (parser4 t))) in
    let init_tree = Leaf None in
-   let final_tree = zip_up_parsetree_until_root (fixpoint total_parser init_tree pb) in
+   let final_tree = (try 
+		       zip_up_parsetree_until_root (fixpoint total_parser init_tree pb)
+		     with
+		       | _ -> printf "couille dans le potage\n"; raise NoMatch	 
+		    )
+   in
      try
-        tree_semantics final_tree
+       tree_semantics final_tree
      with
-        | _ -> raise NoMatch
+        | _ -> printf "couille dans le potage .. le retour\n"; raise NoMatch
  ) <!> "not a primary/infix/prefix formula"
 ;;
+

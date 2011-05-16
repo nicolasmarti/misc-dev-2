@@ -18,9 +18,9 @@
 
 open Stream;;
 open Printf;;
-open Parser;;
 open Str;;
 open Buffer;;
+open Parser;;
 
 
 (*****************************************************)
@@ -41,7 +41,7 @@ let stream_of_string s =
 	 | _ -> None
     )
 
-let parseintrule : int lexingrule = (regexp "[0-9]+", fun (s:string) -> int_of_string s)
+let parseintrule = (regexp "[0-9]+", fun (s:string) -> int_of_string s)
 ;;
 
 type expr =
@@ -80,7 +80,7 @@ Hashtbl.add infixes "*" (4, Right, fun x y -> Mult (x, y));;
 Hashtbl.add infixes "/" (4, Right, fun x y -> Div (x, y));;
 
 
-let valparser : expr parsingrule = 
+let valparser : expr Parser.parsingrule = 
   (tryrule ((fun _ x -> Val x) |> (spaces) >> (applylexingrule parseintrule)))
   <|> (tryrule ((fun _ x -> Val x) |> (spaces) >> (applylexingrule parseintrule)))
 
@@ -98,14 +98,35 @@ let text = "- 1 + - 1& * - 10 + 9& * 4 &";;
 let lines = stream_of_string text;;
 let pb = build_parserbuffer lines;;
 
+let rec random size = 
+  let key = if size = 0 then 0 else Random.int 6 in
+  match key with
+  | 0 -> string_of_int (Random.int 10)
+  | 1 -> "- " ^ random (size-1) 
+  | 2 -> "(" ^ random (size-1) ^ ")"
+  | 3 -> random (size-1) ^ " + " ^ random (size-1)
+  | 4 -> random (size-1) ^ " - " ^ random (size-1)
+  | 5 -> random (size-1) ^ " * " ^ random (size-1)
+  | _ -> assert false
+;;
+
+let test s =
 try 
+  printf "----------\ns = %s\n" s;
+  let lines = stream_of_string s in
+  let pb = build_parserbuffer lines in
   let mexpr = (opparse myp) pb in
-    printf "%s\n" text;
     print_expr mexpr;
     printf "\n\n";
 with
   | NoMatch -> 
       printf "error:%s\n\n" (errors2string pb);
       printf "%s\n\n" (markerror pb);
+      printf "begin pointer = %d\n\n" pb.beginpointer;
 ;;
 
+let _ = 
+  for i = 0 to 100 do
+    test (random 20)
+  done;
+;;
