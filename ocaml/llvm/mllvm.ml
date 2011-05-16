@@ -236,10 +236,10 @@ let comp_st =
     add_ind_var_simplification pm;    
     add_instruction_combination pm;
     add_licm pm;
-    add_loop_unswitch pm;
+    (*add_loop_unswitch pm;*)
     add_loop_unroll pm;
     add_loop_rotation pm;
-    add_loop_index_split pm;
+    (*add_loop_index_split pm;*)
     add_memory_to_register_promotion pm;
     add_memory_to_register_demotion pm;
     add_reassociation pm;
