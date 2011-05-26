@@ -3,7 +3,7 @@ open Printf;;
 open Pervasives;;
 open Encdec;;
 
-let client_version = 45;;
+let client_version = 48;;
 
 let tws_connect ip port clientId =
 
@@ -17,10 +17,12 @@ let tws_connect ip port clientId =
     *)
 
     (* need to send the client version *)
+    (* EClientSocketBase::onConnectBase *)
     encode_int client_version oc;
     flush oc;
 
     (* grab the server version *)
+    (* EClientSocketBase::processConnectAck *)
     let server_version = decode_int ic in
       printf "server_version = %d\n" server_version;
       if server_version >= 20 then (
@@ -39,6 +41,7 @@ let tws_connect ip port clientId =
       ) else 
 	(*printf "server_version < 20\n";*)
 	();
+
       flush stdout;
       (ic, oc)
 ;;

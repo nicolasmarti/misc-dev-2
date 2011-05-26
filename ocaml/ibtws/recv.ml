@@ -64,6 +64,8 @@ let mkbardata () = {
   barCount = 0;
 };;
 
+(* EClientSocketBase::processMsg *)
+
 let processMsg (ic: in_channel) : unit =
   let msgId = decode_int ic in
     match msgId with
