@@ -10,7 +10,6 @@ open Mllvm;;
 
 open Printf;;
 
-(*
 let (cos, costy) = compile_block0 comp_st (
   Extern ("cos", [|(TDouble, "x")|], TDouble)
 );;
@@ -177,8 +176,7 @@ print_string "main Evaluated to ";
 print_float (GenericValue.as_float (build_llvmtype comp_st VarMap.empty TDouble) result);;
 print_newline ();;
 
-*)
-
+(*
 open Mllvmpparser;;
 open Parser;;
 open Pprinter;;
@@ -256,4 +254,8 @@ let (f1, ty1) = compile_block0 comp_st (
 ;;
 
 let result = ExecutionEngine.run_function f1 [| |] comp_st.engine;;
+*)
 
+open Llvm_bitwriter;;
+
+let _ = write_bitcode_file comp_st.modul "doudou.bc";;
