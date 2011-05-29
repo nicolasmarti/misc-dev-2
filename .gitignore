@@ -5,3 +5,4 @@ _build
 *.d.native
 *.p.byte
 *.pyo
+*.bc
