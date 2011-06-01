@@ -92,6 +92,13 @@ type env = {
 
   mutable equation_stack: (equation list) list;
 
+  (*
+    list of inference rules
+    used for [] quantification
+  *)
+
+  mutable inferrule: term list;
+
   (* list of already typed constant
      this is redundant with decl, but make easier for the type checker 
      to find the type of cste
