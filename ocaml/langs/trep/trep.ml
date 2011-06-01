@@ -25,10 +25,10 @@ type term = Type of univ option
 	    | Case of term * equation list
 	    | Where of term * declaration list
 
-	    | Ind of name * arg list * term * (name * term) list
+	    | Ind of name * quantifier list * term * (name * term) list
 	    | Constr of int * term
 
-	    | TyAnnotation of term * term
+	    | TyAnnotation of term * tyAnnotation
 	    | SrcInfo of term * position
 
 and equation = Guarded of pattern * (guard * term) list
@@ -42,7 +42,7 @@ and nature = Explicit
 
 and arg = term * nature
 
-and quantifier = term list * tyAnnotation * nature
+and quantifier = pattern list * tyAnnotation * nature
 
 and guard = term
 
@@ -117,8 +117,39 @@ module IndexMap = Map.Make(
 (* substitution: from free variables to term *) 
 type substitution = term IndexMap.t;;
 
-let quantifier_size (q: quantifier) : int =
+(*
+  quantified free variables:
+  variables which are added to the ctxt after typechecking quantifier
+  (implies we really need the env)
+
+  - needed for shifting substitution, in order to apply them bellow quantifiers / pattern
+*)
+
+(* the quantified free variables in quantifiers 
+   - a fold over quantified free variables of type and patterns
+*)
+let rec quantifier_qfvars (q: quantifier) : name list =
+  let (ps, ty, n) = q in
+  List.fold_left (fun acc hd -> type_qfvars ty @ pattern_qfvars hd @ acc) [] ps
+
+(* the quantified free variables in patterns 
+   - all variables that names are not registered as a Constr
+   - all aliasing @
+*)
+and pattern_qfvars (p: pattern) : name list =
   raise (Failure "NYI")
+(* quantified free variables in types (== terms) 
+   - all aliasing @
+*)
+and type_qfvars (t: term) : name list =
+  raise (Failure "NYI")
+;;
+
+(*
+  get the size 
+*)
+let quantifier_fqvars_size (q: quantifier) : int =
+  List.length (quantifier_qfvars q)
 ;;
 
 (* application of unification to a term 
@@ -146,7 +177,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
 
     | Impl (q, te) -> 
 	let q' = quantifier_substitution s q in
-	let s' = shift_substitution s (quantifier_size q) in
+	let s' = shift_substitution s (quantifier_fqvars_size q) in
 	let te' = term_substitution s' te in
 	  Impl (q', te')
 
@@ -154,7 +185,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	let (qs', s') = List.fold_left (
 	  fun (hdqs, s) qs ->
 	    (hdqs @ (quantifier_substitution s qs)::[],
-	     shift_substitution s (quantifier_size qs)
+	     shift_substitution s (quantifier_fqvars_size q)
 	    )
 	) ([], s) qs in
 	let te' = term_substitution s' te in
