@@ -8,11 +8,18 @@ type index = int
 type name = string
 
 type symbol = Name of name
-	      | Symbol of name
+	      | Symbol of name (* * symbol info: prefix|infix|suffix + assoc/prio *)
+
+module SymbolMap = Map.Make(
+  struct
+    type t = symbol
+    let compare x y = compare x y
+  end
+);;
 
 type univ = UnivVar of index
-	    | UnivSucc of univ
-	    | UnivMax of univ * univ
+	    | UnivSucc of univ (* u < UnivSucc u *)
+	    | UnivMax of univ * univ (* UnivMax u1 u2 >= u1 /\ UnivMax u1 u2 >= u2 *)
 
 type position = ((int * int) * (int * int))
 
@@ -21,26 +28,16 @@ let position_to_string (p: position) : string =
   String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
 
 type term = Type of univ option
-	    (* option on index: 
-	       - at parsing: all variables index at None
-	       - at typechecking:
-	         * None: variable is a pattern quantifier
-	         * Some i: give the index of the var
-	    *)
-	    | Var of index option * name
-	    | AVar of index option
+	    | Var of index * name
+	    | AVar of index 
 	    | Cste of symbol
 	    | Impl of quantifier * term
 	    | Lambda of quantifier list * term
 	    | Let of bool * (pattern * term) list * term
 	    | If of term * term * term
 	    | App of term * arg list
-	    | Alias of name * term
 	    | Case of term * equation list
 	    | Where of term * declaration list
-
-	    | Ind of name * quantifier list * term * (name * term) list
-	    | Constr of int * term
 
 	    | TyAnnotation of term * tyAnnotation
 	    | SrcInfo of term * position
@@ -48,7 +45,11 @@ type term = Type of univ option
 and equation = Guarded of pattern * (guard * term) list
 	       | NotGuarded of pattern * term
 
-and pattern = term
+and pattern = PVar of name
+	      | PAVar 
+	      | PCste of symbol
+	      | PAlias of name * pattern
+	      | PApp of symbol * (pattern * nature)
 
 and nature = Explicit
 	     | Hidden
@@ -56,7 +57,7 @@ and nature = Explicit
 
 and arg = term * nature
 
-and quantifier = pattern list * tyAnnotation * nature
+and quantifier = name list * tyAnnotation * nature
 
 and guard = term
 
@@ -66,16 +67,8 @@ and tyAnnotation = NoAnnotation
 
 and declaration = Signature of symbol * term
 		  | Equation of equation
-		  | Inductive of name * quantifier list * term * (name * term) list
+		  | Inductive of name * quantifier list * term * term SymbolMap.t
 		  | RecordDecl of name * quantifier list * term * declaration list
-
-module SymbolMap = Map.Make(
-  struct
-    type t = symbol
-    let compare x y = compare x y
-  end
-);;
-
 
 type env = {
   (* quantifications (and there defined vars) *)
@@ -90,7 +83,7 @@ type env = {
      this feature allows to have typechecking conditional on providing the free variables
      (* through an interactive process reminiscent to proof mode *)
 
-     first term: the type
+     FIXME: what to do of a free variable that is no more used ?
      
   *)
   mutable fv: ((term * term option) list) list;
@@ -115,12 +108,6 @@ type env = {
   *)
 
   mutable inferrule: term list;
-
-  (* list of already typed constant
-     this is redundant with decl, but make easier for the type checker 
-     to find the type of cste
-  *)
-  mutable signature : (term SymbolMap.t) list
 
 };;
 
@@ -158,7 +145,7 @@ type substitution = term IndexMap.t;;
 *)
 let rec quantifier_qfvars (q: quantifier) : name list =
   let (ps, ty, n) = q in
-  List.fold_left (fun acc hd -> typeannot_qfvars ty @ pattern_qfvars hd @ acc) [] ps
+  List.rev ps
 
 (* the quantified free variables in patterns 
    - all variables that have no DeBruijn Index
@@ -168,34 +155,11 @@ let rec quantifier_qfvars (q: quantifier) : name list =
 
 and pattern_qfvars (p: pattern) : name list =
   match p with
-    | Type u -> []
-    | Var (None, n) -> [n]
-    | Var (Some _, n) -> []
-    | Cste c -> []
-    | Impl _ -> raise (Failure "Impl not allowed in pattern")
-    | Lambda _ -> raise (Failure "Lambda not allowed in pattern")
-    | Let _ ->  raise (Failure "Let not allowed in pattern")
-    | If _ ->  raise (Failure "If not allowed in pattern")
-    | App (f, args) -> List.fold_left (fun acc (hd1, hd2) -> pattern_qfvars hd1 @ acc) [] args
-    | Alias (n ,te) -> n::pattern_qfvars te
-    | Case _ -> raise (Failure "Case not allowed in pattern")
-    | Where _ -> raise (Failure "Where not allowed in pattern")
-    | Ind _ -> raise (Failure "Ind not allowed in pattern")
-    | Constr _ -> raise (Failure "Constr not allowed in pattern")
-    | TyAnnotation (te, ty) -> raise (Failure "TyAnnotation not allowed in pattern")
-    | SrcInfo (te, pos) -> pattern_qfvars te
+    | _ -> raise (Failure "NYI")
 
 (* quantified free variables in types (== terms) 
    - all aliasing @
 *)
-and typeannot_qfvars (ty: tyAnnotation) : name list =
-  match ty with
-    | NoAnnotation -> []
-    | Inferred ty -> type_qfvars ty
-    | Annotated ty -> type_qfvars ty
-
-and type_qfvars (t: term) : name list =
-  raise (Failure "NYI")
 ;;
 
 (*
@@ -219,12 +183,11 @@ let rec term_substitution (s: substitution) (te: term) : term =
   match te with
     | Type u -> Type u
 
-    | Var (Some i, n) as v when i < 0 -> (
+    | Var (i, n) as v when i < 0 -> (
 	try IndexMap.find i s 
 	with
 	  | Not_found -> v
       )
-    | Var _ as v -> v
 
     | Cste _ as c -> c
 
