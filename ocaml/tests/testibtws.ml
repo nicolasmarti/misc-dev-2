@@ -23,17 +23,29 @@ let test1 oc =
   sleep 5
 ;;
 
-let test2 oc =   
+let gs_contract = 
   let c = build_contract () in
+  c.symbol <- "GS";
+  c.secType <- "STK";
+  c.exchange <- "SMART";
+  c.primaryExchange <- "NYSE";
+  c.currency <- "USD";
+  c
+;;
 
-    c.symbol <- "STAN";
-    c.secType <- "STK";
-    c.exchange <- "SMART";
-    c.primaryExchange <- "LSE";
-    c.currency <- "GBP";
+let stan_contract = 
+  let c = build_contract () in
+  c.symbol <- "STAN";
+  c.secType <- "STK";
+  c.exchange <- "SMART";
+  c.primaryExchange <- "LSE";
+  c.currency <- "GBP";
+  c
+;;
 
+let test2 oc =   
     printf "requesting market data\n";
-    reqMktData !currId c "100,101,104,105,106,107,125,165,225,221,236,258,291" false oc;
+    reqMktData !currId gs_contract "100,101,104,105,106,107,125,165,225,221,236,258,291" false oc;
     flush stdout;
     sleep 10;
     printf "cancel market data\n";
@@ -42,16 +54,8 @@ let test2 oc =
 ;;
 
 let test3 oc =   
-  let c = build_contract () in
-
-    c.symbol <- "STAN";
-    c.secType <- "STK";
-    c.exchange <- "SMART";
-    c.primaryExchange <- "LSE";
-    c.currency <- "GBP";
-
     printf "requesting market depth\n";
-    reqMktDepth !currId c 1 oc;
+    reqMktDepth !currId gs_contract 1 oc;
     flush stdout;
     sleep 10;
     printf "cancel market depth\n";
@@ -60,14 +64,6 @@ let test3 oc =
 ;;
 
 let test4 oc =
-  let c = build_contract () in
-
-    c.symbol <- "GS";
-    c.secType <- "STK";
-    c.exchange <- "SMART";
-    c.primaryExchange <- "NYSE";
-    c.currency <- "USD";
-
     printf "requesting historical data\n";
 
     let mtime = gmtime (time ()) in
@@ -84,25 +80,17 @@ let test4 oc =
 
     printf "date = %s" date;
 
-    reqHistoricalData !currId c date "3600 S" "5 secs" "TRADES" 0 1 oc;
+    reqHistoricalData !currId gs_contract date "3600 S" "5 mins" "TRADES" 0 1 oc;
     flush stdout;
     sleep 10;
-    printf "cancel historical data\n";
-    cancelHistoricalData !currId oc;
+    (*printf "cancel historical data\n";*)
+    (*cancelHistoricalData !currId oc;*)
     flush stdout
 ;;
 
 let test5 oc =
-  let c = build_contract () in
-
-    c.symbol <- "GS";
-    c.secType <- "STK";
-    c.exchange <- "SMART";
-    c.primaryExchange <- "NYSE";
-    c.currency <- "USD";
-
     printf "requesting real time bars\n";
-    reqRealTimeBars !currId c 5 "TRADES" 0 oc;
+    reqRealTimeBars !currId gs_contract 5 "MIDPOINT" 0 oc;
     flush stdout;
     sleep 20;
     printf "cancel real time bars\n";
