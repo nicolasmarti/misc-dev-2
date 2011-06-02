@@ -62,7 +62,7 @@ and quantifier = pattern list * tyAnnotation * nature
 and guard = term
 
 and tyAnnotation = NoAnnotation
-		   | Inferred of term
+		   | Infered of term
 		   | Annotated of term
 
 and declaration = Signature of symbol * term
@@ -130,6 +130,7 @@ module IndexMap = Map.Make(
 
 type trep_error = AtPos of position * trep_error
 		  | FreeError of string
+		  | UnShiftable
 ;;
 
 exception TrepException of trep_error
@@ -173,6 +174,10 @@ let quantifier_fqvars_size (q: quantifier) : int =
   List.length (quantifier_qfvars q)
 ;;
 
+let pattern_fqvars_size (p: pattern) : int =
+  List.length (pattern_qfvars p)
+;;
+
 (* application of unification to a term 
 
    N.B.:
@@ -204,34 +209,52 @@ let rec term_substitution (s: substitution) (te: term) : term =
     | Lambda (qs, te) ->
 	let (qs', s') = List.fold_left (
 	  fun (hdqs, s) qs ->
-	    (hdqs @ (quantifier_substitution s qs)::[],
+	    (hdqs @ [quantifier_substitution s qs],
 	     shift_substitution s (quantifier_fqvars_size qs)
 	    )
 	) ([], s) qs in
 	let te' = term_substitution s' te in
 	  Lambda (qs', te')
 
-    | Let (r, eqs, te) ->
-	raise (Failure "NYI")	
+    | Let (false, eqs, te) ->
+      let (eqs', s') = List.fold_left (fun (eqs, s) (p, t) -> 
+	let s' = shift_substitution s (pattern_fqvars_size p) in
+	(eqs @ [(p, term_substitution s' t)], s')
+      ) ([], s) eqs in
+      Let (false, eqs', term_substitution s' te)
 
     | _ -> raise (Failure "term_substitution: case not yet supported")
 	
 and quantifier_substitution (s: substitution) (q: quantifier) : quantifier =
-  raise (Failure "NYI")
+  let (qs, ty, n) = q in
+  let s' = shift_substitution s (quantifier_fqvars_size q) in
+  let ty' = tyAnnotation_substitution s' ty in
+  (qs, ty', n)
 
+and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotation =
+    match ty with
+      | NoAnnotation -> NoAnnotation
+      | Infered ty -> Infered (term_substitution s ty)
+      | Annotated ty -> Annotated (term_substitution s ty)
+      
 (* aging a substitution: 
    shift the quantified variable index by delta
    delta > 0 -> consider the substitution on quantified terms
    delta < 0 -> consider the substitution on less quantified terms
 *)
+(* val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b *)
 and shift_substitution (s: substitution) (delta: int) : substitution =
-  raise (Failure "NYI")
-;;
+  IndexMap.fold (fun key value acc -> 
+    try 
+      IndexMap.add key (shift_term value delta) acc
+    with
+      | TrepException UnShiftable -> acc
+  ) s IndexMap.empty
 
 (* which imply having the aging of terms 
    it returns an exception if the term has qv < delta   
 *)
-let shift_term (te: term) (delta: int) : term =
+and shift_term (te: term) (delta: int) : term =
   raise (Failure "NYI")
 ;;
 
