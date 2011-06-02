@@ -201,17 +201,15 @@ let rec term_substitution (s: substitution) (te: term) : term =
     | Cste _ as c -> c
 
     | Impl (q, te) -> 
-	let q' = quantifier_substitution s q in
-	let s' = shift_substitution s (quantifier_fqvars_size q) in
+	let (q', s') = quantifier_substitution s q in
 	let te' = term_substitution s' te in
 	  Impl (q', te')
 
     | Lambda (qs, te) ->
 	let (qs', s') = List.fold_left (
 	  fun (hdqs, s) qs ->
-	    (hdqs @ [quantifier_substitution s qs],
-	     shift_substitution s (quantifier_fqvars_size qs)
-	    )
+	    let (qs', s') = quantifier_substitution s qs in
+	    (hdqs @ [qs'], s')
 	) ([], s) qs in
 	let te' = term_substitution s' te in
 	  Lambda (qs', te')
@@ -262,11 +260,11 @@ let rec term_substitution (s: substitution) (te: term) : term =
 
     | _ -> raise (Failure "term_substitution: case not yet supported")
 	
-and quantifier_substitution (s: substitution) (q: quantifier) : quantifier =
+and quantifier_substitution (s: substitution) (q: quantifier) : quantifier * substitution =
   let (qs, ty, n) = q in
   let s' = shift_substitution s (quantifier_fqvars_size q) in
   let ty' = tyAnnotation_substitution s' ty in
-  (qs, ty', n)
+  (qs, ty', n), s'
 
 and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotation =
     match ty with
@@ -275,10 +273,41 @@ and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotatio
       | Annotated ty -> Annotated (term_substitution s ty)
       
 and equation_substitution (s: substitution) (eq: equation) : equation =
-  raise (Failure "NYI")
+  match eq with
+    | Guarded (p, gtes) ->
+      let s' = shift_substitution s (pattern_fqvars_size p) in
+      Guarded (p,
+	       List.map (fun (g, t) -> term_substitution s' g, term_substitution s' t) gtes
+      )
+    | NotGuarded (p, t) -> 
+      let s' = shift_substitution s (pattern_fqvars_size p) in
+      NotGuarded (p, term_substitution s' t)
 
 and declaration_substitution (s: substitution) (decl: declaration) : declaration =
-  raise (Failure "NYI")
+  match decl with
+    | Signature (symb, te) ->
+      Signature (symb, term_substitution s te)
+
+    | Equation eq -> Equation (equation_substitution s eq)
+
+    | Inductive (n, args, ty, constrs) ->
+      let (args', s') = List.fold_left (fun (args, s) hd -> 
+	let (hd', s') = quantifier_substitution s hd in
+	(args @ [hd'], s')
+      ) ([], s) args in
+      let ty' = term_substitution s' ty in
+      let constrs' = SymbolMap.map (fun (symb, ty) -> symb, term_substitution s' ty) constrs in
+      Inductive (n, args', ty', constrs')
+ 
+    | RecordDecl (n, args, ty, decls) ->
+      let (args', s') = List.fold_left (fun (args, s) hd -> 
+	let (hd', s') = quantifier_substitution s hd in
+	(args @ [hd'], s')
+      ) ([], s) args in
+      let ty' = term_substitution s' ty in
+      let decls' = List.map (fun hd -> declaration_substitution s' hd) decls in
+      RecordDecl (n, args', ty', decls')
+
 
 (* aging a substitution: 
    shift the quantified variable index by delta
@@ -298,11 +327,6 @@ and shift_substitution (s: substitution) (delta: int) : substitution =
    it returns an exception if the term has qv < delta   
 *)
 and shift_term (te: term) (delta: int) : term =
-  raise (Failure "NYI")
-;;
-
-(* apply a substitution to a term *)
-let subst_term (te: term) (s: substitution) : term =
   raise (Failure "NYI")
 ;;
 
