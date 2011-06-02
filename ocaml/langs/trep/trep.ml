@@ -57,7 +57,7 @@ and nature = Explicit
 
 and arg = term * nature
 
-and quantifier = name list * tyAnnotation * nature
+and quantifier = pattern list * tyAnnotation * nature
 
 and guard = term
 
@@ -149,7 +149,7 @@ type substitution = term IndexMap.t;;
 (* the quantified free variables in quantifiers *)
 let rec quantifier_qfvars (q: quantifier) : name list =
   let (ps, ty, n) = q in
-  List.rev ps
+  List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) [] ps
 
 (* the quantified free variables in patterns 
    - all variables that have no DeBruijn Index
@@ -170,8 +170,7 @@ and pattern_qfvars (p: pattern) : name list =
   get the size 
 *)
 let quantifier_fqvars_size (q: quantifier) : int =
-  let (ps, ty, n) = q in
-  List.length ps
+  List.length (quantifier_qfvars q)
 ;;
 
 (* application of unification to a term 
