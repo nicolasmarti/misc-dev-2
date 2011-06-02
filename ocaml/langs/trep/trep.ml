@@ -223,6 +223,43 @@ let rec term_substitution (s: substitution) (te: term) : term =
       ) ([], s) eqs in
       Let (false, eqs', term_substitution s' te)
 
+    | Let (true, eqs, te) ->
+      let sz = List.fold_left (fun acc hd -> acc + hd) 0 (List.map (fun hd -> pattern_fqvars_size (fst hd)) eqs) in 
+      let s' = shift_substitution s sz in
+      Let (true,
+	   List.map (fun (p, t) -> (p, term_substitution s' t)) eqs,
+	   term_substitution s' te
+      )
+
+    | If (t1, t2, t3) ->
+      If (term_substitution s t1,
+	  term_substitution s t2,
+	  term_substitution s t3
+      )
+
+    | App (f, args) ->
+      App (term_substitution s f,
+	   List.map (fun (t, n) -> (term_substitution s t, n)) args
+	   )
+
+    | Case (te, eqs) ->
+      Case (term_substitution s te,
+	    List.map (fun hd -> equation_substitution s hd) eqs
+      )
+
+    | Where (te, decls) ->
+      Where (term_substitution s te,
+	    List.map (fun hd -> declaration_substitution s hd) decls
+      )
+
+    | TyAnnotation (te, ty) ->
+      TyAnnotation (term_substitution s te,
+		    tyAnnotation_substitution s ty)
+
+    | SrcInfo (te, pos) ->
+      SrcInfo (term_substitution s te,
+	       pos)
+
     | _ -> raise (Failure "term_substitution: case not yet supported")
 	
 and quantifier_substitution (s: substitution) (q: quantifier) : quantifier =
@@ -237,6 +274,12 @@ and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotatio
       | Infered ty -> Infered (term_substitution s ty)
       | Annotated ty -> Annotated (term_substitution s ty)
       
+and equation_substitution (s: substitution) (eq: equation) : equation =
+  raise (Failure "NYI")
+
+and declaration_substitution (s: substitution) (decl: declaration) : declaration =
+  raise (Failure "NYI")
+
 (* aging a substitution: 
    shift the quantified variable index by delta
    delta > 0 -> consider the substitution on quantified terms
