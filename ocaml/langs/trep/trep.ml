@@ -49,7 +49,7 @@ and pattern = PVar of name
 	      | PAVar 
 	      | PCste of symbol
 	      | PAlias of name * pattern
-	      | PApp of symbol * (pattern * nature)
+	      | PApp of symbol * (pattern * nature) list
 
 and nature = Explicit
 	     | Hidden
@@ -71,8 +71,8 @@ and declaration = Signature of symbol * term
 		  | RecordDecl of name * quantifier list * term * declaration list
 
 type env = {
-  (* quantifications (and there defined vars) *)
-  mutable qv : (quantifier * (name * term) list) list;
+  (* the quantified vars *)
+  mutable qv : ((name * term) list) list;
   
   (* free variables (quantification level dependant) *)
   (* contains the type, and sum of substitution over the vars
@@ -107,9 +107,15 @@ type env = {
     used for [] quantification
   *)
 
-  mutable inferrule: term list;
+  mutable inferrule: name list;
 
 };;
+
+(*
+  TODO:
+  * write the parser for declaration
+  * write the pprinter for declaration
+*)
 
 module IndexMap = Map.Make(
   struct
@@ -140,9 +146,7 @@ type substitution = term IndexMap.t;;
   - needed for shifting substitution, in order to apply them bellow quantifiers / pattern
 *)
 
-(* the quantified free variables in quantifiers 
-   - a fold over quantified free variables of type and patterns
-*)
+(* the quantified free variables in quantifiers *)
 let rec quantifier_qfvars (q: quantifier) : name list =
   let (ps, ty, n) = q in
   List.rev ps
@@ -155,11 +159,11 @@ let rec quantifier_qfvars (q: quantifier) : name list =
 
 and pattern_qfvars (p: pattern) : name list =
   match p with
-    | _ -> raise (Failure "NYI")
+    | PVar n -> [n]
+    | PAlias (n, p) -> n::pattern_qfvars p
+    | PApp (f, arg) -> List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) [] (List.map fst arg)
+    | _ -> []
 
-(* quantified free variables in types (== terms) 
-   - all aliasing @
-*)
 ;;
 
 (*
@@ -208,20 +212,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	let te' = term_substitution s' te in
 	  Lambda (qs', te')
 
-    (* rmq: the definitions in let are equivalent to NotGuarded equation
-       should be able to reuse some code here
-
-       r means that the equations l.h.s. patterns are entered in one step
-       with for types free variables that should be solved by unification
-       when typing the bodies
-
-       the let is a bit ambiguous: it can be either
-       1) a destruction, reminiscent to case 
-       2) a declaration
-
-       choosing between both might require to have the env ...
-    *)
-    | Let (r, not_guard_eq, te) ->
+    | Let (r, eqs, te) ->
 	raise (Failure "NYI")	
 
     | _ -> raise (Failure "term_substitution: case not yet supported")
