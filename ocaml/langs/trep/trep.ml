@@ -166,7 +166,8 @@ and pattern_qfvars (p: pattern) : name list =
   get the size 
 *)
 let quantifier_fqvars_size (q: quantifier) : int =
-  List.length (quantifier_qfvars q)
+  let (ps, ty, n) = q in
+  List.length ps
 ;;
 
 (* application of unification to a term 
