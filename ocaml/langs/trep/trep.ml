@@ -67,7 +67,7 @@ and tyAnnotation = NoAnnotation
 
 and declaration = Signature of symbol * term
 		  | Equation of equation
-		  | Inductive of name * quantifier list * term * term SymbolMap.t
+		  | Inductive of name * quantifier list * term * (symbol * term) SymbolMap.t
 		  | RecordDecl of name * quantifier list * term * declaration list
 
 type env = {
