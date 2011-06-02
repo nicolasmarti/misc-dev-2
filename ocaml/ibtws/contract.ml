@@ -8,32 +8,36 @@ type legOpenClose =
 ;;
 
 type comboLeg = {
-  mutable conId : int;
+  mutable cl_conId : int;
   mutable ratio : float;
   mutable action : string;
+  mutable cl_exchange : string;
   mutable openClose : legOpenClose;
   mutable shortSaleSlot : int;
   mutable designatedLocation : string;
+  mutable exemptCode : int;
 };;
 
 let build_comboLeg () =
-  { conId = 0;
+  { cl_conId = 0;
     ratio = 0.0;
     action = "";
+    cl_exchange = "";
     openClose = UNKNOWN_POS;
     shortSaleSlot = 0;
-    designatedLocation = ""
+    designatedLocation = "";
+    exemptCode = 0
   }
 ;;
 
 type underComp = {
-  mutable conId: int;
+  mutable uc_conId: int;
   mutable delta: float;
   mutable price: float;  
 };;
 
 let build_underComp () =
-  { conId = 0;
+  { uc_conId = 0;
     delta = 0.0;
     price = 0.0
   }
@@ -51,9 +55,11 @@ type contract = {
   mutable currency: string;
   mutable localSymbol: string;
   mutable includeExpired: bool;
+  mutable secIdType: string;
+  mutable secId: string;
   mutable comboLegsDescrip: string;
   mutable comboLegs: comboLeg list;
-  mutable undercomp: underComp;
+  mutable undercomp: underComp option;
 };;
 
 let build_contract () =
@@ -69,7 +75,9 @@ let build_contract () =
     currency = "";
     localSymbol = "";
     includeExpired = false;
+    secIdType = "";
+    secId = "";
     comboLegsDescrip = "";
     comboLegs = [];
-    undercomp = build_underComp ()
+    undercomp = None
   }

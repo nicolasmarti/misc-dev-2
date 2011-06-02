@@ -5,6 +5,8 @@ open Encdec;;
 
 let client_version = 48;;
 
+let server_version = ref 0;;
+
 let tws_connect ip port clientId =
 
   let addr = (ADDR_INET (inet_addr_of_string ip, port)) in
@@ -23,27 +25,27 @@ let tws_connect ip port clientId =
 
     (* grab the server version *)
     (* EClientSocketBase::processConnectAck *)
-    let server_version = decode_int ic in
-      printf "server_version = %d\n" server_version;
-      if server_version >= 20 then (
+    server_version := decode_int ic;
+    printf "server_version = %d\n" !server_version;
+    if !server_version >= 20 then (
 	(*printf "server_version >= 20\n";*)
-	let twstime = decode_string ic in
-	  printf "twstime = %s\n" twstime
-      ) else 
+      let twstime = decode_string ic in
+      printf "twstime = %s\n" twstime
+    ) else 
 	(*printf "server_version < 20\n";*)
-	();
-      
-      if server_version >= 3 then (
-	(*printf "server_version >= 3\n";*)
-	encode_int clientId oc;
-	flush oc;
+      ();
     
-      ) else 
+    if !server_version >= 3 then (
+      (*printf "server_version >= 3\n";*)
+      encode_int clientId oc;
+      flush oc;
+      
+    ) else 
 	(*printf "server_version < 20\n";*)
-	();
-
-      flush stdout;
-      (ic, oc)
+      ();
+    
+    flush stdout;
+    (ic, oc)
 ;;
 
 

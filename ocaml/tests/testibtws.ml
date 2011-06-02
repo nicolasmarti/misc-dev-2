@@ -69,7 +69,22 @@ let test4 oc =
     c.currency <- "USD";
 
     printf "requesting historical data\n";
-    reqHistoricalData !currId c "20101112 12:00:00" "3600 S" "5 mins" "TRADES" 0 1 oc;
+
+    let mtime = gmtime (time ()) in
+    let date = String.concat " " [
+      String.concat "" [string_of_int (mtime.tm_year + 1900); 
+			String.concat "" [if (mtime.tm_mon + 1 < 10) then "0" else ""; string_of_int (mtime.tm_mon + 1)]; 
+			String.concat "" [if (mtime.tm_mday < 10) then "0" else ""; string_of_int mtime.tm_mday]
+		       ];
+      String.concat ":" [String.concat "" [if (mtime.tm_hour - 1 < 10) then "0" else ""; string_of_int (mtime.tm_hour - 1)]; 
+			 String.concat "" [if (mtime.tm_min < 10) then "0" else ""; string_of_int mtime.tm_min]; 
+			 String.concat "" [if (mtime.tm_sec < 10) then "0" else ""; string_of_int mtime.tm_sec]
+			]
+    ] in
+
+    printf "date = %s" date;
+
+    reqHistoricalData !currId c date "3600 S" "5 secs" "TRADES" 0 1 oc;
     flush stdout;
     sleep 10;
     printf "cancel historical data\n";
@@ -109,21 +124,17 @@ let t = Thread.create recv_loop ic;;
 test1 oc;;
 
 test2 oc;;
-
 currId := !currId + 1;;
 
 test3 oc;;
-
 currId := !currId + 1;;
 
 test4 oc;;
-
 currId := !currId + 1;;
-
 
 test5 oc;;
-
 currId := !currId + 1;;
+
 
 shutdown_connection ic;;
 

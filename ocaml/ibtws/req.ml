@@ -1,6 +1,7 @@
 open Encdec;;
 open Unix;;
 open Contract;;
+open Connect;;
 
 let req_mkt_data = 1;;
 let cancel_mkt_data = 2;;
@@ -41,28 +42,59 @@ let reqIds (numIds: int) (oc: out_channel) : unit =
 ;;
 
 let reqMktData (tickerId: int) (c: contract) (genericTicks: string) (snapshot: bool) (oc: out_channel) : unit =
-  let version = 8 in
+
+  let version = 9 in
     encode_int req_mkt_data oc;
     encode_int version oc;
     encode_int tickerId oc;
+
+    if !server_version > 47 then
+      encode_int c.conId oc;
+
     encode_string c.symbol oc;
     encode_string c.secType oc;
     encode_string c.expiry oc;
     encode_float c.strike oc;
     encode_string c.right oc;
     encode_string c.multiplier oc;
+
     encode_string c.exchange oc;
     encode_string c.primaryExchange oc;
     encode_string c.currency oc;
+
     encode_string c.localSymbol oc;
     
+    if c.secType = "BAG" then (
 
-    (* TODO: combo legs *)
-    (*encode_int 0 oc;*)
+      if List.length c.comboLegs = 0 then
+	encode_int 0 oc
+      else (
+	encode_int (List.length c.comboLegs) oc;
+	
+	ignore (List.map (
+	  fun hd ->
+	    encode_int hd.cl_conId oc;
+	    encode_float hd.ratio oc;
+	    encode_string hd.action oc;
+	    encode_string hd.cl_exchange oc;
+	) c.comboLegs)
 
-    (* TODO: undercomp ... *)
-    encode_bool false oc;
-    
+      );
+	
+    );
+
+    if !server_version >= 40 then (
+      match c.undercomp with
+	| None -> encode_bool false oc
+	| Some uc -> (
+	  encode_bool true oc;
+	  encode_int uc.uc_conId oc;
+	  encode_float uc.delta oc;
+	  encode_float uc.price oc;
+	);      
+
+    );
+
     encode_string genericTicks oc;
 
     encode_bool snapshot oc;
@@ -135,6 +167,25 @@ let reqHistoricalData (tickerId: int) (c: contract) (endDateTime: string) (durat
     encode_string whatToShow oc;
     encode_int formatDate oc;
 
+    if c.secType = "BAG" then (
+
+      if List.length c.comboLegs = 0 then
+	encode_int 0 oc
+      else (
+	encode_int (List.length c.comboLegs) oc;
+	
+	ignore (List.map (
+	  fun hd ->
+	    encode_int hd.cl_conId oc;
+	    encode_float hd.ratio oc;
+	    encode_string hd.action oc;
+	    encode_string hd.cl_exchange oc;
+	) c.comboLegs)
+
+      );
+	
+    );
+
     flush oc
 ;;
 
@@ -179,3 +230,7 @@ let cancelRealTimeBars (tickerId: int) (oc: out_channel) : unit =
     
     flush oc
 ;;
+
+(* next: reqScannerParameters 
+   l. 808
+*)
