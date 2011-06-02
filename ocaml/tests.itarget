@@ -4,3 +4,4 @@ tests/testpprinter.native
 tests/testibtws.native
 langs/icic/ast.native
 langs/pml/def.native
+langs/trep/trep.native

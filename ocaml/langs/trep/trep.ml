@@ -1,4 +1,8 @@
 
+(*
+  >= 0 -> quantified var with debruijn index
+  < 0 -> free var
+*)
 type index = int
 
 type name = string
@@ -12,8 +16,18 @@ type univ = UnivVar of index
 
 type position = ((int * int) * (int * int))
 
+let position_to_string (p: position) : string =
+  let ((b1, e1), (b2, e2)) = p in
+  String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
+
 type term = Type of univ option
-	    | Var of index option * name option
+	    (* option on index: 
+	       - at parsing: all variables index at None
+	       - at typechecking:
+	         * None: variable is a pattern quantifier
+	         * Some i: give the index of the var
+	    *)
+	    | Var of index option * name
 	    | AVar of index option
 	    | Cste of symbol
 	    | Impl of quantifier * term
@@ -69,12 +83,15 @@ type env = {
   
   (* free variables (quantification level dependant) *)
   (* contains the type, and sum of substitution over the vars
-     a fv can be pushed backward (for instance when qv is push), in thi case
+     a fv can be pushed backward (for instance when qv is push):
        - all instance of the freevars are applied with the poped quantified variables
        - its type is quantified with Impl on the poped quantifier
 
      this feature allows to have typechecking conditional on providing the free variables
      (* through an interactive process reminiscent to proof mode *)
+
+     first term: the type
+     
   *)
   mutable fv: ((term * term option) list) list;
 
@@ -114,6 +131,17 @@ module IndexMap = Map.Make(
   end
 );;
 
+(*
+  ADT for errors, an exception and a composition function
+*)
+
+type trep_error = AtPos of position * trep_error
+		  | FreeError of string
+;;
+
+exception TrepException of trep_error
+;;
+
 (* substitution: from free variables to term *) 
 type substitution = term IndexMap.t;;
 
@@ -130,17 +158,42 @@ type substitution = term IndexMap.t;;
 *)
 let rec quantifier_qfvars (q: quantifier) : name list =
   let (ps, ty, n) = q in
-  List.fold_left (fun acc hd -> type_qfvars ty @ pattern_qfvars hd @ acc) [] ps
+  List.fold_left (fun acc hd -> typeannot_qfvars ty @ pattern_qfvars hd @ acc) [] ps
 
 (* the quantified free variables in patterns 
-   - all variables that names are not registered as a Constr
+   - all variables that have no DeBruijn Index
+     * this is consistent, as the quantifier is already typed
    - all aliasing @
 *)
+
 and pattern_qfvars (p: pattern) : name list =
-  raise (Failure "NYI")
+  match p with
+    | Type u -> []
+    | Var (None, n) -> [n]
+    | Var (Some _, n) -> []
+    | Cste c -> []
+    | Impl _ -> raise (Failure "Impl not allowed in pattern")
+    | Lambda _ -> raise (Failure "Lambda not allowed in pattern")
+    | Let _ ->  raise (Failure "Let not allowed in pattern")
+    | If _ ->  raise (Failure "If not allowed in pattern")
+    | App (f, args) -> List.fold_left (fun acc (hd1, hd2) -> pattern_qfvars hd1 @ acc) [] args
+    | Alias (n ,te) -> n::pattern_qfvars te
+    | Case _ -> raise (Failure "Case not allowed in pattern")
+    | Where _ -> raise (Failure "Where not allowed in pattern")
+    | Ind _ -> raise (Failure "Ind not allowed in pattern")
+    | Constr _ -> raise (Failure "Constr not allowed in pattern")
+    | TyAnnotation (te, ty) -> raise (Failure "TyAnnotation not allowed in pattern")
+    | SrcInfo (te, pos) -> pattern_qfvars te
+
 (* quantified free variables in types (== terms) 
    - all aliasing @
 *)
+and typeannot_qfvars (ty: tyAnnotation) : name list =
+  match ty with
+    | NoAnnotation -> []
+    | Inferred ty -> type_qfvars ty
+    | Annotated ty -> type_qfvars ty
+
 and type_qfvars (t: term) : name list =
   raise (Failure "NYI")
 ;;
@@ -185,7 +238,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	let (qs', s') = List.fold_left (
 	  fun (hdqs, s) qs ->
 	    (hdqs @ (quantifier_substitution s qs)::[],
-	     shift_substitution s (quantifier_fqvars_size q)
+	     shift_substitution s (quantifier_fqvars_size qs)
 	    )
 	) ([], s) qs in
 	let te' = term_substitution s' te in
