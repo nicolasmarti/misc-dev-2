@@ -327,7 +327,132 @@ and shift_substitution (s: substitution) (delta: int) : substitution =
    it returns an exception if the term has qv < delta   
 *)
 and shift_term (te: term) (delta: int) : term =
-  raise (Failure "NYI")
+  leveled_shift_term te 0 delta
+  
+and leveled_shift_term (te: term) (level: int) (delta: int) : term =
+  match te with
+    | Type u -> Type u
+
+    | Var (i, n) as v when i < 0 -> v
+      
+    | Var (i, n) as v ->
+      if i >= level then
+	if i + delta < level then
+	  raise (TrepException UnShiftable)
+	else
+	  Var (i + level, n)
+      else
+	v
+
+    | AVar i as v -> v
+
+    | Impl (q, te) ->
+      let (q', level') = leveled_shift_quantifier q level delta in
+      let te' = leveled_shift_term te level' delta in
+      Impl (q', te')
+
+    | Lambda (qs, te) ->
+      let (qs', level') = List.fold_left (fun (qs, level) q ->
+	let (q', level') = leveled_shift_quantifier q level delta in
+	(qs @ [q'], level')
+      ) ([], level) qs in
+      Lambda (qs', leveled_shift_term te level' delta)
+
+    | Let (false, eqs, te) ->
+      let (eqs', level') = List.fold_left (fun (eqs, level) (p, t) ->
+	let level' = level + (pattern_fqvars_size p) in
+	(eqs @ [(p, leveled_shift_term t level' delta)], level')
+      ) ([], level) eqs in
+      Let (false, eqs', leveled_shift_term te level' delta)
+      
+    | Let (true, eqs, te) ->
+      let sz = List.fold_left (fun acc hd -> acc + hd) 0 (List.map (fun hd -> pattern_fqvars_size (fst hd)) eqs) in 
+      let level' = level + sz in
+      Let (true,
+	   List.map (fun (p, t) -> (p, leveled_shift_term t level' delta)) eqs,
+	   leveled_shift_term te level' delta
+      )
+
+    | If (t1, t2, t3) ->
+      If (leveled_shift_term t1 level delta,
+	  leveled_shift_term t2 level delta,
+	  leveled_shift_term t3 level delta
+      )
+
+    | App (f, args) ->
+      App (leveled_shift_term f level delta,
+	   List.map (fun (t, n) -> (leveled_shift_term t level delta, n)) args
+	   )
+
+    | Case (te, eqs) ->
+      Case (leveled_shift_term te level delta,
+	    List.map (fun hd -> leveled_shift_equation hd level delta) eqs
+      )
+
+    | Where (te, decls) ->
+      Where (leveled_shift_term te level delta,
+	    List.map (fun hd -> leveled_shift_declaration hd level delta) decls
+      )
+
+    | TyAnnotation (te, ty) ->
+      TyAnnotation (leveled_shift_term te level delta,
+		    leveled_shift_tyAnnotation ty level delta)
+
+    | SrcInfo (te, pos) ->
+      SrcInfo (leveled_shift_term te level delta,
+	       pos)
+
+    | _ -> raise (Failure "leveled_shift_term: case not yet supported")
+
+and leveled_shift_quantifier (q: quantifier) (level: int) (delta: int) : quantifier * int =
+  let (ps, ty, n) = q in
+  let sz = quantifier_fqvars_size q in
+  let level' = level + sz in
+  (ps, leveled_shift_tyAnnotation ty level' delta, n), level'
+
+and leveled_shift_tyAnnotation (ty: tyAnnotation) (level: int) (delta: int) : tyAnnotation =
+  match ty with
+    | NoAnnotation -> NoAnnotation
+    | Infered ty -> Infered (leveled_shift_term ty level delta)
+    | Annotated ty -> Annotated (leveled_shift_term ty level delta)
+
+and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
+  match eq with
+    | Guarded (p, gtes) ->
+      let level' = level + (pattern_fqvars_size p) in
+      Guarded (p,
+	       List.map (fun (g, t) -> leveled_shift_term g level' delta, leveled_shift_term t level' delta) gtes
+      )
+    | NotGuarded (p, t) -> 
+      let level' = level + (pattern_fqvars_size p) in
+      NotGuarded (p, leveled_shift_term t level' delta)
+
+
+and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : declaration =
+  match decl with
+    | Signature (symb, te) ->
+      Signature (symb, leveled_shift_term te level delta)
+
+    | Equation eq -> Equation (leveled_shift_equation eq level delta)
+
+    | Inductive (n, args, ty, constrs) ->
+      let (args', level') = List.fold_left (fun (args, level) hd -> 
+	let (hd', level') = leveled_shift_quantifier hd level delta in
+	(args @ [hd'], level')
+      ) ([], level) args in
+      let ty' = leveled_shift_term ty level' delta in
+      let constrs' = SymbolMap.map (fun (symb, ty) -> symb, leveled_shift_term ty level' delta) constrs in
+      Inductive (n, args', ty', constrs')
+ 
+    | RecordDecl (n, args, ty, decls) ->
+      let (args', level') = List.fold_left (fun (args, level) hd -> 
+	let (hd', level') = leveled_shift_quantifier hd level delta in
+	(args @ [hd'], level')
+      ) ([], level) args in
+      let ty' = leveled_shift_term ty level' delta in
+      let decls' = List.map (fun hd -> leveled_shift_declaration hd level' delta) decls in
+      RecordDecl (n, args', ty', decls')
+
 ;;
 
 (* applying a substitution to an environment *)
