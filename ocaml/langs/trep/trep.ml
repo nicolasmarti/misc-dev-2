@@ -404,17 +404,26 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 
     | _ -> raise (Failure "leveled_shift_term: case not yet supported")
 
+and shift_quantifier (q: quantifier) (delta: int) : quantifier * int =
+  leveled_shift_quantifier q 0 delta
+
 and leveled_shift_quantifier (q: quantifier) (level: int) (delta: int) : quantifier * int =
   let (ps, ty, n) = q in
   let sz = quantifier_fqvars_size q in
   let level' = level + sz in
   (ps, leveled_shift_tyAnnotation ty level' delta, n), level'
 
+and shift_tyAnnotation (ty: tyAnnotation) (delta: int) : tyAnnotation =
+  leveled_shift_tyAnnotation ty 0 delta
+
 and leveled_shift_tyAnnotation (ty: tyAnnotation) (level: int) (delta: int) : tyAnnotation =
   match ty with
     | NoAnnotation -> NoAnnotation
     | Infered ty -> Infered (leveled_shift_term ty level delta)
     | Annotated ty -> Annotated (leveled_shift_term ty level delta)
+
+and shift_equation (eq: equation) (delta: int) : equation =
+  leveled_shift_equation eq 0 delta
 
 and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
   match eq with
@@ -427,6 +436,8 @@ and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
       let level' = level + (pattern_fqvars_size p) in
       NotGuarded (p, leveled_shift_term t level' delta)
 
+and shift_declaration (decl: declaration) (delta: int) : declaration =
+  leveled_shift_declaration decl 0 delta
 
 and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : declaration =
   match decl with
