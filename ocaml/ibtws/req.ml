@@ -240,6 +240,40 @@ let reqScannerParameters (oc: out_channel) : unit =
     flush oc
 ;;
 
-(* next: reqScannerParameters 
-   l. 808
-*)
+open Scannersubscription;;
+
+let reqScannerSubscription (tickerId: int) (subscription: scannerSubscription) (oc: out_channel) : unit =
+  let version = 3 in
+  encode_int req_scanner_subscription oc;
+  encode_int version oc;
+  encode_int tickerId oc;
+  encode_int_max subscription.numberOfRows oc;
+  encode_string subscription.instrument oc;
+  encode_string subscription.locationCode oc;
+  encode_string subscription.scanCode oc;
+  encode_float_max subscription.abovePrice oc;
+  encode_float_max subscription.belowPrice oc;
+  encode_int_max subscription.aboveVolume oc;
+  encode_float_max subscription.marketCapAbove oc;
+  encode_float_max subscription.marketCapBelow oc;
+  encode_string subscription.moodyRatingAbove oc;
+  encode_string subscription.moodyRatingBelow oc;
+  encode_string subscription.spRatingAbove oc;
+  encode_string subscription.spRatingBelow oc;
+  encode_string subscription.maturityDateAbove oc;
+  encode_string subscription.maturityDateBelow oc;
+  encode_float_max subscription.couponRateAbove oc;
+  encode_float_max subscription.couponRateBelow oc;
+  encode_bool subscription.excludeConvertible oc;
+  encode_int_max subscription.averageOptionVolumeAbove oc;
+  encode_string subscription.scannerSettingPairs oc;
+  encode_string subscription.stockTypeFilter oc;
+;;
+
+let cancelScannerSubscription (tickerId: int) (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int cancel_scanner_subscription oc;
+  encode_int version oc;
+  encode_int tickerId oc;
+;;
+

@@ -81,3 +81,87 @@ let build_contract () =
     comboLegs = [];
     undercomp = None
   }
+;;
+
+type contractDetails =
+{
+   mutable summary : contract;
+   mutable marketName : string;
+   mutable tradingClass : string;
+   mutable minTick : float;
+   mutable orderTypes : string;
+   mutable validExchanges : string;
+   mutable priceMagnifier : float;
+   mutable underConId : int;
+   mutable longName : string;
+   mutable contractMonth : string;
+   mutable industry : string;
+   mutable category : string;
+   mutable subcategory : string;
+   mutable timeZoneId : string;
+   mutable tradingHours : string;
+   mutable liquidHours : string;
+
+   mutable cusip : string;
+   mutable ratings : string;
+   mutable descAppend : string;
+   mutable bondType : string;
+   mutable couponType : string;
+   mutable callable : bool;
+   mutable putable : bool;
+   mutable coupon : float;
+   mutable convertible : bool;
+   mutable maturity : string;
+   mutable issueDate : string;
+   mutable nextOptionDate : string;
+   mutable nextOptionType : string;
+   mutable nextOptionPartial : bool;
+   mutable notes : string;
+};;
+
+let build_contractDetails () = {
+  summary = build_contract ();
+  marketName = "";
+  tradingClass = "";
+  minTick = 0.0;
+  orderTypes = "";
+  validExchanges = "";
+  priceMagnifier = 0.0;
+  underConId = 0;
+  longName = "";
+  contractMonth = "";
+  industry = "";
+  category = "";
+  subcategory = "";
+  timeZoneId = "";
+  tradingHours = "";
+  liquidHours = "";
+
+  cusip = "";
+  ratings = "";
+  descAppend = "";
+  bondType = "";
+  couponType = "";
+  callable = false;
+  putable = false;
+  coupon = 0.0;
+  convertible = false;
+  maturity = "";
+  issueDate = "";
+  nextOptionDate = "";
+  nextOptionType = "";
+  nextOptionPartial = false;
+  notes = "";
+};;
+
+
+
+
+
+
+
+
+
+
+
+

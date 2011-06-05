@@ -3,6 +3,7 @@ open Encdec;;
 open Pervasives;;
 open Contract;;
 open Printf;;
+open Scannersubscription;;
 
 let tick_price = 1;;
 let tick_size = 2;;
@@ -186,9 +187,41 @@ let processMsg (ic: in_channel) : unit =
 	let xml = decode_string ic in
 	printf "SCANNERPARAMETER(%d, %s)" version xml;
       )	  
+      | 20 (* scanner_data *) -> (
+	  let version = decode_int ic in
+	  let reqId = decode_int ic in
+	  let numberOfElements = decode_int ic in
+	  let res = Array.init numberOfElements (fun _ -> build_scanData ()) in
+	  let index = ref 0 in
+	  while !index < numberOfElements do 
+	    res.(!index).rank <- decode_int ic;
+	    res.(!index).con.summary.conId <- decode_int ic;
+	    res.(!index).con.summary.symbol <- decode_string ic;
+	    res.(!index).con.summary.secType <- decode_string ic;
+	    res.(!index).con.summary.expiry <- decode_string ic;
+	    res.(!index).con.summary.strike <- decode_float ic;
+	    res.(!index).con.summary.right <- decode_string ic;
+	    res.(!index).con.summary.exchange <- decode_string ic;
+	    res.(!index).con.summary.currency <- decode_string ic;
+	    res.(!index).con.summary.localSymbol <- decode_string ic;
+	    res.(!index).con.marketName <- decode_string ic;
+	    res.(!index).con.tradingClass <- decode_string ic;
+	    res.(!index).distance <- decode_string ic;
+	    res.(!index).benchmark <- decode_string ic;
+	    res.(!index).projection <- decode_string ic;
+	    res.(!index).legsStr <- decode_string ic;
+	    index := !index + 1;
+	  done
+      )
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
 	raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))
       )
 ;;
+
+(*
+  next:
+  EClientSocketBase::reqFundamentalData
+  l. 908
+*)
 
