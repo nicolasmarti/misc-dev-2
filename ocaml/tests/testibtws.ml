@@ -33,6 +33,16 @@ let gs_contract =
   c
 ;;
 
+let msft_contract = 
+  let c = build_contract () in
+  c.symbol <- "MSFT";
+  c.secType <- "STK";
+  c.exchange <- "SMART";
+  c.primaryExchange <- "NASDAQ";
+  c.currency <- "USD";
+  c
+;;
+
 let stan_contract = 
   let c = build_contract () in
   c.symbol <- "STAN";
@@ -98,16 +108,23 @@ let test5 oc =
     flush stdout
 ;;
 
+let test6 oc =
+    printf "requesting scanner parameters\n";
+    reqScannerParameters oc;
+    flush stdout;
+    sleep 20;
+    flush stdout;
+;;
+
 Random.self_init ();;
 
 let clientId = (Random.int 65000);;
 
 printf "clientId = %d\n" clientId;;
 
-let (ic, oc) = tws_connect "127.0.0.1" 7496 clientId;;
+let (ic, oc) = tws_connect "192.168.11.5" 7496 clientId;;
 
 let t = Thread.create recv_loop ic;;
-
 
 test1 oc;;
 
@@ -123,6 +140,7 @@ currId := !currId + 1;;
 test5 oc;;
 currId := !currId + 1;;
 
+test6 oc;;
 
 shutdown_connection ic;;
 

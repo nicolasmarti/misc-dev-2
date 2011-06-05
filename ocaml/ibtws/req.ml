@@ -231,6 +231,15 @@ let cancelRealTimeBars (tickerId: int) (oc: out_channel) : unit =
     flush oc
 ;;
 
+
+let reqScannerParameters (oc: out_channel) : unit =
+  let version = 1 in
+    encode_int req_scanner_parameters oc;
+    encode_int version oc;
+    
+    flush oc
+;;
+
 (* next: reqScannerParameters 
    l. 808
 *)

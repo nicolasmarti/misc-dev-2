@@ -179,11 +179,16 @@ let processMsg (ic: in_channel) : unit =
 	  let average = decode_float ic in
 	  let count = decode_int ic in
 	    
-	    printf "REALTIMEBAR(%d, %d, %d, %f, %f, %f, %f, %d, %f, %d)\n" version reqId time bopen high low close volume average count;
-	)
+	  printf "REALTIMEBAR(%d, %d, %d, %f, %f, %f, %f, %d, %f, %d)\n" version reqId time bopen high low close volume average count;
+      )
+      | 19 (* scanner_parameters *) -> (
+	let version = decode_int ic in
+	let xml = decode_string ic in
+	printf "SCANNERPARAMETER(%d, %s)" version xml;
+      )	  
       | id -> (
-	  printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
-	  raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))
-	)
+	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
+	raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))
+      )
 ;;
 
