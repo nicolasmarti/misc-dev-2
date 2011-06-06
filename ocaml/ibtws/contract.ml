@@ -5,8 +5,8 @@ let close_pos = 2 ;;
 let unknown_pos = 3;;
 
 type comboLeg = {
-  mutable cl_conId : int;
-  mutable ratio : float;
+  mutable cl_conId : int64;
+  mutable ratio : int;
   mutable action : string;
   mutable cl_exchange : string;
   mutable openClose : int;
@@ -16,8 +16,8 @@ type comboLeg = {
 };;
 
 let build_comboLeg () =
-  { cl_conId = 0;
-    ratio = 0.0;
+  { cl_conId = Int64.zero;
+    ratio = 0;
     action = "";
     cl_exchange = "";
     openClose = unknown_pos;
@@ -28,19 +28,19 @@ let build_comboLeg () =
 ;;
 
 type underComp = {
-  mutable uc_conId: int;
+  mutable uc_conId: int64;
   mutable delta: float;
   mutable price: float;  
 };;
 
 let build_underComp () =
-  { uc_conId = 0;
+  { uc_conId = Int64.zero;
     delta = 0.0;
     price = 0.0
   }
 
 type contract = {
-  mutable conId: int;
+  mutable conId: int64;
   mutable symbol: string;
   mutable secType: string;
   mutable expiry: string;
@@ -60,7 +60,7 @@ type contract = {
 };;
 
 let build_contract () =
-  { conId = 0;
+  { conId = Int64.zero;
     symbol = "";
     secType = "";
     expiry = "";
@@ -88,7 +88,7 @@ type contractDetails =
    mutable minTick : float;
    mutable orderTypes : string;
    mutable validExchanges : string;
-   mutable priceMagnifier : float;
+   mutable priceMagnifier : int;
    mutable underConId : int;
    mutable longName : string;
    mutable contractMonth : string;
@@ -123,7 +123,7 @@ let build_contractDetails () = {
   minTick = 0.0;
   orderTypes = "";
   validExchanges = "";
-  priceMagnifier = 0.0;
+  priceMagnifier = 0;
   underConId = 0;
   longName = "";
   contractMonth = "";

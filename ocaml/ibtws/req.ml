@@ -51,7 +51,7 @@ let reqMktData (tickerId: int) (c: contract) (genericTicks: string) (snapshot: b
     encode_int tickerId oc;
 
     if !server_version > 47 then
-	encode_int c.conId oc;
+	encode_int64 c.conId oc;
 
     encode_string c.symbol oc;
     encode_string c.secType oc;
@@ -75,8 +75,8 @@ let reqMktData (tickerId: int) (c: contract) (genericTicks: string) (snapshot: b
 	
 	ignore (List.map (
 	  fun hd ->
-	    encode_int hd.cl_conId oc;
-	    encode_float hd.ratio oc;
+	    encode_int64 hd.cl_conId oc;
+	    encode_int hd.ratio oc;
 	    encode_string hd.action oc;
 	    encode_string hd.cl_exchange oc;
 	) c.comboLegs)
@@ -90,7 +90,7 @@ let reqMktData (tickerId: int) (c: contract) (genericTicks: string) (snapshot: b
 	| None -> encode_bool false oc
 	| Some uc -> (
 	  encode_bool true oc;
-	  encode_int uc.uc_conId oc;
+	  encode_int64 uc.uc_conId oc;
 	  encode_float uc.delta oc;
 	  encode_float uc.price oc;
 	);      
@@ -178,8 +178,8 @@ let reqHistoricalData (tickerId: int) (c: contract) (endDateTime: string) (durat
 	
 	ignore (List.map (
 	  fun hd ->
-	    encode_int hd.cl_conId oc;
-	    encode_float hd.ratio oc;
+	    encode_int64 hd.cl_conId oc;
+	    encode_int hd.ratio oc;
 	    encode_string hd.action oc;
 	    encode_string hd.cl_exchange oc;
 	) c.comboLegs)
@@ -316,7 +316,7 @@ let reqContractDetails (reqId: int) (con: contract) (oc: out_channel) : unit =
   if !server_version >= 40 (*MIN_SERVER_VER_CONTRACT_DATA_CHAIN*) then
     encode_int reqId oc;
 
-  encode_int con.conId oc;
+  encode_int64 con.conId oc;
   encode_string con.symbol oc;
   encode_string con.secType oc;
   encode_string con.expiry oc;
@@ -353,7 +353,7 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
   encode_int orderId oc;
 
   if !server_version >= 46 (* MIN_SERVER_VER_PLACE_ORDER_CONID *) then 
-    encode_int con.conId oc;
+    encode_int64 con.conId oc;
 
   encode_string con.symbol oc;
   encode_string con.secType oc;
@@ -372,7 +372,7 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
   );
 
   encode_string o.oaction oc;
-  encode_int o.totalQuantity oc;
+  encode_int64 o.totalQuantity oc;
   encode_string o.orderType oc;
   encode_float o.lmtPrice oc;
   encode_float o.auxPrice oc;
@@ -384,7 +384,7 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
   encode_int o.origin oc;
   encode_string o.orderRef oc;
   encode_bool o.transmit oc;
-  encode_int o.parentId oc;
+  encode_int64 o.parentId oc;
 
   encode_bool o.blockOrder oc;
   encode_bool o.sweepToFill oc;
@@ -403,8 +403,8 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
       
       ignore (List.map (
 	fun hd ->
-	  encode_int hd.cl_conId oc;
-	  encode_float hd.ratio oc;
+	  encode_int64 hd.cl_conId oc;
+	  encode_int hd.ratio oc;
 	  encode_string hd.action oc;
 	  encode_string hd.cl_exchange oc;
 	  encode_int hd.openClose oc;
@@ -490,7 +490,7 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
       | None -> encode_bool false oc;
       | Some uc -> 
 	encode_bool true oc;
-	encode_int uc.uc_conId oc;
+	encode_int64 uc.uc_conId oc;
 	encode_float uc.delta oc;
 	encode_float uc.price oc;
   );
@@ -580,7 +580,7 @@ let reqExecutions (reqId: int) (filter: executionFilter) (oc: out_channel) : uni
   if !server_version >= 42 (*MIN_SERVER_VER_EXECUTION_DATA_CHAIN*) then
     encode_int reqId oc;
 
-  encode_int filter.ef_clientId oc;
+  encode_int64 filter.ef_clientId oc;
   encode_string filter.acctCode oc;
   encode_string filter.ef_time oc;
   encode_string filter.ef_symbol oc;

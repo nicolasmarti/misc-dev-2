@@ -78,13 +78,31 @@ type msg = ErrMsg of version * id * int * string
 	   | TickString of version * id * int * string
 	   | TickGeneric of version * id * int * float
 	   | TickSnapshotEnd of version * id
-	   | MktDepth of version * id * int * int * float * int
-	   | MktDepth2 of version * id * int * string * int * float * int
+	   | MktDepth of version * id * int * int * int * float * int
+	   | MktDepth2 of version * id * int * string * int * int * float * int
+	   | HistData of version * id * string * string * (string * float * float * float * float * int * float * string * int) list
+	   | RTBar of version * id * int * float * float * float * float * int * float * int
+	   | ScannerParams of version * string
+	   | ScannerData of version * id * scanData array
+	   | FundamentalData of version * id * string
+	   | ContractData of version * id * contractDetails
+	   | BondData of version * id * contractDetails
+	   | ContractDataEnd of version * id
+	   | CurrentTime of version * int
+	   | OrderStatus of version * id * string * int * int * float * int * int * float * int * string
+	   | OpenOrder of version * order * contract * orderState
+	   | AccountValue of version * string * string * string * string
+	   | PortFolioValue of version * contract * int * float * float * float * float * float * string
+	   | AccountUpdateTime of version * string
+	   | ExecutionData of version * id * int64 * contract * execution 
+	   | OpenOrderEnd of version
+	   | AccountDownloadEnd of version * string
+	   | ExecutionDataEnd of version * id
 ;;
 
 (* EClientSocketBase::processMsg *)
 
-let processMsg (ic: in_channel) : unit =
+let processMsg (ic: in_channel) : msg =
   let msgId = decode_int ic in
   printf "msgid = %d, " msgId;
     match msgId with
@@ -93,8 +111,7 @@ let processMsg (ic: in_channel) : unit =
 	  let id = decode_int ic in
 	  let errCode = decode_int ic in
 	  let errMsg = decode_string ic in
-	    (* ErrMsg (version, id, errCode, errMsg) *)
-	    printf "error msg (%d): %s\n\n" errCode errMsg
+	  ErrMsg (version, id, errCode, errMsg) 
 	)
       | 1 (*tick_price*) -> (
 	  let version = decode_int ic in
@@ -103,46 +120,39 @@ let processMsg (ic: in_channel) : unit =
 	  let price = decode_float ic in
 	  let size = decode_int ic in
 	  let canAutoExecute = decode_int ic in
-	    (* TickPrice (version, tickerId, tickTypeInt, price, size, canAutoExecute) *)
-	    printf "TickPrice: (%d, %d, %d, %f, %d, %d)\n\n" version tickerId tickTypeInt price size canAutoExecute
+	  TickPrice (version, tickerId, tickTypeInt, price, size, canAutoExecute)
 	)
       | 2 (*tick_size*) -> (
 	  let version = decode_int ic in
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let size = decode_int ic in
-	    (* TickSize (version, tickerId, tickTypeInt, size) *)
-	    printf "TickSize: (%d, %d, %d, %d)\n\n" version tickerId tickTypeInt size
+	    TickSize (version, tickerId, tickTypeInt, size)
 	)
       | 9 (*next_valid_id*) -> (
 	  let version = decode_int ic in
 	  let orderId = decode_int ic in
-	    currId := orderId;
-	    (* NextValidId (version, orderId) *)
-	    printf "next orderId: %d\n\n" orderId
+	  currId := orderId;
+	  NextValidId (version, orderId)
 	)
       | 46 (*tick_string *) -> (
 	  let version = decode_int ic in
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let value = decode_string ic in
-	    (* TickString (version, tickerId, tickTypeInt, value) *)
-	    printf "TickString: (%d, %d, %d, %s)\n\n" version tickerId tickTypeInt value
+	  TickString (version, tickerId, tickTypeInt, value)
 	)
       | 45 (* tick_generic *) -> (
 	  let version = decode_int ic in
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let value = decode_float ic in
-	    (* TickGeneric (version, tickerId, tickTypeInt, value) *)
-	    printf "TickString: (%d, %d, %d, %f)\n\n" version tickerId tickTypeInt value
-
+	  TickGeneric (version, tickerId, tickTypeInt, value)
 	)
       | 57 (* tick_snapshot_end *) -> (
 	  let version = decode_int ic in
 	  let reqId = decode_int ic in
-	    (* TickSnapshotEnd (version, reqId) *)
-	    printf "TickSnapshotEnd: (%d, %d)\n\n" version reqId
+	  TickSnapshotEnd (version, reqId)	    
 	)
 
       | 12 (* market_depth *) -> (
@@ -153,8 +163,7 @@ let processMsg (ic: in_channel) : unit =
 	  let side = decode_int ic in
 	  let price = decode_float ic in
 	  let size = decode_int ic in
-	    (* MktDepth (version, id, position, operation, side, price, size) *)
-	    printf "MarketDepth (%d, %d, %d, %d, %d, %g, %d)\n\n" version id position operation side price size
+	    MktDepth (version, id, position, operation, side, price, size)
 	)
       | 13 (* market_depth_l2 *) -> (
 	  let version = decode_int ic in
@@ -165,8 +174,7 @@ let processMsg (ic: in_channel) : unit =
 	  let side = decode_int ic in
 	  let price = decode_float ic in
 	  let size = decode_int ic in
-	    (* MktDepth2 (version, id, position, marketMaker, operation, side, price, size) *)
-	    printf "MarketDepth l2 (%d, %d, %d, %s, %d, %d, %g, %d)\n\n" version id position marketMaker operation side price size
+	    MktDepth2 (version, id, position, marketMaker, operation, side, price, size)
 	)
       | 17 (* historical_data *) -> (
 	  let version = decode_int ic in
@@ -175,6 +183,7 @@ let processMsg (ic: in_channel) : unit =
 	  let endDateStr = decode_string ic in
 	    printf "Historical data (%d, %d, %s, %s)\n" version reqId startDateStr endDateStr;
 	    let itemCount = ref (decode_int ic) in
+	    let bars = ref [] in
 	      while !itemCount > 0 do
 		let date = decode_string ic in
 		let bopen = decode_float ic in
@@ -185,9 +194,11 @@ let processMsg (ic: in_channel) : unit =
 		let average = decode_float ic in
 		let hasGaps = decode_string ic in
 		let barCount = decode_int ic in
-		  printf "HistoricalData(%s, %f, %f, %f, %f, %d, %f, %s, %d)\n" date bopen high low close volume average hasGaps barCount;
-		  itemCount := !itemCount - 1;
+		printf "HistoricalData(%s, %f, %f, %f, %f, %d, %f, %s, %d)\n" date bopen high low close volume average hasGaps barCount;
+		bars := (date, bopen, high, low, close, volume, average, hasGaps, barCount)::!bars;
+		itemCount := !itemCount - 1;
 	      done;	    
+	    HistData (version, reqId, startDateStr, endDateStr, !bars)
 
 	)
       | 50 (* real_time_bars *) -> (
@@ -202,13 +213,13 @@ let processMsg (ic: in_channel) : unit =
 	  let volume = decode_int ic in
 	  let average = decode_float ic in
 	  let count = decode_int ic in
-	    
-	  printf "REALTIMEBAR(%d, %d, %d, %f, %f, %f, %f, %d, %f, %d)\n" version reqId time bopen high low close volume average count;
+	
+	  RTBar (version, reqId, time, bopen, high, low, close, volume, average, count)
       )
       | 19 (* scanner_parameters *) -> (
 	let version = decode_int ic in
 	let xml = decode_string ic in
-	printf "SCANNERPARAMETER(%d, %s)\n" version xml;
+	ScannerParams (version, xml)
       )	  
       | 20 (* scanner_data *) -> (
 	  let version = decode_int ic in
@@ -218,7 +229,7 @@ let processMsg (ic: in_channel) : unit =
 	  let index = ref 0 in
 	  while !index < numberOfElements do 
 	    res.(!index).rank <- decode_int ic;
-	    res.(!index).con.summary.conId <- decode_int ic;
+	    res.(!index).con.summary.conId <- decode_int64 ic;
 	    res.(!index).con.summary.symbol <- decode_string ic;
 	    res.(!index).con.summary.secType <- decode_string ic;
 	    res.(!index).con.summary.expiry <- decode_string ic;
@@ -235,13 +246,13 @@ let processMsg (ic: in_channel) : unit =
 	    res.(!index).legsStr <- decode_string ic;
 	    index := !index + 1;
 	  done;
-	  printf "SCANNERDATA(%d, %d, %d, ...)\n" version reqId numberOfElements;
+	  ScannerData (version, reqId, res)
       )
       | 51 (* FUNDAMENTAL_DATA *) -> (
 	let version = decode_int ic in
 	let reqId = decode_int ic in
 	let data = decode_string ic in
-	printf "FUNDAMENTALDATA(%d, %d, %s)\n" version reqId data;
+	FundamentalData (version, reqId, data)
       )
       | 10 (* CONTRACT_DATA *) -> (
 	let version = decode_int ic in
@@ -257,12 +268,12 @@ let processMsg (ic: in_channel) : unit =
 	con.summary.localSymbol <- decode_string ic;
 	con.marketName <- decode_string ic;
 	con.tradingClass <- decode_string ic;
-	con.summary.conId <- decode_int ic;
+	con.summary.conId <- decode_int64 ic;
 	con.minTick <- decode_float ic;
 	con.summary.multiplier <- decode_string ic;
 	con.orderTypes <- decode_string ic;
 	con.validExchanges <- decode_string ic;
-	con.priceMagnifier <- decode_float ic;
+	con.priceMagnifier <- decode_int ic;
 	
 	if version >= 4 then
 	  con.underConId <- decode_int ic;
@@ -281,7 +292,7 @@ let processMsg (ic: in_channel) : unit =
 	  con.tradingHours <- decode_string ic;
 	  con.liquidHours <- decode_string ic;
 	);
-	printf "CONTRACT_DATA(%d, %d, ...)\n" version reqId;
+	ContractData (version, reqId, con)
       )
       | 18 (* BOND_CONTRACT_DATA *) -> (
 
@@ -306,7 +317,7 @@ let processMsg (ic: in_channel) : unit =
 	con.summary.currency <- decode_string ic;
 	con.marketName <- decode_string ic;
 	con.tradingClass <- decode_string ic;
-	con.summary.conId <- decode_int ic;
+	con.summary.conId <- decode_int64 ic;
 	con.minTick <- decode_float ic;
 	con.orderTypes <- decode_string ic;
 	con.validExchanges <- decode_string ic;
@@ -316,17 +327,17 @@ let processMsg (ic: in_channel) : unit =
 	con.notes <- decode_string ic;
 	if version >= 4 then
 	  con.longName <- decode_string ic;
-	printf "BOND_CONTRACT_DATA(%d, %d, ...)\n" version reqId;
+	BondData (version, reqId, con)
       )
       | 52 (* CONTRACT_DATA_END *) -> (
 	let version = decode_int ic in
 	let reqId = decode_int ic in
-	printf "CONTRACT_DATA_END(%d, %d)\n" version reqId;	
+	ContractDataEnd (version, reqId)
       )
       | 49 (* CURRENT_TIME *) -> (
 	let version = decode_int ic in
 	let time = decode_int ic in
-	printf "CURRENT_TIME(%d, %d)\n" version time;	
+	CurrentTime (version, time)
       )
       | 3 (* ORDER_STATUS *) -> (
 	let version = decode_int ic in
@@ -341,14 +352,16 @@ let processMsg (ic: in_channel) : unit =
 	let lastFillPrice = decode_float ic in
 	let clientId = decode_int ic in
 	let whyHeld = decode_string ic in
-	printf "ORDER_STATUS(%d, %d, ...)\n" version orderId;
+	
+	OrderStatus (version, orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld)
+	
       )
       | 5 (* OPEN_ORDER *) -> (
 	let version = decode_int ic in
 	let o = build_order () in
-	o.orderId <- decode_int ic;
+	o.orderId <- decode_int64 ic;
 	let c = build_contract () in
-	c.conId <- decode_int ic;
+	c.conId <- decode_int64 ic;
 	c.symbol <- decode_string ic;
 	c.secType <- decode_string ic;
 	c.expiry <- decode_string ic;
@@ -359,7 +372,7 @@ let processMsg (ic: in_channel) : unit =
 	c.localSymbol <- decode_string ic;
 
 	o.oaction <- decode_string ic;
-	o.totalQuantity <- decode_int ic;
+	o.totalQuantity <- decode_int64 ic;
 	o.orderType <- decode_string ic;
 	o.lmtPrice <- decode_float ic;
 	o.auxPrice <- decode_float ic;
@@ -370,8 +383,8 @@ let processMsg (ic: in_channel) : unit =
 
 	o.origin <- decode_int ic;
 	o.orderRef <- decode_string ic;
-	o.clientId <- decode_int ic;
-	o.permId <- decode_int ic;
+	o.clientId <- decode_int64 ic;
+	o.permId <- decode_int64 ic;
 
 	o.outsideRth <- decode_bool ic;
 	o.hidden <- decode_bool ic;
@@ -415,7 +428,7 @@ let processMsg (ic: in_channel) : unit =
 	o.firmQuoteOnly <- decode_bool ic;
 	o.nbboPriceCap <- decode_float ic;
 
-	o.parentId <- decode_int ic;
+	o.parentId <- decode_int64 ic;
 	o.triggerMethod <- decode_int ic;
 
 	o.volatility <- decode_float ic;
@@ -452,7 +465,7 @@ let processMsg (ic: in_channel) : unit =
 	  if decode_bool ic then
 	    (
 	      let uc = build_underComp () in
-	      uc.uc_conId <- decode_int ic;
+	      uc.uc_conId <- decode_int64 ic;
 	      uc.delta <- decode_float ic;
 	      uc.price <- decode_float ic;
 	      c.undercomp <- Some uc
@@ -486,7 +499,7 @@ let processMsg (ic: in_channel) : unit =
 	os.commissionCurrency <- decode_string ic;
 	os.warningText <- decode_string ic;
 
-	printf "OPEN_ORDER(%d, ...)\n" version;
+	OpenOrder (version, o, c, os)
       )
       | 6 (* ACCT_VALUE *) -> (
 	let version = decode_int ic in
@@ -494,12 +507,12 @@ let processMsg (ic: in_channel) : unit =
 	let value = decode_string ic in 
 	let cur = decode_string ic in
 	let accountName = decode_string ic in
-	printf "ACCT_VALUE(%d, %s, %s, %s, %s)\n" version key value cur accountName;
+	AccountValue (version, key, value, cur, accountName)
       )
       | 7 (* PORTFOLIO_VALUE *) -> (
 	let version = decode_int ic in
 	let c = build_contract () in
-	c.conId <- decode_int ic;
+	c.conId <- decode_int64 ic;
 	c.symbol <- decode_string ic;
 	c.secType <- decode_string ic;
 	c.expiry <- decode_string ic;
@@ -526,12 +539,12 @@ let processMsg (ic: in_channel) : unit =
 	  c.primaryExchange <- decode_string ic
 	);
 
-	printf "PORTFOLIO_VALUE(%d, %f, %f)\n" version realizedPNL unrealizedPNL;
+	PortFolioValue (version, c, position, marketPrice, marketValue, averageCost, unrealizedPNL, realizedPNL, accountName)
       )
       | 8 (* ACCT_UPDATE_TIME *) -> (
 	let version = decode_int ic in
 	let accountName = decode_string ic in
-	printf "ACCT_UPDATE_TIME(%d, %s)\n" version accountName;
+	AccountUpdateTime (version, accountName)
       )
       | 11 (* EXECUTION_DATA *) -> (
 	let version = decode_int ic in
@@ -539,7 +552,7 @@ let processMsg (ic: in_channel) : unit =
 	let orderId = decode_int64 ic in
 	let c = build_contract () in
 	
-	c.conId <- decode_int ic;
+	c.conId <- decode_int64 ic;
 	c.symbol <- decode_string ic;
 	c.secType <- decode_string ic;
 	c.expiry <- decode_string ic;
@@ -567,21 +580,21 @@ let processMsg (ic: in_channel) : unit =
 	  e.avgPrice <- decode_float ic;
 	);
 
-	printf "EXECUTION_DATA(%d, %d, %s)\n" version reqId (Int64.to_string orderId);
+	ExecutionData (version, reqId, orderId, c, e)
       )
       | 53 (* OPEN_ORDER_END *) -> (
 	let version = decode_int ic in
-	printf "OPEN_ORDER_END(%d)\n" version;
+	OpenOrderEnd version
       )
       | 54 (* ACCT_DOWNLOAD_END *) -> (
 	let version = decode_int ic in
 	let account = decode_string ic in
-	printf "ACCT_DOWNLOAD_END(%d, %s)\n" version account;
+	AccountDownloadEnd (version, account)
       )
       | 55 (* EXECUTION_DATA_END *) -> (
 	let version = decode_int ic in
 	let reqId = decode_int ic in
-	printf "EXECUTION_DATA_END(%d, %d)\n" version reqId;
+	ExecutionDataEnd (version, reqId)
       )
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);

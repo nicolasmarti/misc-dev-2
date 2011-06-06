@@ -12,7 +12,7 @@ open Random;;
 
 let recv_loop ic =
   while true do
-    processMsg ic;
+    ignore (processMsg ic);
     flush stdout;    
   done
 ;;

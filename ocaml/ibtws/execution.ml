@@ -1,7 +1,7 @@
 open Int64;;
 
 type executionFilter = {
-  mutable ef_clientId: int;
+  mutable ef_clientId: int64;
   mutable acctCode: string;
   mutable ef_time: string;
   mutable ef_symbol: string;
@@ -11,7 +11,7 @@ type executionFilter = {
 };;
 
 let build_executionFilter () = {
-  ef_clientId = 0;
+  ef_clientId = Int64.zero;
   acctCode= "";
   ef_time= "";
   ef_symbol= "";

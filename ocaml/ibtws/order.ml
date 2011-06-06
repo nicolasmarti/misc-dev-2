@@ -10,12 +10,12 @@ let auction_transparent = 3;;
 type tagValue = string * string;;
 
 type order = {
-  mutable orderId : int;
-  mutable clientId : int;
-  mutable permId : int;
+  mutable orderId : int64;
+  mutable clientId : int64;
+  mutable permId : int64;
 
   mutable oaction : string;
-  mutable totalQuantity : int;
+  mutable totalQuantity : int64;
   mutable orderType : string;
   mutable lmtPrice : float;
   mutable auxPrice : float;
@@ -25,7 +25,7 @@ type order = {
   mutable ocaType : int;
   mutable orderRef : string;
   mutable transmit : bool;
-  mutable parentId : int;
+  mutable parentId : int64;
   mutable blockOrder : bool;
   mutable sweepToFill : bool;
   mutable displaySize : int;
@@ -93,12 +93,12 @@ type order = {
 };;
 
 let build_order () = {
-  orderId = 0;
-  clientId = 0;
-  permId = 0;
+  orderId = Int64.zero;
+  clientId = Int64.zero;
+  permId = Int64.zero;
 
   oaction = "";
-  totalQuantity = 0;
+  totalQuantity = Int64.zero;
   orderType = "";
   lmtPrice = 0.0;
   auxPrice = 0.0;
@@ -108,7 +108,7 @@ let build_order () = {
   ocaType = 0;
   orderRef = "";
   transmit = false;
-  parentId = 0;
+  parentId = Int64.zero;
   blockOrder = false;
   sweepToFill = false;
   displaySize = 0;
