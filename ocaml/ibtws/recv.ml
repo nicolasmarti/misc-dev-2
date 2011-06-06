@@ -300,6 +300,11 @@ let processMsg (ic: in_channel) : unit =
 	let reqId = decode_int ic in
 	printf "CONTRACT_DATA_END(%d, %d)\n" version reqId;	
       )
+      | 49 (* CURRENT_TIME *) -> (
+	let version = decode_int ic in
+	let time = decode_int ic in
+	printf "CURRENT_TIME(%d, %d)\n" version time;	
+      )
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
 	raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))

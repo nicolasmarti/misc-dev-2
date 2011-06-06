@@ -2,6 +2,7 @@ open Encdec;;
 open Unix;;
 open Contract;;
 open Connect;;
+open Order;;
 
 let req_mkt_data = 1;;
 let cancel_mkt_data = 2;;
@@ -333,4 +334,13 @@ let reqContractDetails (reqId: int) (con: contract) (oc: out_channel) : unit =
 
   flush oc
 ;;
+
+let reqCurrentTime (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int req_current_time oc;
+  encode_int version oc;
+
+  flush oc
+;;
+
 
