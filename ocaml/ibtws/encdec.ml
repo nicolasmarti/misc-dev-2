@@ -25,6 +25,13 @@ let decode_float (ic: in_channel) : float =
     float_of_string s
 ;;
 
+let decode_bool (ic: in_channel) : bool =
+  let s = decode_string ic in
+    match s with
+      | "1" -> true
+      | "0" -> false
+      | _ -> raise (Failure "decode_bool")
+;;
 
 let int_max = max_int;;
 

@@ -268,6 +268,8 @@ let reqScannerSubscription (tickerId: int) (subscription: scannerSubscription) (
   encode_int_max subscription.averageOptionVolumeAbove oc;
   encode_string subscription.scannerSettingPairs oc;
   encode_string subscription.stockTypeFilter oc;
+
+  flush oc
 ;;
 
 let cancelScannerSubscription (tickerId: int) (oc: out_channel) : unit =
@@ -275,5 +277,60 @@ let cancelScannerSubscription (tickerId: int) (oc: out_channel) : unit =
   encode_int cancel_scanner_subscription oc;
   encode_int version oc;
   encode_int tickerId oc;
+
+  flush oc
+;;
+
+let reqFundamentalData (tickerId: int) (con: contract) (reportType: string) (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int req_fundamental_data oc;
+  encode_int version oc;
+  encode_int tickerId oc;
+  
+  encode_string con.symbol oc;
+  encode_string con.secType oc;
+  encode_string con.exchange oc;
+  encode_string con.primaryExchange oc;
+  encode_string con.currency oc;
+  encode_string con.localSymbol oc;
+  encode_string reportType oc;
+
+  flush oc
+;;
+
+let cancelFundamentalData (tickerId: int) (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int cancel_fundamental_data oc;
+  encode_int version oc;
+  encode_int tickerId oc;
+
+  flush oc
+;;
+
+let reqContractDetails (reqId: int) (con: contract) (oc: out_channel) : unit =
+  let version = 6 in
+  encode_int req_contract_data oc;
+  encode_int version oc;
+  if !server_version >= 40 (*MIN_SERVER_VER_CONTRACT_DATA_CHAIN*) then
+    encode_int reqId oc;
+
+  encode_int con.conId oc;
+  encode_string con.symbol oc;
+  encode_string con.secType oc;
+  encode_string con.expiry oc;
+  encode_float con.strike oc;
+  encode_string con.right oc;
+  encode_string con.multiplier oc;
+  encode_string con.exchange oc;
+  encode_string con.currency oc;
+  encode_string con.localSymbol oc;
+  encode_bool con.includeExpired oc;
+
+  if !server_version >= 45 (* MIN_SERVER_VER_SEC_ID_TYPE *) then (
+    encode_string con.secIdType oc;
+    encode_string con.secId oc;
+  );
+
+  flush oc
 ;;
 

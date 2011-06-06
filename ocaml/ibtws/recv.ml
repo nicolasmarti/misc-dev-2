@@ -185,7 +185,7 @@ let processMsg (ic: in_channel) : unit =
       | 19 (* scanner_parameters *) -> (
 	let version = decode_int ic in
 	let xml = decode_string ic in
-	printf "SCANNERPARAMETER(%d, %s)" version xml;
+	printf "SCANNERPARAMETER(%d, %s)\n" version xml;
       )	  
       | 20 (* scanner_data *) -> (
 	  let version = decode_int ic in
@@ -211,7 +211,94 @@ let processMsg (ic: in_channel) : unit =
 	    res.(!index).projection <- decode_string ic;
 	    res.(!index).legsStr <- decode_string ic;
 	    index := !index + 1;
-	  done
+	  done;
+	  printf "SCANNERDATA(%d, %d, %d, ...)\n" version reqId numberOfElements;
+      )
+      | 51 (* FUNDAMENTAL_DATA *) -> (
+	let version = decode_int ic in
+	let reqId = decode_int ic in
+	let data = decode_string ic in
+	printf "FUNDAMENTALDATA(%d, %d, %s)\n" version reqId data;
+      )
+      | 10 (* CONTRACT_DATA *) -> (
+	let version = decode_int ic in
+	let reqId = if version >= 3 then decode_int ic else -1 in
+	let con = build_contractDetails () in
+	con.summary.symbol <- decode_string ic;
+	con.summary.secType <- decode_string ic;
+	con.summary.expiry <- decode_string ic;
+	con.summary.strike <- decode_float ic;
+	con.summary.right <- decode_string ic;
+	con.summary.exchange <- decode_string ic;
+	con.summary.currency <- decode_string ic;
+	con.summary.localSymbol <- decode_string ic;
+	con.marketName <- decode_string ic;
+	con.tradingClass <- decode_string ic;
+	con.summary.conId <- decode_int ic;
+	con.minTick <- decode_float ic;
+	con.summary.multiplier <- decode_string ic;
+	con.orderTypes <- decode_string ic;
+	con.validExchanges <- decode_string ic;
+	con.priceMagnifier <- decode_float ic;
+	
+	if version >= 4 then
+	  con.underConId <- decode_int ic;
+
+	if version >= 5 then (
+	  con.longName <- decode_string ic;
+	  con.summary.primaryExchange <- decode_string ic;
+	);
+
+	if version >= 6 then (
+	  con.contractMonth <- decode_string ic;
+	  con.industry <- decode_string ic;
+	  con.category <- decode_string ic;
+	  con.subcategory <- decode_string ic;
+	  con.timeZoneId <- decode_string ic;
+	  con.tradingHours <- decode_string ic;
+	  con.liquidHours <- decode_string ic;
+	);
+	printf "CONTRACT_DATA(%d, %d, ...)\n" version reqId;
+      )
+      | 18 (* BOND_CONTRACT_DATA *) -> (
+
+	let version = decode_int ic in
+	let reqId = if version >= 3 then decode_int ic else -1 in
+	let con = build_contractDetails () in
+
+	con.summary.symbol <- decode_string ic;
+	con.summary.secType <- decode_string ic;
+	con.cusip <- decode_string ic;
+	con.coupon <- decode_float ic;
+	con.maturity <- decode_string ic;
+	con.issueDate <- decode_string ic;
+	con.ratings <- decode_string ic;
+	con.bondType <- decode_string ic;
+	con.couponType <- decode_string ic;
+	con.convertible <- decode_bool ic;
+	con.callable <- decode_bool ic;
+	con.putable <- decode_bool ic;
+	con.descAppend <- decode_string ic;
+	con.summary.exchange <- decode_string ic;
+	con.summary.currency <- decode_string ic;
+	con.marketName <- decode_string ic;
+	con.tradingClass <- decode_string ic;
+	con.summary.conId <- decode_int ic;
+	con.minTick <- decode_float ic;
+	con.orderTypes <- decode_string ic;
+	con.validExchanges <- decode_string ic;
+	con.nextOptionDate <- decode_string ic;
+	con.nextOptionType <- decode_string ic;
+	con.nextOptionPartial <- decode_bool ic;
+	con.notes <- decode_string ic;
+	if version >= 4 then
+	  con.longName <- decode_string ic;
+	printf "BOND_CONTRACT_DATA(%d, %d, ...)\n" version reqId;
+      )
+      | 52 (* CONTRACT_DATA_END *) -> (
+	let version = decode_int ic in
+	let reqId = decode_int ic in
+	printf "CONTRACT_DATA_END(%d, %d)\n" version reqId;	
       )
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
@@ -219,9 +306,4 @@ let processMsg (ic: in_channel) : unit =
       )
 ;;
 
-(*
-  next:
-  EClientSocketBase::reqFundamentalData
-  l. 908
-*)
 
