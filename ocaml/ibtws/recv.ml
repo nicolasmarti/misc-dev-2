@@ -79,6 +79,7 @@ type msg = ErrMsg of version * id * int * string
 	   | TickGeneric of version * id * int * float
 	   | TickSnapshotEnd of version * id
 	   | MktDepth of version * id * int * int * float * int
+	   | MktDepth2 of version * id * int * string * int * float * int
 ;;
 
 (* EClientSocketBase::processMsg *)
@@ -163,6 +164,7 @@ let processMsg (ic: in_channel) : unit =
 	  let side = decode_int ic in
 	  let price = decode_float ic in
 	  let size = decode_int ic in
+	    (* MktDepth2 (version, id, position, marketMaker, operation, side, price, size) *)
 	    printf "MarketDepth l2 (%d, %d, %d, %s, %d, %d, %g, %d)\n\n" version id position marketMaker operation side price size
 	)
       | 17 (* historical_data *) -> (
