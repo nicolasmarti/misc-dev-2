@@ -6,6 +6,7 @@ open Printf;;
 open Scannersubscription;;
 open Order;;
 open Connect;;
+open Execution;;
 
 let tick_price = 1;;
 let tick_size = 2;;
@@ -320,7 +321,7 @@ let processMsg (ic: in_channel) : unit =
 	let lastFillPrice = decode_float ic in
 	let clientId = decode_int ic in
 	let whyHeld = decode_string ic in
-	printf "ORDER_STATUS(%d, %d, ...)" version orderId;
+	printf "ORDER_STATUS(%d, %d, ...)\n" version orderId;
       )
       | 5 (* OPEN_ORDER *) -> (
 	let version = decode_int ic in
@@ -465,20 +466,101 @@ let processMsg (ic: in_channel) : unit =
 	os.commissionCurrency <- decode_string ic;
 	os.warningText <- decode_string ic;
 
-	printf "OPEN_ORDER(%d, ...)" version;
+	printf "OPEN_ORDER(%d, ...)\n" version;
       )
-      (*
-	TODO:
-	ACCT_VALUE
-	PORTFOLIO_VALUE
-	ACCT_UPDATE_TIME
-	EXECUTION_DATA
-	OPEN_ORDER_END
-	ACCT_DOWNLOAD_END
-	EXECUTION_DATA_END
-	
-      *)
+      | 6 (* ACCT_VALUE *) -> (
+	let version = decode_int ic in
+	let key = decode_string ic in
+	let value = decode_string ic in 
+	let cur = decode_string ic in
+	let accountName = decode_string ic in
+	printf "ACCT_VALUE(%d, %s, %s, %s, %s)\n" version key value cur accountName;
+      )
+      | 7 (* PORTFOLIO_VALUE *) -> (
+	let version = decode_int ic in
+	let c = build_contract () in
+	c.conId <- decode_int ic;
+	c.symbol <- decode_string ic;
+	c.secType <- decode_string ic;
+	c.expiry <- decode_string ic;
+	c.strike <- decode_float ic;
+	c.right <- decode_string ic;
 
+	if !server_version >= 7 then (
+	  c.multiplier <- decode_string ic;
+	  c.primaryExchange <- decode_string ic;
+	);
+
+	c.currency <- decode_string ic;
+	c.localSymbol <- decode_string ic;
+
+	let position = decode_int ic in
+	let marketPrice = decode_float ic in
+	let marketValue = decode_float ic in
+	let averageCost = decode_float ic in
+	let unrealizedPNL = decode_float ic in
+	let realizedPNL = decode_float ic in
+	let accountName = decode_string ic in
+
+	if !server_version = 6 && !server_version = 39 then (
+	  c.primaryExchange <- decode_string ic
+	);
+
+	printf "PORTFOLIO_VALUE(%d, %f, %f)\n" version realizedPNL unrealizedPNL;
+      )
+      | 8 (* ACCT_UPDATE_TIME *) -> (
+	let version = decode_int ic in
+	let accountName = decode_string ic in
+	printf "ACCT_UPDATE_TIME(%d, %s)\n" version accountName;
+      )
+      | 11 (* EXECUTION_DATA *) -> (
+	let version = decode_int ic in
+	let reqId = if !server_version >= 7 then decode_int ic else -1 in
+	let orderId = decode_int ic in
+	let c = build_contract () in
+	c.conId <- decode_int ic;
+	c.symbol <- decode_string ic;
+	c.secType <- decode_string ic;
+	c.expiry <- decode_string ic;
+	c.strike <- decode_float ic;
+	c.right <- decode_string ic;
+	c.exchange <- decode_string ic;
+	c.currency <- decode_string ic;
+	c.localSymbol <- decode_string ic;
+
+	let e = build_execution () in
+	e.ex_orderId <- orderId;
+	e.ex_time <- decode_string ic;
+	e.acctNumber <- decode_string ic;
+	e.ex_exchange <- decode_string ic;
+	e.ex_side <- decode_string ic;
+	e.shares <- decode_int ic;
+	e.ex_price <- decode_float ic;
+	e.ex_permId <- decode_int ic;
+	e.ex_clientId <- decode_int ic;
+	e.liquidation <- decode_int ic;
+	
+	if !server_version >= 6 then (
+	  e.cumQty <- decode_int ic;
+	  e.avgPrice <- decode_float ic;
+	);
+
+	printf "EXECUTION_DATA(%d, %d, %d)\n" version reqId orderId;
+      )
+      | 53 (* OPEN_ORDER_END *) -> (
+	let version = decode_int ic in
+	printf "OPEN_ORDER_END(%d)\n" version;
+      )
+      | 54 (* ACCT_DOWNLOAD_END *) -> (
+	let version = decode_int ic in
+	let reqId = decode_int ic in
+	printf "ACCT_DOWNLOAD_END(%d, %d)\n" version reqId;
+      )
+      | 55 (* EXECUTION_DATA_END *) -> (
+	let version = decode_int ic in
+	let reqId = decode_int ic in
+	printf "EXECUTION_DATA_END(%d, %d)\n" version reqId;
+      )
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
 	raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))

@@ -580,13 +580,13 @@ let reqExecutions (reqId: int) (filter: executionFilter) (oc: out_channel) : uni
   if !server_version >= 42 (*MIN_SERVER_VER_EXECUTION_DATA_CHAIN*) then
     encode_int reqId oc;
 
-  encode_int filter.clientId oc;
+  encode_int filter.ef_clientId oc;
   encode_string filter.acctCode oc;
-  encode_string filter.time oc;
+  encode_string filter.ef_time oc;
   encode_string filter.ef_symbol oc;
   encode_string filter.ef_secType oc;
   encode_string filter.ef_exchange oc;
-  encode_string filter.side oc;
+  encode_string filter.ef_side oc;
 
   flush oc
 ;;
