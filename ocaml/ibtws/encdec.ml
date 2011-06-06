@@ -1,6 +1,7 @@
 open Pervasives;;
 open Printf;;
 open Char;;
+open Int64;;
 
 let decode_string (ic: in_channel) : string =
   let n = 10000 in
@@ -17,12 +18,20 @@ let decode_string (ic: in_channel) : string =
 
 let decode_int (ic: in_channel) : int =
   let s = decode_string ic in
+  try 
     int_of_string s
+  with
+    | _ -> raise (Failure (String.concat "" ["decode_int: "; s]))
 ;;
 
 let decode_float (ic: in_channel) : float =
   let s = decode_string ic in
     float_of_string s
+;;
+
+let decode_int64 (ic: in_channel) : int64 =
+  let s = decode_string ic in
+    of_string s
 ;;
 
 let decode_bool (ic: in_channel) : bool =
@@ -33,7 +42,7 @@ let decode_bool (ic: in_channel) : bool =
       | _ -> raise (Failure "decode_bool")
 ;;
 
-let int_max = max_int;;
+let int_max = Pervasives.max_int;;
 
 let dbl_max = max_float;;
 
@@ -50,7 +59,12 @@ let decode_int_max (ic: in_channel) : int =
   if s = "" then 
     int_max
   else
-    int_of_string s
+    try
+      int_of_string s
+    with
+      | _ -> raise (Failure (String.concat "" ["decode_int_max: "; s]))
+
+
 ;;
 
 
@@ -77,6 +91,10 @@ let encode_float_max (f: float) (oc: out_channel) : unit =
 
 let encode_int (i: int) (oc: out_channel) : unit =
   encode_string (string_of_int i) oc 
+;;
+
+let encode_int64 (i: int64) (oc: out_channel) : unit =
+  encode_string (to_string i) oc 
 ;;
 
 let encode_float (f: float) (oc: out_channel) : unit =

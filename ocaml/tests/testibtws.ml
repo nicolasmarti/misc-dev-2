@@ -6,6 +6,7 @@ open Req;;
 open Recv;;
 open Contract;;
 open Thread;;
+open Execution;;
 
 open Random;;
 
@@ -30,6 +31,13 @@ let gs_contract =
   c.exchange <- "SMART";
   c.primaryExchange <- "NYSE";
   c.currency <- "USD";
+  c
+;;
+
+let gs_contract2 = 
+  let c = build_contract () in
+  c.symbol <- "GS";
+  c.secType <- "OPT";
   c
 ;;
 
@@ -116,6 +124,31 @@ let test6 oc =
     flush stdout;
 ;;
 
+let test7 oc =
+  printf "reqContractDetails\n";
+  reqContractDetails !currId gs_contract2 oc;
+  flush stdout;
+  sleep 10;;
+  
+let test8 oc =
+  printf "subscribe account updates\n";
+  reqAccountUpdates true "" oc;
+  flush stdout;
+  sleep 10;
+  printf "unsubscribe account updates\n";
+  reqAccountUpdates true "" oc;
+  sleep 5;
+  printf "reqAllOpenOrders\n";
+  reqAllOpenOrders oc;
+  sleep 10;;
+  
+let test9 oc =
+  printf "reqExecutions\n";
+  let ef = build_executionFilter () in
+  reqExecutions !currId ef oc;
+  currId := !currId + 1;
+  sleep 10;;
+
 Random.self_init ();;
 
 let clientId = (Random.int 65000);;
@@ -126,6 +159,7 @@ let (ic, oc) = tws_connect "192.168.11.5" 7496 clientId;;
 
 let t = Thread.create recv_loop ic;;
 
+(*
 test1 oc;;
 
 test2 oc;;
@@ -141,6 +175,17 @@ test5 oc;;
 currId := !currId + 1;;
 
 test6 oc;;
+*)
 
+test7 oc;;
+currId := !currId + 1;;
+
+(*
+test8 oc;;
+*)
+
+(*
+test9 oc;;
+*)
 shutdown_connection ic;;
 

@@ -86,6 +86,7 @@ type msg = ErrMsg of version * id * int * string
 
 let processMsg (ic: in_channel) : unit =
   let msgId = decode_int ic in
+  printf "msgid = %d, " msgId;
     match msgId with
       | 4 (*err_msg*) -> (
 	  let version = decode_int ic in
@@ -535,8 +536,9 @@ let processMsg (ic: in_channel) : unit =
       | 11 (* EXECUTION_DATA *) -> (
 	let version = decode_int ic in
 	let reqId = if !server_version >= 7 then decode_int ic else -1 in
-	let orderId = decode_int ic in
+	let orderId = decode_int64 ic in
 	let c = build_contract () in
+	
 	c.conId <- decode_int ic;
 	c.symbol <- decode_string ic;
 	c.secType <- decode_string ic;
@@ -549,6 +551,7 @@ let processMsg (ic: in_channel) : unit =
 
 	let e = build_execution () in
 	e.ex_orderId <- orderId;
+	e.execId <- decode_string ic;
 	e.ex_time <- decode_string ic;
 	e.acctNumber <- decode_string ic;
 	e.ex_exchange <- decode_string ic;
@@ -556,7 +559,7 @@ let processMsg (ic: in_channel) : unit =
 	e.shares <- decode_int ic;
 	e.ex_price <- decode_float ic;
 	e.ex_permId <- decode_int ic;
-	e.ex_clientId <- decode_int ic;
+	e.ex_clientId <- decode_int64 ic;
 	e.liquidation <- decode_int ic;
 	
 	if !server_version >= 6 then (
@@ -564,7 +567,7 @@ let processMsg (ic: in_channel) : unit =
 	  e.avgPrice <- decode_float ic;
 	);
 
-	printf "EXECUTION_DATA(%d, %d, %d)\n" version reqId orderId;
+	printf "EXECUTION_DATA(%d, %d, %s)\n" version reqId (Int64.to_string orderId);
       )
       | 53 (* OPEN_ORDER_END *) -> (
 	let version = decode_int ic in
@@ -572,8 +575,8 @@ let processMsg (ic: in_channel) : unit =
       )
       | 54 (* ACCT_DOWNLOAD_END *) -> (
 	let version = decode_int ic in
-	let reqId = decode_int ic in
-	printf "ACCT_DOWNLOAD_END(%d, %d)\n" version reqId;
+	let account = decode_string ic in
+	printf "ACCT_DOWNLOAD_END(%d, %s)\n" version account;
       )
       | 55 (* EXECUTION_DATA_END *) -> (
 	let version = decode_int ic in

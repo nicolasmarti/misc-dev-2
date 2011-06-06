@@ -1,3 +1,4 @@
+open Int64;;
 
 type executionFilter = {
   mutable ef_clientId: int;
@@ -9,7 +10,7 @@ type executionFilter = {
   mutable ef_side: string;
 };;
 
-let build_executionFilter = {
+let build_executionFilter () = {
   ef_clientId = 0;
   acctCode= "";
   ef_time= "";
@@ -28,8 +29,8 @@ type execution = {
   mutable shares: int;
   mutable ex_price: float;
   mutable ex_permId: int;
-  mutable ex_clientId: int;
-  mutable ex_orderId: int;
+  mutable ex_clientId: int64;
+  mutable ex_orderId: int64;
   mutable liquidation: int;
   mutable cumQty: int;
   mutable avgPrice: float;
@@ -44,8 +45,8 @@ let build_execution () = {
   shares = 0;
   ex_price = 0.0;
   ex_permId = 0;
-  ex_clientId = 0;
-  ex_orderId = 0;
+  ex_clientId = zero;
+  ex_orderId = zero;
   liquidation = 0;
   cumQty = 0;
   avgPrice = 0.0;
