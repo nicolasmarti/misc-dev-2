@@ -70,7 +70,11 @@ and declaration = Signature of symbol * term
 		  | Inductive of name * quantifier list * term * (symbol * term) SymbolMap.t
 		  | RecordDecl of name * quantifier list * term * declaration list
 
+(*
 type env = {
+
+  mutable qs : (quantifier list) list;
+
   (* the quantified vars *)
   mutable qv : ((name * term) list) list;
   
@@ -110,6 +114,28 @@ type env = {
   mutable inferrule: name list;
 
 };;
+*)
+
+type env = 
+{
+  (* fv, decl and inferrence rule (at toplevel) *)
+  mutable fv: (term * term option) list;
+  mutable decl: declaration list;
+  mutable inferrule: name list;
+
+  mutable quantified: (
+    (name * term) list * (* quantified variables *)
+      (term * term option) list * (* free variables *)
+      
+      (* stacks for different data *)
+      declaration list * (* for declaration *)
+      term list * (* for terms *)
+      equation list * (* for equation *)
+      tyAnnotation list (* for type annotation *)
+
+  ) list;
+ 
+}
 
 (*
   TODO:
