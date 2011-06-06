@@ -119,9 +119,9 @@ type env = {
 type env = 
 {
   (* fv, decl and inferrence rule (at toplevel) *)
-  mutable fv: (term * term option) list;
-  mutable decl: declaration list;
-  mutable inferrule: name list;
+  mutable fvs: (term * term option) list;
+  mutable decls: declaration list;
+  mutable inferrules: name list;
 
   mutable quantified: (
     (name * term) list * (* quantified variables *)
@@ -494,7 +494,34 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
 
 (* applying a substitution to an environment *)
 let subst_env (e: env) (s: substitution) : env =
-  raise (Failure "NYI")
+  let (q', s') = List.fold_left (fun (q, s) (qv, fv, decl, tstack, eqstack, tystack) ->
+    let qv' = List.map (fun (hd1, hd2) -> (hd1, term_substitution s hd2)) qv in
+    let fv' = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
+					  match hd2 with
+					    | None -> None 
+					    | Some hd2 -> Some (term_substitution s hd2)
+    )
+    ) fv in
+    let decl' = List.map (fun hd -> declaration_substitution s hd) decl in
+    let tstack' = List.map (term_substitution s) tstack in
+    let eqstack' = List.map (equation_substitution s) eqstack in
+    let tystack' = List.map (tyAnnotation_substitution s) tystack in
+    let s' = shift_substitution s (- (List.length qv)) in
+    (q @ [qv', fv', decl', tstack', eqstack', tystack'], s')
+  ) ([], s) e.quantified in
+  let fvs' = List.map (fun (hd1, hd2) -> (term_substitution s' hd1,
+					  match hd2 with
+					    | None -> None 
+					    | Some hd2 -> Some (term_substitution s' hd2)
+  )
+  ) e.fvs in
+  let decls' = List.map (fun hd -> declaration_substitution s' hd) e.decls in
+  {
+    fvs = fvs';
+    decls = decls';
+    inferrules = e.inferrules;
+    quantified = q';
+  } 
 ;;
 
 (* result of unification *)
