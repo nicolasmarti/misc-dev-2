@@ -1,16 +1,13 @@
-type origin = CUSTOMER
-	      | FIRM
-	      | UNKNOWN
-;;
+let customer = 0;;
+let firm = 1;;
+let unknown = 2;;
 
-type auctionStrategy = AUCTION_UNSET
-		       | AUCTION_MATCH
-		       | AUCTION_IMPROVEMENT
-		       | AUCTION_TRANSPARENT
-;;
+let auction_unset = 0;;
+let auction_match = 1;;
+let auction_improvement = 2;;
+let auction_transparent = 3;;
 
-type tagValue = string * string
-;;
+type tagValue = string * string;;
 
 type order = {
   mutable orderId : int;
@@ -49,8 +46,8 @@ type order = {
   mutable faProfile : string;
   mutable faPercentage : string;
 
-  mutable openClose : string;
-  mutable oorigin : origin;
+  mutable oopenClose : string;
+  mutable origin : int;
   mutable shortSaleSlot : int;
   mutable designatedLocation : string;
   mutable exemptCode : int;
@@ -59,7 +56,7 @@ type order = {
   mutable firmQuoteOnly : bool;
   mutable nbboPriceCap : float;
 
-  mutable auctionStrategy: auctionStrategy;
+  mutable auctionStrategy: int;
   mutable startingPrice: float;
   mutable stockRefPrice: float;
   mutable odelta: float;
@@ -132,8 +129,8 @@ let build_order () = {
   faProfile = "";
   faPercentage = "";
 
-  openClose = "";
-  oorigin = UNKNOWN;
+  oopenClose = "";
+  origin = unknown;
   shortSaleSlot = 0;
   designatedLocation = "";
   exemptCode = 0;
@@ -142,7 +139,7 @@ let build_order () = {
   firmQuoteOnly = false;
   nbboPriceCap = 0.0;
 
-  auctionStrategy = AUCTION_UNSET;
+  auctionStrategy = auction_unset;
   startingPrice= 0.0;
   stockRefPrice= 0.0;
   odelta= 0.0;

@@ -1,18 +1,15 @@
 
-
-type legOpenClose =
-  | SAME_POS
-  | OPEN_POS
-  | CLOSE_POS
-  | UNKNOWN_POS
-;;
+let same_pos = 0;;
+let open_pos = 1;;
+let close_pos = 2 ;;
+let unknown_pos = 3;;
 
 type comboLeg = {
   mutable cl_conId : int;
   mutable ratio : float;
   mutable action : string;
   mutable cl_exchange : string;
-  mutable openClose : legOpenClose;
+  mutable openClose : int;
   mutable shortSaleSlot : int;
   mutable designatedLocation : string;
   mutable exemptCode : int;
@@ -23,7 +20,7 @@ let build_comboLeg () =
     ratio = 0.0;
     action = "";
     cl_exchange = "";
-    openClose = UNKNOWN_POS;
+    openClose = unknown_pos;
     shortSaleSlot = 0;
     designatedLocation = "";
     exemptCode = 0

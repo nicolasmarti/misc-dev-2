@@ -50,7 +50,7 @@ let reqMktData (tickerId: int) (c: contract) (genericTicks: string) (snapshot: b
     encode_int tickerId oc;
 
     if !server_version > 47 then
-      encode_int c.conId oc;
+	encode_int c.conId oc;
 
     encode_string c.symbol oc;
     encode_string c.secType oc;
@@ -330,7 +330,7 @@ let reqContractDetails (reqId: int) (con: contract) (oc: out_channel) : unit =
   if !server_version >= 45 (* MIN_SERVER_VER_SEC_ID_TYPE *) then (
     encode_string con.secIdType oc;
     encode_string con.secId oc;
-  );
+  );  
 
   flush oc
 ;;
@@ -344,3 +344,85 @@ let reqCurrentTime (oc: out_channel) : unit =
 ;;
 
 
+let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : unit =
+  let version = (if !server_version < 44 (* MIN_SERVER_VER_NOT_HELD *) then 27 else 31) in
+
+  encode_int place_order oc;
+  encode_int version oc;
+  encode_int orderId oc;
+
+  if !server_version >= 46 (* MIN_SERVER_VER_PLACE_ORDER_CONID *) then 
+    encode_int con.conId oc;
+
+  encode_string con.symbol oc;
+  encode_string con.secType oc;
+  encode_string con.expiry oc;
+  encode_float con.strike oc;
+  encode_string con.right oc;
+  encode_string con.multiplier oc;
+  encode_string con.exchange oc;
+  encode_string con.primaryExchange oc;
+  encode_string con.currency oc;
+  encode_string con.localSymbol oc;
+
+  if !server_version >= 45 (* MIN_SERVER_VER_SEC_ID_TYPE *) then (
+    encode_string con.secIdType oc;
+    encode_string con.secId oc;
+  );
+
+  encode_string o.oaction oc;
+  encode_int o.totalQuantity oc;
+  encode_string o.orderType oc;
+  encode_float o.lmtPrice oc;
+  encode_float o.auxPrice oc;
+
+  encode_string o.tif oc;
+  encode_string o.ocaGroup oc;
+  encode_string o.account oc;
+  encode_string o.oopenClose oc;
+  encode_int o.origin oc;
+  encode_string o.orderRef oc;
+  encode_bool o.transmit oc;
+  encode_int o.parentId oc;
+
+  encode_bool o.blockOrder oc;
+  encode_bool o.sweepToFill oc;
+  encode_int o.displaySize oc;
+  encode_int o.triggerMethod oc;
+
+  encode_bool o.outsideRth oc;
+  encode_bool o.hidden oc;
+
+  if con.secType = "BAG" then (
+    
+    if List.length con.comboLegs = 0 then
+      encode_int 0 oc
+    else (
+      encode_int (List.length con.comboLegs) oc;
+      
+      ignore (List.map (
+	fun hd ->
+	  encode_int hd.cl_conId oc;
+	  encode_float hd.ratio oc;
+	  encode_string hd.action oc;
+	  encode_string hd.cl_exchange oc;
+	  encode_int hd.openClose oc;
+
+	  encode_int hd.shortSaleSlot oc;
+	  encode_string hd.designatedLocation oc;
+
+	  if !server_version >= 51 (* MIN_SERVER_VER_SSHORTX_OLD *) then
+	    encode_int hd.exemptCode oc;
+
+      ) con.comboLegs)
+	
+    );
+    
+  );
+
+  encode_string "" oc;
+
+  encode_float o.discretionaryAmt oc;
+
+  raise (Failure "NYF")
+;;
