@@ -23,6 +23,8 @@ type univ = UnivVar of index
 
 type position = ((int * int) * (int * int))
 
+let noposition = ((0, 0), (0, 0))
+
 let position_to_string (p: position) : string =
   let ((b1, e1), (b2, e2)) = p in
   String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
@@ -70,14 +72,8 @@ and declaration = Signature of symbol * term
 		  | Inductive of name * quantifier list * term * (symbol * term) SymbolMap.t
 		  | RecordDecl of name * quantifier list * term * declaration list
 
-(*
-type env = {
-
-  mutable qs : (quantifier list) list;
-
-  (* the quantified vars *)
-  mutable qv : ((name * term) list) list;
-  
+type env = 
+{
   (* free variables (quantification level dependant) *)
   (* contains the type, and sum of substitution over the vars
      a fv can be pushed backward (for instance when qv is push):
@@ -90,34 +86,15 @@ type env = {
      FIXME: what to do of a free variable that is no more used ?
      
   *)
-  mutable fv: ((term * term option) list) list;
-
   (* list of declaration (quantification level dependant) 
      when pushing a quantifier, they are reinput in the term through the Where construction
   *)
-  mutable decl: (declaration list) list;
-
   (* term stack & equation stack: used by the 
      typechecker to store terms/equations already typed, such that any further unification will apply on them
      this is the responsability of the typechecker to properly pop what he has pushed
      (TODO: have an helper function that check it)
   *)
-  mutable term_stack: (term list) list;
 
-  mutable equation_stack: (equation list) list;
-
-  (*
-    list of inference rules
-    used for [] quantification
-  *)
-
-  mutable inferrule: name list;
-
-};;
-*)
-
-type env = 
-{
   (* fv, decl and inferrence rule (at toplevel) *)
   mutable fvs: (term * term option) list;
   mutable decls: declaration list;
@@ -131,7 +108,8 @@ type env =
       declaration list * (* for declaration *)
       term list * (* for terms *)
       equation list * (* for equation *)
-      tyAnnotation list (* for type annotation *)
+      tyAnnotation list * (* for type annotation *)
+      quantifier list (* for quantifier *)
 
   ) list;
  
@@ -494,8 +472,7 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
 
 (* applying a substitution to an environment *)
 let subst_env (e: env) (s: substitution) : env =
-  let (q', s') = List.fold_left (fun (q, s) (qv, fv, decl, tstack, eqstack, tystack) ->
-    let qv' = List.map (fun (hd1, hd2) -> (hd1, term_substitution s hd2)) qv in
+  let (q', s') = List.fold_left (fun (q, s) (qv, fv, decl, tstack, eqstack, tystack, qstack) ->
     let fv' = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
 					  match hd2 with
 					    | None -> None 
@@ -507,7 +484,10 @@ let subst_env (e: env) (s: substitution) : env =
     let eqstack' = List.map (equation_substitution s) eqstack in
     let tystack' = List.map (tyAnnotation_substitution s) tystack in
     let s' = shift_substitution s (- (List.length qv)) in
-    (q @ [qv', fv', decl', tstack', eqstack', tystack'], s')
+    (* the types in qv and quantifiers are not in the scope of qv vars, but bellow *)
+    let (qstack', _) = List.split (List.map (quantifier_substitution s') qstack) in
+    let qv' = List.map (fun (hd1, hd2) -> (hd1, term_substitution s' hd2)) qv in
+    (q @ [qv', fv', decl', tstack', eqstack', tystack', qstack'], s')
   ) ([], s) e.quantified in
   let fvs' = List.map (fun (hd1, hd2) -> (term_substitution s' hd1,
 					  match hd2 with
