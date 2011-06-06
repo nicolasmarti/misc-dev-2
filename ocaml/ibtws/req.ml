@@ -34,6 +34,7 @@ let req_real_time_bars = 50;;
 let cancel_real_time_bars = 51;;
 let req_fundamental_data = 52;;
 let cancel_fundamental_data = 53;;
+let req_global_cancel = 58;;
 
 let reqIds (numIds: int) (oc: out_channel) : unit =
   encode_int req_ids oc;
@@ -525,4 +526,114 @@ let cancelOrder (id: int) (oc: out_channel) : unit =
 
   flush oc
 ;;
+
+let reqAccountUpdates (subscribe: bool) (acctCode: string) (oc: out_channel) : unit =
+  
+  let version = 2 in
+
+  encode_int req_acct_data oc;
+  encode_int version oc;
+  encode_bool subscribe oc;
+
+  encode_string acctCode oc;
+
+  flush oc
+;;
+
+let reqOpenOrders (oc: out_channel) : unit =
+
+  let version = 1 in
+
+  encode_int req_open_orders oc;
+  encode_int version oc;
+
+  flush oc
+;;
+  
+let reqAutoOpenOrders (bAutoBind: bool) (oc: out_channel) : unit =
+
+  let version = 1 in
+
+  encode_int req_auto_open_orders oc;
+  encode_int version oc;
+  encode_bool bAutoBind oc;
+
+  flush oc
+;;
+
+let reqAllOpenOrders (oc: out_channel) : unit =
+  let version = 1 in
+
+  encode_int req_all_open_orders oc;
+  encode_int version oc;
+
+  flush oc
+;;
+  
+open Execution;;
+
+let reqExecutions (reqId: int) (filter: executionFilter) (oc: out_channel) : unit =
+  let version = 3 in
+  encode_int req_executions oc;
+  encode_int version oc;
+  
+  if !server_version >= 42 (*MIN_SERVER_VER_EXECUTION_DATA_CHAIN*) then
+    encode_int reqId oc;
+
+  encode_int filter.clientId oc;
+  encode_string filter.acctCode oc;
+  encode_string filter.time oc;
+  encode_string filter.ef_symbol oc;
+  encode_string filter.ef_secType oc;
+  encode_string filter.ef_exchange oc;
+  encode_string filter.side oc;
+
+  flush oc
+;;
+
+let exerciseOPtions (tickerId: int) (c: contract) (exerciseAction: int) (exerciseQuantity: int) (account: string) (override: int) (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int exercise_options oc;
+  encode_int version oc;
+  encode_int tickerId oc;
+
+  encode_string c.symbol oc;
+  encode_string c.secType oc;
+  encode_string c.expiry oc;
+  encode_float c.strike oc;
+  encode_string c.right oc;
+  encode_string c.multiplier oc;
+  encode_string c.exchange oc;
+  encode_string c.currency oc;
+  encode_string c.localSymbol oc;
+  encode_int exerciseAction oc;
+  encode_int exerciseQuantity oc;
+  encode_string account oc;
+  encode_int override oc;
+
+  flush oc
+;;
+
+let reqGlobalCancel  (oc: out_channel) : unit =
+  let version = 1 in
+  encode_int req_global_cancel oc;
+  encode_int version oc;
+
+  flush oc
+;;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
