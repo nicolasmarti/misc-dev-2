@@ -48,9 +48,9 @@ type order = {
 
   mutable oopenClose : string;
   mutable origin : int;
-  mutable shortSaleSlot : int;
-  mutable designatedLocation : string;
-  mutable exemptCode : int;
+  mutable oshortSaleSlot : int;
+  mutable odesignatedLocation : string;
+  mutable oexemptCode : int;
   mutable discretionaryAmt : float;
   mutable eTradeOnly : bool;
   mutable firmQuoteOnly : bool;
@@ -85,7 +85,7 @@ type order = {
 
   mutable algoStrategy: string;
 
-  mutable tagValueList: tagValue list;
+  mutable algoParams: tagValue list;
 
   mutable whatIf: bool;
 
@@ -131,9 +131,9 @@ let build_order () = {
 
   oopenClose = "";
   origin = unknown;
-  shortSaleSlot = 0;
-  designatedLocation = "";
-  exemptCode = 0;
+  oshortSaleSlot = 0;
+  odesignatedLocation = "";
+  oexemptCode = 0;
   discretionaryAmt = 0.0;
   eTradeOnly = false;
   firmQuoteOnly = false;
@@ -168,7 +168,7 @@ let build_order () = {
 
   algoStrategy= "";
 
-  tagValueList = [];
+  algoParams = [];
 
   whatIf= false;
 

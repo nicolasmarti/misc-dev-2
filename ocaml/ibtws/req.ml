@@ -423,6 +423,106 @@ let placeOrder (orderId: int) (con: contract) (o: order) (oc: out_channel) : uni
   encode_string "" oc;
 
   encode_float o.discretionaryAmt oc;
+  encode_string o.goodAfterTime oc;
+  encode_string o.goodTillDate oc;
+  
+  encode_string o.faGroup oc;
+  encode_string o.faMethod oc;
+  encode_string o.faPercentage oc;
+  encode_string o.faProfile oc;
+ 
+  encode_int o.oshortSaleSlot oc;
+  encode_string o.odesignatedLocation oc;
+  if !server_version >=  51 (* MIN_SERVER_VER_SSHORTX_OLD *) then
+    encode_int o.oexemptCode oc;
 
-  raise (Failure "NYF")
+  encode_int o.ocaType oc;
+  
+  encode_string o.rule80A oc;
+  encode_string o.settlingFirm oc;
+  encode_bool o.allOrNone oc;
+  encode_int_max o.minQty oc;
+  encode_float_max o.percentOffset oc;
+  encode_bool o.firmQuoteOnly oc;
+  encode_float_max o.nbboPriceCap oc;
+  encode_int o.auctionStrategy oc;
+  encode_float_max o.startingPrice oc;
+  encode_float_max o.stockRefPrice oc;
+  encode_float_max o.odelta oc;
+  encode_float_max o.stockRangeLower oc;
+  encode_float_max o.stockRangeUpper oc;
+
+  encode_bool o.overridePercentageConstraints oc;
+
+  encode_float_max o.volatility oc;
+  encode_int_max o.volatilityType oc;
+
+  encode_string o.deltaNeutralOrderType oc;
+  encode_float o.deltaNeutralAuxPrice oc;
+
+  encode_bool o.continuousUpdate oc;
+
+  encode_int_max o.referencePriceType oc;
+  
+  encode_float o.trailStopPrice oc;
+
+  if !server_version >= 40 (* MIN_SERVER_VER_SCALE_ORDERS2 *) then (
+    encode_int_max o.scaleInitLevelSize oc;
+    encode_int_max o.scaleSubsLevelSize oc;
+  ) else (
+    encode_string "" oc;
+    encode_int_max o.scaleInitLevelSize oc;
+  );
+    
+  encode_float_max o.scalePriceIncrement oc;
+
+  if !server_version >= 39 (* MIN_SERVER_VER_PTA_ORDERS *) then (
+    encode_string o.clearingAccount oc;
+    encode_string o.clearingIntent oc;
+  );
+
+  if !server_version >= 44 (* MIN_SERVER_VER_NOT_HELD *) then
+    encode_bool o.notHeld oc;
+
+  if !server_version >= 40 (* MIN_SERVER_VER_UNDER_COMP *) then (
+    match con.undercomp with
+      | None -> encode_bool false oc;
+      | Some uc -> 
+	encode_bool true oc;
+	encode_int uc.uc_conId oc;
+	encode_float uc.delta oc;
+	encode_float uc.price oc;
+  );
+
+  if !server_version >= 41 (* MIN_SERVER_VER_ALGO_ORDERS *) then (
+    encode_string o.algoStrategy oc;
+    
+    if String.length o.algoStrategy > 0 then (
+
+      let algoParamsCount = List.length o.algoParams in
+      encode_int algoParamsCount oc;
+      ignore (List.map (fun hd ->
+	encode_string (fst hd) oc;
+	encode_string (snd hd) oc;
+      ) o.algoParams);
+      
+    );
+
+  );
+
+  encode_bool o.whatIf oc;
+
+  flush oc
 ;;
+
+let cancelOrder (id: int) (oc: out_channel) : unit =
+  
+  let version = 1 in
+
+  encode_int cancel_order oc;
+  encode_int version oc;
+  encode_int id oc;
+
+  flush oc
+;;
+
