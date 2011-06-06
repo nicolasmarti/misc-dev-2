@@ -68,6 +68,19 @@ let mkbardata () = {
   barCount = 0;
 };;
 
+type version = int;;
+type id = int;;
+
+type msg = ErrMsg of version * id * int * string
+	   | TickPrice of version * id * int * float * int * int
+	   | TickSize of version * id * int * int
+	   | NextValidId of version * id 
+	   | TickString of version * id * int * string
+	   | TickGeneric of version * id * int * float
+	   | TickSnapshotEnd of version * id
+	   | MktDepth of version * id * int * int * float * int
+;;
+
 (* EClientSocketBase::processMsg *)
 
 let processMsg (ic: in_channel) : unit =
@@ -78,6 +91,7 @@ let processMsg (ic: in_channel) : unit =
 	  let id = decode_int ic in
 	  let errCode = decode_int ic in
 	  let errMsg = decode_string ic in
+	    (* ErrMsg (version, id, errCode, errMsg) *)
 	    printf "error msg (%d): %s\n\n" errCode errMsg
 	)
       | 1 (*tick_price*) -> (
@@ -87,6 +101,7 @@ let processMsg (ic: in_channel) : unit =
 	  let price = decode_float ic in
 	  let size = decode_int ic in
 	  let canAutoExecute = decode_int ic in
+	    (* TickPrice (version, tickerId, tickTypeInt, price, size, canAutoExecute) *)
 	    printf "TickPrice: (%d, %d, %d, %f, %d, %d)\n\n" version tickerId tickTypeInt price size canAutoExecute
 	)
       | 2 (*tick_size*) -> (
@@ -94,23 +109,22 @@ let processMsg (ic: in_channel) : unit =
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let size = decode_int ic in
+	    (* TickSize (version, tickerId, tickTypeInt, size) *)
 	    printf "TickSize: (%d, %d, %d, %d)\n\n" version tickerId tickTypeInt size
 	)
       | 9 (*next_valid_id*) -> (
 	  let version = decode_int ic in
 	  let orderId = decode_int ic in
 	    currId := orderId;
+	    (* NextValidId (version, orderId) *)
 	    printf "next orderId: %d\n\n" orderId
-	)
-      | 53 (*open_order_end*) -> (
-	  let version = decode_int ic in
-	    printf "open order end: %d\n\n" version
 	)
       | 46 (*tick_string *) -> (
 	  let version = decode_int ic in
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let value = decode_string ic in
+	    (* TickString (version, tickerId, tickTypeInt, value) *)
 	    printf "TickString: (%d, %d, %d, %s)\n\n" version tickerId tickTypeInt value
 	)
       | 45 (* tick_generic *) -> (
@@ -118,12 +132,14 @@ let processMsg (ic: in_channel) : unit =
 	  let tickerId = decode_int ic in
 	  let tickTypeInt = decode_int ic in
 	  let value = decode_float ic in
+	    (* TickGeneric (version, tickerId, tickTypeInt, value) *)
 	    printf "TickString: (%d, %d, %d, %f)\n\n" version tickerId tickTypeInt value
 
 	)
       | 57 (* tick_snapshot_end *) -> (
 	  let version = decode_int ic in
 	  let reqId = decode_int ic in
+	    (* TickSnapshotEnd (version, reqId) *)
 	    printf "TickSnapshotEnd: (%d, %d)\n\n" version reqId
 	)
 
@@ -135,6 +151,7 @@ let processMsg (ic: in_channel) : unit =
 	  let side = decode_int ic in
 	  let price = decode_float ic in
 	  let size = decode_int ic in
+	    (* MktDepth (version, id, position, operation, side, price, size) *)
 	    printf "MarketDepth (%d, %d, %d, %d, %d, %g, %d)\n\n" version id position operation side price size
 	)
       | 13 (* market_depth_l2 *) -> (
