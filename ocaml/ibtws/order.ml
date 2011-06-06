@@ -12,7 +12,7 @@ type tagValue = string * string;;
 type order = {
   mutable orderId : int;
   mutable clientId : int;
-  mutable mutablepermId : int;
+  mutable permId : int;
 
   mutable oaction : string;
   mutable totalQuantity : int;
@@ -95,7 +95,7 @@ type order = {
 let build_order () = {
   orderId = 0;
   clientId = 0;
-  mutablepermId = 0;
+  permId = 0;
 
   oaction = "";
   totalQuantity = 0;
@@ -174,6 +174,38 @@ let build_order () = {
 
   notHeld= false;
 };;
+
+
+type orderState = {
+  mutable status: string;
+
+  mutable initMargin: string;
+  mutable maintMargin: string;
+  mutable equityWithLoan: string;
+
+  mutable commission: float;
+  mutable minCommission: float;
+  mutable maxCommission: float;
+  mutable commissionCurrency: string;
+
+  mutable warningText: string;
+};;
+
+let build_orderState () = {
+  status= "";
+
+  initMargin= "";
+  maintMargin= "";
+  equityWithLoan= "";
+
+  commission= 0.0;
+  minCommission= 0.0;
+  maxCommission= 0.0;
+  commissionCurrency= "";
+
+  warningText= "";
+};;
+  
 
 
 

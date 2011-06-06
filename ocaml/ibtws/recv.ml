@@ -4,6 +4,8 @@ open Pervasives;;
 open Contract;;
 open Printf;;
 open Scannersubscription;;
+open Order;;
+open Connect;;
 
 let tick_price = 1;;
 let tick_size = 2;;
@@ -305,6 +307,178 @@ let processMsg (ic: in_channel) : unit =
 	let time = decode_int ic in
 	printf "CURRENT_TIME(%d, %d)\n" version time;	
       )
+      | 3 (* ORDER_STATUS *) -> (
+	let version = decode_int ic in
+	let orderId = decode_int ic in
+	let status = decode_string ic in
+	let filled = decode_int ic in
+	let remaining = decode_int ic in
+	let avgFillPrice = decode_float ic in
+	
+	let permId = decode_int ic in
+	let parentId = decode_int ic in
+	let lastFillPrice = decode_float ic in
+	let clientId = decode_int ic in
+	let whyHeld = decode_string ic in
+	printf "ORDER_STATUS(%d, %d, ...)" version orderId;
+      )
+      | 5 (* OPEN_ORDER *) -> (
+	let version = decode_int ic in
+	let o = build_order () in
+	o.orderId <- decode_int ic;
+	let c = build_contract () in
+	c.conId <- decode_int ic;
+	c.symbol <- decode_string ic;
+	c.secType <- decode_string ic;
+	c.expiry <- decode_string ic;
+	c.strike <- decode_float ic;
+	c.right <- decode_string ic;
+	c.exchange <- decode_string ic;
+	c.currency <- decode_string ic;
+	c.localSymbol <- decode_string ic;
+
+	o.oaction <- decode_string ic;
+	o.totalQuantity <- decode_int ic;
+	o.orderType <- decode_string ic;
+	o.lmtPrice <- decode_float ic;
+	o.auxPrice <- decode_float ic;
+	o.tif <- decode_string ic;
+	o.ocaGroup <- decode_string ic;
+	o.account <- decode_string ic;
+	o.oopenClose <- decode_string ic;
+
+	o.origin <- decode_int ic;
+	o.orderRef <- decode_string ic;
+	o.clientId <- decode_int ic;
+	o.permId <- decode_int ic;
+
+	o.outsideRth <- decode_bool ic;
+	o.hidden <- decode_bool ic;
+	o.discretionaryAmt <- decode_float ic;
+	o.goodAfterTime <- decode_string ic;
+	
+	ignore (decode_string ic);
+
+	o.faGroup <- decode_string ic;
+	o.faMethod <- decode_string ic;
+	o.faPercentage <- decode_string ic;
+	o.faProfile <- decode_string ic;
+
+	o.goodTillDate <- decode_string ic;
+
+	o.rule80A <- decode_string ic;
+	o.percentOffset <- decode_float ic;
+	o.settlingFirm <- decode_string ic;
+	o.oshortSaleSlot <- decode_int ic;
+	o.odesignatedLocation <- decode_string ic;
+	
+	if !server_version = 51 (* MIN_SERVER_VER_SSHORTX_OLD *) then
+	  ignore (decode_int ic)
+	else
+	  o.oexemptCode <- decode_int ic;
+	
+	o.auctionStrategy <- decode_int ic;
+	o.startingPrice <- decode_float ic;
+	o.stockRefPrice <- decode_float ic;
+	o.odelta <- decode_float ic;
+	o.stockRangeLower <- decode_float ic;
+	o.stockRangeUpper <- decode_float ic;
+	o.displaySize <- decode_int ic;
+
+	o.blockOrder <- decode_bool ic;
+	o.sweepToFill <- decode_bool ic;
+	o.allOrNone <- decode_bool ic;
+	o.minQty <- decode_int ic;
+	o.ocaType <- decode_int ic;
+	o.eTradeOnly <- decode_bool ic;
+	o.firmQuoteOnly <- decode_bool ic;
+	o.nbboPriceCap <- decode_float ic;
+
+	o.parentId <- decode_int ic;
+	o.triggerMethod <- decode_int ic;
+
+	o.volatility <- decode_float ic;
+	o.volatilityType <- decode_int ic;
+	o.deltaNeutralOrderType <- decode_string ic;
+	o.deltaNeutralAuxPrice <- decode_float ic;
+	o.continuousUpdate <- decode_bool ic;
+	
+	o.referencePriceType <- decode_int ic;
+
+	o.trailStopPrice <- decode_float ic;
+
+	o.basisPoints <- decode_float ic;
+	o.basisPointsType <- decode_int ic;
+	c.comboLegsDescrip <- decode_string ic;
+
+	if !server_version >= 20 then (
+	  o.scaleInitLevelSize <- decode_int_max ic;
+	  o.scaleSubsLevelSize <- decode_int_max ic;
+	) else (
+	  ignore (decode_int_max ic);
+	  o.scaleInitLevelSize <- decode_int_max ic;
+	);
+
+	o.scalePriceIncrement <- decode_float_max ic;
+
+	o.clearingAccount <- decode_string ic;
+	o.clearingIntent <- decode_string ic;
+
+	if !server_version >= 22 then
+	  o.notHeld <- decode_bool ic;
+
+	if !server_version >= 20 then (
+	  if decode_bool ic then
+	    (
+	      let uc = build_underComp () in
+	      uc.uc_conId <- decode_int ic;
+	      uc.delta <- decode_float ic;
+	      uc.price <- decode_float ic;
+	      c.undercomp <- Some uc
+	    )
+	);
+
+	if !server_version >= 21 then (
+	  o.algoStrategy <- decode_string ic;
+	  if String.length o.algoStrategy > 0 then (
+	    let algoParamsCount = decode_int ic in
+	    let index = ref 0 in
+	    while !index < algoParamsCount do
+	      let tag = decode_string ic in
+	      let value = decode_string ic in
+	      o.algoParams <- o.algoParams @ [tag, value];
+	    done
+	  )
+	);
+
+	o.whatIf <- decode_bool ic;
+	
+	let os = build_orderState () in
+
+	os.status <- decode_string ic;
+	os.initMargin <- decode_string ic;
+	os.maintMargin <- decode_string ic;
+	os.equityWithLoan <- decode_string ic;
+	os.commission <- decode_float_max ic;
+	os.minCommission <- decode_float_max ic;
+	os.maxCommission <- decode_float_max ic;
+	os.commissionCurrency <- decode_string ic;
+	os.warningText <- decode_string ic;
+
+	printf "OPEN_ORDER(%d, ...)" version;
+      )
+      (*
+	TODO:
+	ACCT_VALUE
+	PORTFOLIO_VALUE
+	ACCT_UPDATE_TIME
+	EXECUTION_DATA
+	OPEN_ORDER_END
+	ACCT_DOWNLOAD_END
+	EXECUTION_DATA_END
+	
+      *)
+
       | id -> (
 	printf "%s\n" (String.concat " " ["not yet supported:";(string_of_int id)]);
 	raise (Failure (String.concat " " ["not yet supported:";(string_of_int id)]))
