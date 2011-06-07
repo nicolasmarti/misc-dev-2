@@ -4,16 +4,26 @@ open Char;;
 open Int64;;
 
 let decode_string (ic: in_channel) : string =
-  let n = 10000 in
-  let s = String.make n (char_of_int 0) in
-  let i = ref 0 in
-  let c = ref (input_char ic) in
+  if false then (
+    let n = 100000 in
+    let s = String.make n (char_of_int 0) in
+    let i = ref 0 in
+    let c = ref (input_char ic) in
     while !i < n && !c != (char_of_int 0) do
       s.[!i] <- !c;
       c := (input_char ic);
       i := !i + 1;
     done;
     String.sub s 0 !i
+  ) else (
+    let s = Buffer.create 1000 in
+    let c = ref (input_char ic) in
+    while !c != (char_of_int 0) do
+      Buffer.add_char s !c;
+      c := input_char ic
+    done;
+    Buffer.contents s
+  )
 ;;
 
 let decode_int (ic: in_channel) : int =

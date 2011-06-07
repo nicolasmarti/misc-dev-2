@@ -96,7 +96,7 @@ let test4 oc =
 			]
     ] in
 
-    printf "date = %s" date;
+    (*printf "date = %s" date;*)
 
     reqHistoricalData !currId gs_contract date "3600 S" "5 mins" "TRADES" 0 1 oc;
     flush stdout;
@@ -155,11 +155,11 @@ let clientId = (Random.int 65000);;
 
 printf "clientId = %d\n" clientId;;
 
-let (ic, oc) = tws_connect "192.168.11.5" 7496 clientId;;
+let (ic, oc) = tws_connect "127.0.0.1" 7496 clientId;;
 
 let t = Thread.create recv_loop ic;;
 
-(*
+
 test1 oc;;
 
 test2 oc;;
@@ -175,17 +175,14 @@ test5 oc;;
 currId := !currId + 1;;
 
 test6 oc;;
-*)
 
 test7 oc;;
 currId := !currId + 1;;
 
-(*
 test8 oc;;
-*)
 
-(*
+
 test9 oc;;
-*)
+
 shutdown_connection ic;;
 

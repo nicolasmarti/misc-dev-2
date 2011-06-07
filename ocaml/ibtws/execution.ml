@@ -28,7 +28,7 @@ type execution = {
   mutable ex_side: string;
   mutable shares: int;
   mutable ex_price: float;
-  mutable ex_permId: int;
+  mutable ex_permId: int64;
   mutable ex_clientId: int64;
   mutable ex_orderId: int64;
   mutable liquidation: int;
@@ -44,7 +44,7 @@ let build_execution () = {
   ex_side = "";
   shares = 0;
   ex_price = 0.0;
-  ex_permId = 0;
+  ex_permId = zero;
   ex_clientId = zero;
   ex_orderId = zero;
   liquidation = 0;

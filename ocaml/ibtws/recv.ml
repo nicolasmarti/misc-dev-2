@@ -104,13 +104,14 @@ type msg = ErrMsg of version * id * int * string
 
 let processMsg (ic: in_channel) : msg =
   let msgId = decode_int ic in
-  printf "msgid = %d, " msgId;
+  (*printf "msgid = %d\n" msgId;*)
     match msgId with
       | 4 (*err_msg*) -> (
 	  let version = decode_int ic in
 	  let id = decode_int ic in
 	  let errCode = decode_int ic in
 	  let errMsg = decode_string ic in
+	  printf "%s\n" errMsg;
 	  ErrMsg (version, id, errCode, errMsg) 
 	)
       | 1 (*tick_price*) -> (
@@ -181,7 +182,7 @@ let processMsg (ic: in_channel) : msg =
 	  let reqId = decode_int ic in
 	  let startDateStr = decode_string ic in
 	  let endDateStr = decode_string ic in
-	    printf "Historical data (%d, %d, %s, %s)\n" version reqId startDateStr endDateStr;
+	    (*printf "Historical data (%d, %d, %s, %s)\n" version reqId startDateStr endDateStr;*)
 	    let itemCount = ref (decode_int ic) in
 	    let bars = ref [] in
 	      while !itemCount > 0 do
@@ -194,7 +195,7 @@ let processMsg (ic: in_channel) : msg =
 		let average = decode_float ic in
 		let hasGaps = decode_string ic in
 		let barCount = decode_int ic in
-		printf "HistoricalData(%s, %f, %f, %f, %f, %d, %f, %s, %d)\n" date bopen high low close volume average hasGaps barCount;
+		(*printf "HistoricalData(%s, %f, %f, %f, %f, %d, %f, %s, %d)\n" date bopen high low close volume average hasGaps barCount;*)
 		bars := (date, bopen, high, low, close, volume, average, hasGaps, barCount)::!bars;
 		itemCount := !itemCount - 1;
 	      done;	    
@@ -571,7 +572,7 @@ let processMsg (ic: in_channel) : msg =
 	e.ex_side <- decode_string ic;
 	e.shares <- decode_int ic;
 	e.ex_price <- decode_float ic;
-	e.ex_permId <- decode_int ic;
+	e.ex_permId <- decode_int64 ic;
 	e.ex_clientId <- decode_int64 ic;
 	e.liquidation <- decode_int ic;
 	
