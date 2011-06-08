@@ -6,3 +6,4 @@ _build
 *.p.byte
 *.pyo
 *.bc
+Pyro_NS_URI

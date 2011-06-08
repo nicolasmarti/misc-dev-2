@@ -109,14 +109,14 @@ class MuSigEMAIndicator(Indicator):
         mu = 0.0        
         stdev = 0.0
         bars2 = bars[0:self.period]
-       
         try:
             for i in reversed(bars2):
-                mu = mu*(1-alpha) + i[self.label] * alpha
+                mu = mu*(1-self.alpha) + i[self.label] * self.alpha
                 stdev += (mu - i[self.label])**2
-                
+
             return (mu, sqrt(stdev))
-        except:
+        except Exception as inst:
+            print "MuSigEMAIndicator: " + str(inst)
             return None
         
 class RSIIndicator(Indicator):

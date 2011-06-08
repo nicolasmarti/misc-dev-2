@@ -1,7 +1,7 @@
 ghc := ghc
 ghcflags := 
 # -DHAS_GETPOINTERTOGLOBAL=1
-packages := -ignore-package monads-fd
+packages := -ignore-package monads-fd -ignore-package llvm-ht
 examples := Test Trep
 
 all: $(examples:%=%.exe)
