@@ -422,7 +422,7 @@ class Stock(IBContract):
         con = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 
         # get the first contract of the list comming from the details
-        contract = self.con.reqContractDetails(c)[0].m_summary
+        contract = con.reqContractDetails(c)[0].m_summary
 
         IBContract.__init__(self, contract)
 
