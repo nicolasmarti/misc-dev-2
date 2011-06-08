@@ -28,17 +28,21 @@ class MyView(gtk.TextView):
         self.pressed_key.remove(event.keyval)
         print "pressed: " + str(self.pressed_key)
 
-    def __init__(self):
+    def __init__(self, buffer):
         
-        gtk.TextView.__init__(self)
+        gtk.TextView.__init__(self, buffer)
 
         # not editable: we grab things ... 
         self.set_editable(False)
 
+        # the set of pressed keys
         self.pressed_key = sets.Set()
 
+        # the key handlers
         self.connect("key_press_event", self.key_pressed, None)
         self.connect("key_release_event", self.key_released, None)
+
+        
 
 
 class MyEditor:
@@ -56,8 +60,10 @@ class MyEditor:
 
         sw = gtk.ScrolledWindow()
         sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-        textview = MyView()
-        textbuffer = textview.get_buffer()
+
+        textbuffer = MyBuffer()
+        textview = MyView(textbuffer)
+        
         sw.add(textview)
         sw.show()
         textview.show()
