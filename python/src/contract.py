@@ -27,23 +27,33 @@ import Pyro.EventService.Clients
 
 # TODO: implement a + * / --> allow to build a portfolio (can be seen as a stock)
 
-class Stock(Thread):
-
+class Stock(Contract):
     def __init__(self, name):
-        
-        self.m_lock = Lock()
-        
-        self.m_nextid = 0
         
         c = Contract()
         c.m_symbol = name
         c.m_secType = "STK"
 
         # ib-tws server connection
-        self.con = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
+        con = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
 
         # get the first contract of the list comming from the details
-        self.contract = self.con.reqContractDetails(c)[0].m_summary
+        contract = self.con.reqContractDetails(c)[0].m_summary
+
+        Contract.__init__(self, contract)
+
+
+        
+
+class Contract(Thread):
+
+    def __init__(self, contract):
+        
+        self.m_lock = Lock()
+        
+        self.m_nextid = 0
+        
+        self.contract = contract
         
         # all data connection stuffs
         self.mktDataId = self.con.reqMktData(self.contract, False)
