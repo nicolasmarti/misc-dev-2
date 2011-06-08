@@ -96,11 +96,11 @@ type env =
   *)
 
   (* fv, decl and inferrence rule (at toplevel) *)
-  mutable fvs: (term * term option) list;
-  mutable decls: declaration list;
-  mutable inferrules: name list;
+  fvs: (term * term option) list;
+  decls: declaration list;
+  inferrules: name list;
 
-  mutable quantified: (
+  quantified: (
     (name * term) list * (* quantified variables *)
       (term * term option) list * (* free variables *)
       
@@ -512,12 +512,10 @@ type unification_result = Unified
 (* unification of terms 
    both terms are typed on ctxt
    this function returns the unified terms and (by side-effect) 
-   mutate the environment with the incrementally found substitution
-   (thus depending on the case the ctxt should be copied before calling this function)
    the two position correspond to the terms unified
    we use (Pos.none, Pos.none) when there is no position
 *)
-let unify (ctxt: env) (te1: term) (pos1: position) (te2: term) (pos2: position) : term =
+let unify (ctxt: env ref) (te1: term) (pos1: position) (te2: term) (pos2: position) : term =
   raise (Failure "NYI")
 ;;
 
@@ -551,25 +549,24 @@ type interp_strat = {
 };;
 
 (*
-  warning: the context might be mutated (especially in the case of Lazy evaluation, or strong beta reduction)
+
   te must be well typed w.r.t. ctxt
 *) 
-let reduction (ctxt: env) (start: interp_strat) (te: term) : term =
+let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
   raise (Failure "NYI")
 ;;
 
 (*
   typechecking
-  warning: side-effect affecting the ctxt
 
   TODO: one function per typing cases
 *)
 
-let typecheck (ctxt: env) (te: term) (ty: term) : bool =
+let typecheck (ctxt: env ref) (te: term) (ty: term) : bool =
   raise (Failure "NYI")
 ;;
 
-let infer (ctxt: env) (te: term) : term option =
+let infer (ctxt: env ref) (te: term) : term option =
   raise (Failure "NYI")
 ;;
 
@@ -577,7 +574,7 @@ let infer (ctxt: env) (te: term) : term option =
   grab the "pattern vars" of a terms
   warning: there is an order, so we use a list (order is the same as fv in env)
 *)
-let pattern_var_term (ctxt: env) (p: term) : name list =
+let pattern_var_term (ctxt: env ref) (p: term) : name list =
   raise (Failure "NYI")
 ;;
 
@@ -604,7 +601,7 @@ let fv_term (te: term) : IndexSet.t =
   )
   modify the ctxt
 *)
-let push_declaration (ctxt: env) (decl: declaration) : bool =
+let push_declaration (ctxt: env ref) (decl: declaration) : bool =
   raise (Failure "NYI")
 ;;
 
