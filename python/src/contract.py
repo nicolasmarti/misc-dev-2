@@ -36,6 +36,9 @@ class IBContract(Thread):
         self.m_nextid = 0
         
         self.contract = contract
+
+        # ib-tws server connection
+        self.con = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
         
         # all data connection stuffs
         self.mktDataId = self.con.reqMktData(self.contract, False)
