@@ -10,7 +10,14 @@ from types import *
 class MyBuffer(gtk.TextBuffer):
 
     def managekey(self, s):
+        for i in s:
+            print gtk.gdk.keyval_name(i)
+
+    #    if len(s) == 1:
+    #        if gtk.gdk.keyval_name(i) > "a" and 
         pass
+
+
 
     def __init__(self):
         
@@ -35,6 +42,8 @@ keysemantics = [
      lambda mv: gtk.main_quit()
      )
     ]
+
+is_focus = None
 
 class MyView(gtk.TextView):
 
@@ -70,9 +79,13 @@ class MyView(gtk.TextView):
         self.pressed_key.add(event.keyval)
         self.managekey()
 
-
     def key_released(self, widget, event, data=None):
         self.pressed_key.discard(event.keyval)
+
+    def get_focus(self, widget, event, data=None):
+        global is_focus
+        is_focus = self
+        print "get_focus2" + str(is_focus)
 
     def __init__(self, buffer):
         
@@ -87,12 +100,15 @@ class MyView(gtk.TextView):
         # the key handlers
         self.connect("key_press_event", self.key_pressed, None)
         self.connect("key_release_event", self.key_released, None)
+        self.connect("focus-in-event", self.get_focus, None)
 
         self.show()
 
         # :: [Set (int)]
         self.validkeysequences = []
 
+        self.get_settings().set_property("gtk-error-bell", False)
+        
 
 class MyFrame(gtk.Frame):
     
