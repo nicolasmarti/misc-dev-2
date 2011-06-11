@@ -10,22 +10,16 @@ from types import *
 class MyBuffer(gtk.TextBuffer):
 
     def managekey(self, s):
-        for i in s:
-            print gtk.gdk.keyval_name(i)
-
-    #    if len(s) == 1:
-    #        if gtk.gdk.keyval_name(i) > "a" and 
-        pass
-
-
+        if len(s) == 1:    
+            i = s.pop()
+            if gtk.gdk.keyval_name(i) >= "a" or gtk.gdk.keyval_name(i) <= "z":
+                self.insert_at_cursor(gtk.gdk.keyval_name(i))
+            
+        print "pressed: " + str(s)
 
     def __init__(self):
         
         gtk.TextBuffer.__init__(self)
-
-        self.set_text("doudou")
-
-        self.pressed_buffer = []
 
 # :: [(list (set int), void (MyView))]
 keysemantics = [
@@ -40,6 +34,9 @@ keysemantics = [
      ),
     ([Set([65507, 120]), Set([65507, 99])],
      lambda mv: gtk.main_quit()
+     ),
+    ([Set([65507, 120]), Set([111])],
+     lambda mv: mv.myframe.focusnext()
      )
     ]
 
@@ -64,7 +61,7 @@ class MyView(gtk.TextView):
                             return
                         else:
                             valid = True
-                    elif self.pressed_key <= i[0][len(self.validkeysequences)] and len(self.validkeysequences) > 0:
+                    elif self.pressed_key <= i[0][len(self.validkeysequences)] and (len(self.validkeysequences) > 0 or Set([65507]) <= self.pressed_key):
                         valid = True
         
         if not valid:
@@ -74,10 +71,10 @@ class MyView(gtk.TextView):
             self.validkeysequences = []
 
 
-    def key_pressed(self, widget, event, data=None):
-        print "pressed: " + str((event.keyval, event.string, event.state))
+    def key_pressed(self, widget, event, data=None):        
         self.pressed_key.add(event.keyval)
         self.managekey()
+        print "pressed: " + str(self.pressed_key)
 
     def key_released(self, widget, event, data=None):
         self.pressed_key.discard(event.keyval)
@@ -85,7 +82,7 @@ class MyView(gtk.TextView):
     def get_focus(self, widget, event, data=None):
         global is_focus
         is_focus = self
-        print "get_focus2" + str(is_focus)
+        print "get_focus" + str(is_focus)
 
     def __init__(self, buffer):
         
@@ -127,6 +124,13 @@ class MyFrame(gtk.Frame):
         
         if self.mode == "SPLITTED":
             return self.inside.get_child1().getTextView()
+
+    def isChild(self, textview):
+        if self.mode == "PLAIN":
+            return self.inside == textview
+
+        if self.mode == "SPLITTED":
+            return self.inside.get_child1().isChild(textview) or self.inside.get_child2().isChild(textview)
 
     def divideH(self):
 
@@ -234,6 +238,38 @@ class MyFrame(gtk.Frame):
                 raise Exception('left child wrong !!!')
 
             return child1.tostring() + " <--(" + str(self) + ")--> " + child2.tostring()
+
+    def focusnext(self):
+        global is_focus
+
+        if self.mode == "PLAIN":
+            if self.myframe == self:
+                print "prout1"
+                self.getTextView().grab_focus()
+                return
+            else:
+                print "prout2"
+                self.myframe.focusnext()
+                return   
+
+        if self.mode == "SPLITTED":
+            child1 = self.inside.get_child1()
+            child2 = self.inside.get_child2()
+
+            if child1.isChild(is_focus):
+                print "prout3"
+                child2.getTextView().grab_focus()
+                return
+            else:
+                if self.myframe == self:
+                    print "prout4"
+                    self.getTextView().grab_focus()
+                    return
+                else:
+                    print "prout5"
+                    self.myframe.focusnext()
+                    return   
+
 
     def __init__(self, inside, mode = "PLAIN"):
 
