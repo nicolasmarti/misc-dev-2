@@ -5,7 +5,7 @@ pygtk.require('2.0')
 import gtk
 from sets import *
 from types import *
-
+import random
 
 class MyBuffer(gtk.TextBuffer):
 
@@ -26,6 +26,8 @@ class MyBuffer(gtk.TextBuffer):
     def __init__(self):
         
         gtk.TextBuffer.__init__(self)
+
+        self.set_text(str(random.random()*100))
 
 # :: [(list (set int), void (MyView))]
 keysemantics = [
@@ -48,6 +50,8 @@ keysemantics = [
 
 is_focus = None
 
+mainwin = None
+
 class MyView(gtk.TextView):
 
     def managekey(self):
@@ -63,6 +67,7 @@ class MyView(gtk.TextView):
                         self.validkeysequences.append(self.pressed_key)
                         if len(self.validkeysequences) == len(i[0]):
                             self.validkeysequences = []
+                            self.pressed_key = Set()
                             i[1](self)
                             return
                         else:
@@ -78,9 +83,11 @@ class MyView(gtk.TextView):
 
 
     def key_pressed(self, widget, event, data=None):        
+        global mainwin
         self.pressed_key.add(event.keyval)
         self.managekey()
         print "pressed: " + str(self.pressed_key)
+        mainwin.set_title(str(self.validkeysequences))
 
     def key_released(self, widget, event, data=None):
         self.pressed_key.discard(event.keyval)
@@ -140,7 +147,8 @@ class MyFrame(gtk.Frame):
 
     def divideH(self):
 
-        textbuf = self.getTextBuffer()
+        #textbuf = self.getTextBuffer()
+        textbuf = MyBuffer()
 
         self.remove(self.inside)
 
@@ -164,7 +172,8 @@ class MyFrame(gtk.Frame):
 
     def divideV(self):
 
-        textbuf = self.getTextBuffer()
+        #textbuf = self.getTextBuffer()
+        textbuf = MyBuffer()
 
         self.remove(self.inside)
 
@@ -206,20 +215,36 @@ class MyFrame(gtk.Frame):
             child1.setMyFrame(self)
 
             child2 = self.inside.get_child2()
+            child2.setMyFrame(self)
             
             self.inside.remove(child1)
             self.inside.remove(child2)
 
             child1.remove(child1.inside)
-            self.remove(self.inside)
+            child2.remove(child2.inside)
 
-            self.inside = child1.inside
-            child1.inside.myframe = self
-            self.add(child1.inside)
-            self.mode = child1.mode
+            if child2.isChild(is_focus):
 
-            child1.getTextView().grab_focus()
-            return
+                self.remove(self.inside)
+                self.inside = child1.inside
+                child1.inside.myframe = self
+                self.add(child1.inside)
+                self.mode = child1.mode
+
+                child1.getTextView().grab_focus()
+                return
+
+            if child1.isChild(is_focus):
+
+                self.remove(self.inside)
+                self.inside = child2.inside
+                child2.inside.myframe = self
+                self.add(child2.inside)
+                self.mode = child2.mode
+
+                child2.getTextView().grab_focus()
+                return
+
 
         if self.mode == "PLAIN" and self.myframe <> self:
             self.myframe.undivide()
@@ -301,6 +326,8 @@ class MyEditor:
 
     def __init__(self):
         
+        global mainwin
+
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.set_resizable(True)  
         window.connect("destroy", self.close_application)
@@ -315,6 +342,8 @@ class MyEditor:
         mainFrame = MyFrame(textview)
 
         window.add(mainFrame)
+
+        mainwin = window
         
         #mainFrame.divideH()
         #mainFrame.divideV()
