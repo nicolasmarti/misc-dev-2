@@ -27,8 +27,8 @@ class MyBuffer(gtk.TextBuffer):
         
         gtk.TextBuffer.__init__(self)
 
-        self.set_text(str(random.random()*100))
-
+        #self.set_text(str(random.random()*100))
+        
 # :: [(list (set int), void (MyView))]
 keysemantics = [
     ([Set([65507, 120]), Set([48])],
@@ -48,9 +48,14 @@ keysemantics = [
      )
     ]
 
+# the currently focused buffer
 is_focus = None
 
+#the main window
 mainwin = None
+
+#the set of buffer
+bufferset = Set()
 
 class MyView(gtk.TextView):
 
@@ -86,7 +91,7 @@ class MyView(gtk.TextView):
         global mainwin
         self.pressed_key.add(event.keyval)
         self.managekey()
-        print "pressed: " + str(self.pressed_key)
+        #print "pressed: " + str(self.pressed_key)
         mainwin.set_title(str(self.validkeysequences))
 
     def key_released(self, widget, event, data=None):
@@ -95,7 +100,7 @@ class MyView(gtk.TextView):
     def get_focus(self, widget, event, data=None):
         global is_focus
         is_focus = self
-        print "get_focus" + str(is_focus)
+        #print "get_focus" + str(is_focus)
 
     def __init__(self, buffer):
         
@@ -147,8 +152,8 @@ class MyFrame(gtk.Frame):
 
     def divideH(self):
 
-        #textbuf = self.getTextBuffer()
-        textbuf = MyBuffer()
+        textbuf = self.getTextBuffer()
+        #textbuf = MyBuffer()
 
         self.remove(self.inside)
 
@@ -172,8 +177,8 @@ class MyFrame(gtk.Frame):
 
     def divideV(self):
 
-        #textbuf = self.getTextBuffer()
-        textbuf = MyBuffer()
+        textbuf = self.getTextBuffer()
+        #textbuf = MyBuffer()
 
         self.remove(self.inside)
 
@@ -275,11 +280,11 @@ class MyFrame(gtk.Frame):
 
         if self.mode == "PLAIN":
             if self.myframe == self:
-                print "prout1"
+                #print "prout1"
                 self.getTextView().grab_focus()
                 return
             else:
-                print "prout2"
+                #print "prout2"
                 self.myframe.focusnext()
                 return   
 
@@ -288,16 +293,16 @@ class MyFrame(gtk.Frame):
             child2 = self.inside.get_child2()
 
             if child1.isChild(is_focus):
-                print "prout3"
+                #print "prout3"
                 child2.getTextView().grab_focus()
                 return
             else:
                 if self.myframe == self:
-                    print "prout4"
+                    #print "prout4"
                     self.getTextView().grab_focus()
                     return
                 else:
-                    print "prout5"
+                    #print "prout5"
                     self.myframe.focusnext()
                     return   
 
@@ -327,6 +332,7 @@ class MyEditor:
     def __init__(self):
         
         global mainwin
+        global bufferset
 
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.set_resizable(True)  
@@ -344,7 +350,9 @@ class MyEditor:
         window.add(mainFrame)
 
         mainwin = window
-        
+        bufferset.add(textbuffer)
+
+
         #mainFrame.divideH()
         #mainFrame.divideV()
 
@@ -355,14 +363,14 @@ class MyEditor:
 
         window.show()
 
-        def printmainframe(frame):
-            print frame.tostring()
+        #def printmainframe(frame):
+        #    print frame.tostring()
 
-        keysemantics.append( 
-            ([Set([65507, 120]), Set([113])],
-             lambda mv: printmainframe(mainFrame)
-             )
-            )
+        #keysemantics.append( 
+        #    ([Set([65507, 120]), Set([113])],
+        #     lambda mv: printmainframe(mainFrame)
+        #     )
+        #    )
 
 def main():
     gtk.main()
