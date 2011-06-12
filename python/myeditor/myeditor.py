@@ -12,10 +12,16 @@ class MyBuffer(gtk.TextBuffer):
     def managekey(self, s):
         if len(s) == 1:    
             i = s.pop()
-            if gtk.gdk.keyval_name(i) >= "a" or gtk.gdk.keyval_name(i) <= "z":
+            if len(gtk.gdk.keyval_name(i)) == 1:
                 self.insert_at_cursor(gtk.gdk.keyval_name(i))
-            
-        print "pressed: " + str(s)
+                return
+
+            if gtk.gdk.keyval_name(i) == "space":
+                self.insert_at_cursor(" ")
+                return
+
+
+            print gtk.gdk.keyval_name(i)
 
     def __init__(self):
         
