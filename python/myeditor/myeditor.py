@@ -92,6 +92,7 @@ class MyView(gtk.TextView):
 
     def set_buffer(self, buffer):
         buffer.attach(self)
+        gtk.TextView.set_buffer(self, buffer)
 
     def managekey(self):
         global mainwin
@@ -438,14 +439,14 @@ class MyEditor:
 
         window.show()
 
-        #def printmainframe(frame):
-        #    print frame.tostring()
+        def printmainframe(frame):
+            print frame.tostring()
 
-        #keysemantics.append( 
-        #    ([Set([65507, 120]), Set([113])],
-        #     lambda mv: printmainframe(mainFrame)
-        #     )
-        #    )
+        keysemantics.append( 
+            ([Set([65507, 120]), Set([113])],
+             lambda mv: printmainframe(mainFrame)
+             )
+            )
 
 def main():
     gtk.main()
