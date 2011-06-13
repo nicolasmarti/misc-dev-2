@@ -302,11 +302,14 @@ class MyFrame(gtk.Frame):
             return
 
         if self.mode == "PLAIN":
-            self.myframe = frame
+            self.inside.get_child().myframe = frame
 
     def undivide(self):
+        
+        print "undivide: " + str(self)
 
         if self.mode == "SPLITTED":
+
             child1 = self.inside.get_child1()
             child1.setMyFrame(self)
 
@@ -323,7 +326,6 @@ class MyFrame(gtk.Frame):
 
                 self.remove(self.inside)
                 self.inside = child1.inside
-                child1.inside.myframe = self
                 self.add(child1.inside)
                 self.mode = child1.mode
 
@@ -334,7 +336,6 @@ class MyFrame(gtk.Frame):
 
                 self.remove(self.inside)
                 self.inside = child2.inside
-                child2.inside.myframe = self
                 self.add(child2.inside)
                 self.mode = child2.mode
 
@@ -366,7 +367,7 @@ class MyFrame(gtk.Frame):
             if child2.myframe <> self:
                 raise Exception('left child wrong !!!')
 
-            return child1.tostring() + " <--(" + str(self) + ")--> " + child2.tostring()
+            return "( " + child1.tostring() + " <--(" + str(self) + ")--> " + child2.tostring() + " )"
 
     def focusnext(self):
         global is_focus
