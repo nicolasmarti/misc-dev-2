@@ -10,18 +10,7 @@ import random
 class MyBuffer(gtk.TextBuffer):
 
     def managekey(self, s):
-        if len(s) == 1:    
-            i = s.pop()
-            if len(gtk.gdk.keyval_name(i)) == 1:
-                self.insert_at_cursor(gtk.gdk.keyval_name(i))
-                return
-
-            if gtk.gdk.keyval_name(i) == "space":
-                self.insert_at_cursor(" ")
-                return
-
-
-            print gtk.gdk.keyval_name(i)
+        pass
 
     def __init__(self):
         
@@ -60,6 +49,8 @@ bufferset = Set()
 class MyView(gtk.TextView):
 
     def managekey(self):
+        global mainwin
+
         valid = False
         for i in keysemantics:
             if len(i[0]) > len(self.validkeysequences):
@@ -79,35 +70,49 @@ class MyView(gtk.TextView):
                             valid = True
                     elif self.pressed_key <= i[0][len(self.validkeysequences)] and (len(self.validkeysequences) > 0 or Set([65507]) <= self.pressed_key):
                         valid = True
+
+        #print "valid = " + str(valid)
+        #print "self.validkeysequences = " + str(self.validkeysequences)
+
+        if valid:
+            self.set_editable(False)
+            mainwin.set_title(str(self.validkeysequences))
+            return
+
+        if not valid and len(self.validkeysequences) > 0:
+            self.set_editable(False)
+            self.validkeysequences = []
+            mainwin.set_title("unknown key sequence")
+            return
         
         if not valid:
-            if len(self.validkeysequences) == 0:
-                self.get_buffer().managekey(self.pressed_key)
-                
+            self.get_buffer().managekey(self.pressed_key)                
             self.validkeysequences = []
-
+            self.set_editable(True)
+            return
 
     def key_pressed(self, widget, event, data=None):        
         global mainwin
         self.pressed_key.add(event.keyval)
         self.managekey()
         #print "pressed: " + str(self.pressed_key)
-        mainwin.set_title(str(self.validkeysequences))
+
 
     def key_released(self, widget, event, data=None):
         self.pressed_key.discard(event.keyval)
 
     def get_focus(self, widget, event, data=None):
         global is_focus
+        global mainwin
         is_focus = self
-        #print "get_focus" + str(is_focus)
+        mainwin.set_title(str(self.validkeysequences))
 
     def __init__(self, buffer):
         
         gtk.TextView.__init__(self, buffer)
 
         # not editable: we grab things ... 
-        self.set_editable(False)
+        self.set_editable(True)
 
         # the set of pressed keys
         self.pressed_key = Set()
