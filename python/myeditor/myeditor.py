@@ -9,15 +9,31 @@ import random
 
 class MyBuffer(gtk.TextBuffer):
 
+    def insert_at_cursor(self, text):
+        print text
+
     def managekey(self, s):
         pass
 
-    def __init__(self):
+    def __init__(self, name):
         
-        gtk.TextBuffer.__init__(self)
+        global bufferdict
 
-        #self.set_text(str(random.random()*100))
+        gtk.TextBuffer.__init__(self)
         
+        bufferdict[name]=self
+
+        self.name = name
+        #self.set_text(str(random.random()*100))
+
+        
+def newbuffer(mv):
+    mv.set_buffer(MyBuffer(str(random.random())))
+                  
+    mv.grab_focus()
+
+    mainwin.set_title(mv.get_buffer().name + " " + str(mv.validkeysequences))
+
 # :: [(list (set int), void (MyView))]
 keysemantics = [
     ([Set([65507, 120]), Set([48])],
@@ -34,6 +50,9 @@ keysemantics = [
      ),
     ([Set([65507, 120]), Set([111])],
      lambda mv: mv.myframe.focusnext()
+     ),
+    ([Set([65507, 120]), Set([110])],
+     lambda mv: newbuffer(mv)
      )
     ]
 
@@ -44,7 +63,12 @@ is_focus = None
 mainwin = None
 
 #the set of buffer
-bufferset = Set()
+# a dictionnary from names to buffer
+bufferdict = dict()
+
+
+resize = False
+shrink = False
 
 class MyView(gtk.TextView):
 
@@ -64,6 +88,8 @@ class MyView(gtk.TextView):
                         if len(self.validkeysequences) == len(i[0]):
                             self.validkeysequences = []
                             self.pressed_key = Set()
+                            self.set_editable(False)
+                            mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
                             i[1](self)
                             return
                         else:
@@ -76,13 +102,13 @@ class MyView(gtk.TextView):
 
         if valid:
             self.set_editable(False)
-            mainwin.set_title(str(self.validkeysequences))
+            mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
             return
 
         if not valid and len(self.validkeysequences) > 0:
             self.set_editable(False)
             self.validkeysequences = []
-            mainwin.set_title("unknown key sequence")
+            mainwin.set_title(self.get_buffer().name + " unknown key sequence")
             return
         
         if not valid:
@@ -93,9 +119,10 @@ class MyView(gtk.TextView):
 
     def key_pressed(self, widget, event, data=None):        
         global mainwin
+        #print event.keyval
         self.pressed_key.add(event.keyval)
         self.managekey()
-        #print "pressed: " + str(self.pressed_key)
+        
 
 
     def key_released(self, widget, event, data=None):
@@ -105,7 +132,8 @@ class MyView(gtk.TextView):
         global is_focus
         global mainwin
         is_focus = self
-        mainwin.set_title(str(self.validkeysequences))
+
+        mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
 
     def __init__(self, buffer):
         
@@ -128,6 +156,11 @@ class MyView(gtk.TextView):
         self.validkeysequences = []
 
         self.get_settings().set_property("gtk-error-bell", False)
+
+        self.set_wrap_mode(gtk.WRAP_NONE)
+
+        print self.get_resize_mode()
+        self.set_resize_mode(gtk.RESIZE_IMMEDIATE)
         
 
 class MyFrame(gtk.Frame):
@@ -170,8 +203,8 @@ class MyFrame(gtk.Frame):
 
         panel = gtk.HPaned()
 
-        panel.pack1(child1, False, False)
-        panel.pack2(child2, False, False)
+        panel.pack1(child1, resize, shrink)
+        panel.pack2(child2, resize, shrink)
         panel.show()
         
         self.add(panel)
@@ -195,8 +228,8 @@ class MyFrame(gtk.Frame):
 
         panel = gtk.VPaned()
 
-        panel.pack1(child1, False, False)
-        panel.pack2(child2, False, False)
+        panel.pack1(child1, resize, shrink)
+        panel.pack2(child2, resize, shrink)
         panel.show()
         
         self.add(panel)
@@ -259,6 +292,8 @@ class MyFrame(gtk.Frame):
         if self.mode == "PLAIN" and self.myframe <> self:
             self.myframe.undivide()
 
+        
+
     def tostring(self):
         if self.mode == "PLAIN":
 
@@ -315,6 +350,7 @@ class MyFrame(gtk.Frame):
     def __init__(self, inside, mode = "PLAIN"):
 
         gtk.Frame.__init__(self)
+
         self.inside = inside        
         self.add(inside)
         self.show()
@@ -337,7 +373,6 @@ class MyEditor:
     def __init__(self):
         
         global mainwin
-        global bufferset
 
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.set_resizable(True)  
@@ -345,18 +380,13 @@ class MyEditor:
         window.set_title("TextView Widget Basic Example")
         window.set_border_width(0)
 
-        #sw = gtk.ScrolledWindow()
-        #sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-
-        textbuffer = MyBuffer()
+        textbuffer = MyBuffer("init")
         textview = MyView(textbuffer)
         mainFrame = MyFrame(textview)
 
         window.add(mainFrame)
 
         mainwin = window
-        bufferset.add(textbuffer)
-
 
         #mainFrame.divideH()
         #mainFrame.divideV()
