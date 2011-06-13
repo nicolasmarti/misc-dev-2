@@ -29,10 +29,18 @@ class MyBuffer(gtk.TextBuffer):
         
 def newbuffer(mv):
     mv.set_buffer(MyBuffer(str(random.random())))
-                  
     mv.grab_focus()
-
     mainwin.set_title(mv.get_buffer().name + " " + str(mv.validkeysequences))
+
+def switchbuffer(mv):
+    global bufferdict
+    root = mv.myframe.get_root()
+    
+    for i in bufferdict:
+        if not root.isChildBuffer(bufferdict[i]):
+            mv.set_buffer(bufferdict[i])
+            return
+
 
 # :: [(list (set int), void (MyView))]
 keysemantics = [
@@ -53,6 +61,9 @@ keysemantics = [
      ),
     ([Set([65507, 120]), Set([110])],
      lambda mv: newbuffer(mv)
+     ),
+    ([Set([65507, 120]), Set([98])],
+     lambda mv: switchbuffer(mv)
      )
     ]
 
@@ -206,12 +217,19 @@ class MyFrame(gtk.Frame):
         if self.mode == "SPLITTED":
             return self.inside.get_child1().getTextView()
 
-    def isChild(self, textview):
+    def isChildView(self, textview):
         if self.mode == "PLAIN":
             return self.inside.get_child() == textview
 
         if self.mode == "SPLITTED":
-            return self.inside.get_child1().isChild(textview) or self.inside.get_child2().isChild(textview)
+            return self.inside.get_child1().isChildView(textview) or self.inside.get_child2().isChildView(textview)
+
+    def isChildBuffer(self, textbuffer):
+        if self.mode == "PLAIN":
+            return self.inside.get_child().get_buffer() == textbuffer
+
+        if self.mode == "SPLITTED":
+            return self.inside.get_child1().isChildBuffer(textbuffer) or self.inside.get_child2().isChildBuffer(textbuffer)
 
     def divideH(self):
 
@@ -301,7 +319,7 @@ class MyFrame(gtk.Frame):
             child1.remove(child1.inside)
             child2.remove(child2.inside)
 
-            if child2.isChild(is_focus):
+            if child2.isChildView(is_focus):
 
                 self.remove(self.inside)
                 self.inside = child1.inside
@@ -312,7 +330,7 @@ class MyFrame(gtk.Frame):
                 child1.getTextView().grab_focus()
                 return
 
-            if child1.isChild(is_focus):
+            if child1.isChildView(is_focus):
 
                 self.remove(self.inside)
                 self.inside = child2.inside
@@ -367,7 +385,7 @@ class MyFrame(gtk.Frame):
             child1 = self.inside.get_child1()
             child2 = self.inside.get_child2()
 
-            if child1.isChild(is_focus):
+            if child1.isChildView(is_focus):
                 #print "prout3"
                 child2.getTextView().grab_focus()
                 return
@@ -381,6 +399,12 @@ class MyFrame(gtk.Frame):
                     self.myframe.focusnext()
                     return   
 
+
+    def get_root(self):
+        if self.myframe == self:
+            return self
+        else:
+            return self.myframe.get_root()        
 
     def __init__(self, inside, mode = "PLAIN"):
 
