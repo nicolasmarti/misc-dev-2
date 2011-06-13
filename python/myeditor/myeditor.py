@@ -9,10 +9,10 @@ import random
 
 class MyBuffer(gtk.TextBuffer):
 
-    def insert_at_cursor(self, text):
-        print text
-
     def managekey(self, s):
+        pass
+
+    def attach(self, textview):
         pass
 
     def __init__(self, name):
@@ -66,11 +66,32 @@ mainwin = None
 # a dictionnary from names to buffer
 bufferdict = dict()
 
-
 resize = False
 shrink = False
 
+def list_set_key_val2string(ls):
+    sl = []
+    for i in ls:
+        ssl = []
+        for j in i:
+            ssl.append(gtk.gdk.keyval_name(j))
+        sl.append(ssl)
+
+    res = ""
+    for i in sl:
+        for j in reversed(range(0,len(i))):
+            if j <> len(i) - 1:
+                res += "-"
+            res += i[j]
+        res += ""
+        
+    return res
+            
+
 class MyView(gtk.TextView):
+
+    def set_buffer(self, buffer):
+        buffer.attach(self)
 
     def managekey(self):
         global mainwin
@@ -89,7 +110,7 @@ class MyView(gtk.TextView):
                             self.validkeysequences = []
                             self.pressed_key = Set()
                             self.set_editable(False)
-                            mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
+                            mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
                             i[1](self)
                             return
                         else:
@@ -102,7 +123,7 @@ class MyView(gtk.TextView):
 
         if valid:
             self.set_editable(False)
-            mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
+            mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
             return
 
         if not valid and len(self.validkeysequences) > 0:
@@ -133,7 +154,7 @@ class MyView(gtk.TextView):
         global mainwin
         is_focus = self
 
-        mainwin.set_title(self.get_buffer().name + " " + str(self.validkeysequences))
+        mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
 
     def __init__(self, buffer):
         
@@ -159,16 +180,19 @@ class MyView(gtk.TextView):
 
         self.set_wrap_mode(gtk.WRAP_NONE)
 
-        print self.get_resize_mode()
-        self.set_resize_mode(gtk.RESIZE_IMMEDIATE)
-        
+        if buffer <> None:
+            buffer.attach(self)
+
+        return
+
+
 
 class MyFrame(gtk.Frame):
-    
+
     def getTextBuffer(self):
 
         if self.mode == "PLAIN":
-            return self.inside.get_buffer()
+            return self.inside.get_child().get_buffer()
         
         if self.mode == "SPLITTED":
             return self.inside.get_child1().getTextBuffer()
@@ -176,14 +200,14 @@ class MyFrame(gtk.Frame):
     def getTextView(self):
 
         if self.mode == "PLAIN":
-            return self.inside
+            return self.inside.get_child()
         
         if self.mode == "SPLITTED":
             return self.inside.get_child1().getTextView()
 
     def isChild(self, textview):
         if self.mode == "PLAIN":
-            return self.inside == textview
+            return self.inside.get_child() == textview
 
         if self.mode == "SPLITTED":
             return self.inside.get_child1().isChild(textview) or self.inside.get_child2().isChild(textview)
@@ -198,7 +222,12 @@ class MyFrame(gtk.Frame):
         child1 = MyFrame(self.inside, self.mode)
         child1.myframe = self
 
-        child2 = MyFrame(MyView(textbuf))
+        sw = gtk.ScrolledWindow()
+        sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        sw.add(MyView(textbuf))
+        sw.show()
+
+        child2 = MyFrame(sw)
         child2.myframe = self
 
         panel = gtk.HPaned()
@@ -223,7 +252,12 @@ class MyFrame(gtk.Frame):
         child1 = MyFrame(self.inside, self.mode)
         child1.myframe = self
 
-        child2 = MyFrame(MyView(textbuf))
+        sw = gtk.ScrolledWindow()
+        sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        sw.add(MyView(textbuf))
+        sw.show()
+
+        child2 = MyFrame(sw)
         child2.myframe = self
 
         panel = gtk.VPaned()
@@ -297,7 +331,7 @@ class MyFrame(gtk.Frame):
     def tostring(self):
         if self.mode == "PLAIN":
 
-            if self.inside.myframe <> self:
+            if self.inside.get_child().myframe <> self:
                 raise Exception('child wrong !!!')
 
             return "(" + str(self) + ")"
@@ -358,10 +392,9 @@ class MyFrame(gtk.Frame):
         self.mode = mode
 
         if mode == "PLAIN":
-            self.inside.myframe = self
+            self.inside.get_child().myframe = self
 
         self.myframe = self
-
         
 
 
@@ -382,7 +415,14 @@ class MyEditor:
 
         textbuffer = MyBuffer("init")
         textview = MyView(textbuffer)
-        mainFrame = MyFrame(textview)
+
+        sw = gtk.ScrolledWindow()
+        sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        sw.add(textview)
+
+        sw.show()
+
+        mainFrame = MyFrame(sw)
 
         window.add(mainFrame)
 
