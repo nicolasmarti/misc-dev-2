@@ -7,6 +7,9 @@ from sets import *
 from types import *
 import random
 
+# the global dictionnary used
+state = dict()
+
 class MyBuffer(gtk.TextBuffer):
 
     def managekey(self, s):
@@ -17,33 +20,33 @@ class MyBuffer(gtk.TextBuffer):
 
     def __init__(self, name):
         
-        global bufferdict
+        global state
 
         gtk.TextBuffer.__init__(self)
         
-        bufferdict[name]=self
+        state["buffers"].append(self)
 
         self.name = name
         #self.set_text(str(random.random()*100))
 
-        
 def newbuffer(mv):
     mv.set_buffer(MyBuffer(str(random.random())))
     mv.grab_focus()
-    mainwin.set_title(mv.get_buffer().name + " " + str(mv.validkeysequences))
 
 def switchbuffer(mv):
-    global bufferdict
+    global state
     root = mv.myframe.get_root()
     
-    for i in bufferdict:
-        if not root.isChildBuffer(bufferdict[i]):
-            mv.set_buffer(bufferdict[i])
+    for i in range(0, len(state["buffers"])):
+        if not root.isChildBuffer(state["buffers"][i]):
+            buffer = state["buffers"].pop(i)
+            state["buffers"].append(buffer)
+            mv.set_buffer(buffer)
             return
 
 
-# :: [(list (set int), void (MyView))]
-keysemantics = [
+# list of key bindings
+state["keysemantics"] = [
     ([Set([65507, 120]), Set([48])],
      lambda mv: mv.myframe.undivide()
      ),
@@ -68,17 +71,18 @@ keysemantics = [
     ]
 
 # the currently focused buffer
-is_focus = None
+state["is_focus"] = None
 
 #the main window
-mainwin = None
+state["mainwin"] = None
 
 #the set of buffer
 # a dictionnary from names to buffer
-bufferdict = dict()
+state["buffers"] = []
 
-resize = False
-shrink = False
+# parameters for building Hspan
+state["resize"] = False
+state["shrink"] = False
 
 def list_set_key_val2string(ls):
     sl = []
@@ -106,10 +110,10 @@ class MyView(gtk.TextView):
         gtk.TextView.set_buffer(self, buffer)
 
     def managekey(self):
-        global mainwin
+        global state
 
         valid = False
-        for i in keysemantics:
+        for i in state["keysemantics"]:
             if len(i[0]) > len(self.validkeysequences):
                 prefix = True
                 for j in range(0, len(self.validkeysequences) - 1):
@@ -121,8 +125,8 @@ class MyView(gtk.TextView):
                         if len(self.validkeysequences) == len(i[0]):
                             self.validkeysequences = []
                             self.pressed_key = Set()
-                            self.set_editable(False)
-                            mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
+                            self.set_editable(False)                            
+                            self.grab_focus()
                             i[1](self)
                             return
                         else:
@@ -135,13 +139,15 @@ class MyView(gtk.TextView):
 
         if valid:
             self.set_editable(False)
-            mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
+            state["mainwin"].set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
+            self.grab_focus()
             return
 
         if not valid and len(self.validkeysequences) > 0:
             self.set_editable(False)
             self.validkeysequences = []
-            mainwin.set_title(self.get_buffer().name + " unknown key sequence")
+            self.grab_focus()
+            state["mainwin"].set_title(self.get_buffer().name + " Unknown sequence")
             return
         
         if not valid:
@@ -151,22 +157,17 @@ class MyView(gtk.TextView):
             return
 
     def key_pressed(self, widget, event, data=None):        
-        global mainwin
-        #print event.keyval
         self.pressed_key.add(event.keyval)
         self.managekey()
-        
-
 
     def key_released(self, widget, event, data=None):
         self.pressed_key.discard(event.keyval)
 
     def get_focus(self, widget, event, data=None):
-        global is_focus
-        global mainwin
-        is_focus = self
+        global state
 
-        mainwin.set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
+        state["is_focus"] = self
+        state["mainwin"].set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
 
     def __init__(self, buffer):
         
@@ -195,6 +196,9 @@ class MyView(gtk.TextView):
         if buffer <> None:
             buffer.attach(self)
 
+        self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        self.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('white'))
+        
         return
 
 
@@ -233,6 +237,8 @@ class MyFrame(gtk.Frame):
 
     def divideH(self):
 
+        global state
+
         textbuf = self.getTextBuffer()
         #textbuf = MyBuffer()
 
@@ -251,8 +257,8 @@ class MyFrame(gtk.Frame):
 
         panel = gtk.HPaned()
 
-        panel.pack1(child1, resize, shrink)
-        panel.pack2(child2, resize, shrink)
+        panel.pack1(child1, state["resize"], state["shrink"])
+        panel.pack2(child2, state["resize"], state["shrink"])
         panel.show()
         
         self.add(panel)
@@ -262,6 +268,8 @@ class MyFrame(gtk.Frame):
         child1.getTextView().grab_focus()
 
     def divideV(self):
+
+        global state
 
         textbuf = self.getTextBuffer()
         #textbuf = MyBuffer()
@@ -281,8 +289,8 @@ class MyFrame(gtk.Frame):
 
         panel = gtk.VPaned()
 
-        panel.pack1(child1, resize, shrink)
-        panel.pack2(child2, resize, shrink)
+        panel.pack1(child1, state["resize"], state["shrink"])
+        panel.pack2(child2, state["resize"], state["shrink"])
         panel.show()
         
         self.add(panel)
@@ -302,11 +310,16 @@ class MyFrame(gtk.Frame):
             return
 
         if self.mode == "PLAIN":
-            self.myframe = frame
+            self.inside.get_child().myframe = frame
 
     def undivide(self):
+        
+        print "undivide: " + str(self)
+
+        global state
 
         if self.mode == "SPLITTED":
+
             child1 = self.inside.get_child1()
             child1.setMyFrame(self)
 
@@ -319,22 +332,20 @@ class MyFrame(gtk.Frame):
             child1.remove(child1.inside)
             child2.remove(child2.inside)
 
-            if child2.isChildView(is_focus):
+            if child2.isChildView(state["is_focus"]):
 
                 self.remove(self.inside)
                 self.inside = child1.inside
-                child1.inside.myframe = self
                 self.add(child1.inside)
                 self.mode = child1.mode
 
                 child1.getTextView().grab_focus()
                 return
 
-            if child1.isChildView(is_focus):
+            if child1.isChildView(state["is_focus"]):
 
                 self.remove(self.inside)
                 self.inside = child2.inside
-                child2.inside.myframe = self
                 self.add(child2.inside)
                 self.mode = child2.mode
 
@@ -366,10 +377,10 @@ class MyFrame(gtk.Frame):
             if child2.myframe <> self:
                 raise Exception('left child wrong !!!')
 
-            return child1.tostring() + " <--(" + str(self) + ")--> " + child2.tostring()
+            return "( " + child1.tostring() + " <--(" + str(self) + ")--> " + child2.tostring() + " )"
 
     def focusnext(self):
-        global is_focus
+        global state
 
         if self.mode == "PLAIN":
             if self.myframe == self:
@@ -385,7 +396,7 @@ class MyFrame(gtk.Frame):
             child1 = self.inside.get_child1()
             child2 = self.inside.get_child2()
 
-            if child1.isChildView(is_focus):
+            if child1.isChildView(state["is_focus"]):
                 #print "prout3"
                 child2.getTextView().grab_focus()
                 return
@@ -420,8 +431,14 @@ class MyFrame(gtk.Frame):
             self.inside.get_child().myframe = self
 
         self.myframe = self
-        
+    
+state["myentry"] = None
+    
+class MyEntry(gtk.Entry):
 
+    def __init__(self):
+
+        gtk.Entry.__init__(self)
 
 class MyEditor:
     
@@ -430,7 +447,7 @@ class MyEditor:
 
     def __init__(self):
         
-        global mainwin
+        global state
 
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.set_resizable(True)  
@@ -449,9 +466,20 @@ class MyEditor:
 
         mainFrame = MyFrame(sw)
 
+        #entry = MyEntry()
+        #entry.set_editable(False)        
+        #myentry = entry
+        #entry.show()
+
+        #root_layout = gtk.VPaned()
+        #root_layout.pack1(mainFrame, False, False)
+        #root_layout.pack2(entry, False, False)
+        #root_layout.show()        
+
+        #window.add(root_layout)
         window.add(mainFrame)
 
-        mainwin = window
+        state["mainwin"] = window
 
         #mainFrame.divideH()
         #mainFrame.divideV()
@@ -466,7 +494,7 @@ class MyEditor:
         def printmainframe(frame):
             print frame.tostring()
 
-        keysemantics.append( 
+        state["keysemantics"].append( 
             ([Set([65507, 120]), Set([113])],
              lambda mv: printmainframe(mainFrame)
              )
