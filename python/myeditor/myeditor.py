@@ -17,28 +17,29 @@ class MyBuffer(gtk.TextBuffer):
 
     def __init__(self, name):
         
-        global bufferdict
+        global buffers
 
         gtk.TextBuffer.__init__(self)
         
-        bufferdict[name]=self
+        buffers.append(self)
 
         self.name = name
         #self.set_text(str(random.random()*100))
 
-        
 def newbuffer(mv):
     mv.set_buffer(MyBuffer(str(random.random())))
     mv.grab_focus()
     mainwin.set_title(mv.get_buffer().name + " " + str(mv.validkeysequences))
 
 def switchbuffer(mv):
-    global bufferdict
+    global buffers
     root = mv.myframe.get_root()
     
-    for i in bufferdict:
-        if not root.isChildBuffer(bufferdict[i]):
-            mv.set_buffer(bufferdict[i])
+    for i in range(0, len(buffers)):
+        if not root.isChildBuffer(buffers[i]):
+            buffer = buffers.pop(i)
+            buffers.append(buffer)
+            mv.set_buffer(buffer)
             return
 
 
@@ -75,7 +76,7 @@ mainwin = None
 
 #the set of buffer
 # a dictionnary from names to buffer
-bufferdict = dict()
+buffers = []
 
 resize = False
 shrink = False
@@ -195,6 +196,9 @@ class MyView(gtk.TextView):
         if buffer <> None:
             buffer.attach(self)
 
+        self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        self.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('white'))
+        
         return
 
 
@@ -302,7 +306,7 @@ class MyFrame(gtk.Frame):
             return
 
         if self.mode == "PLAIN":
-            self.myframe = frame
+            self.inside.get_child().myframe = frame
 
     def undivide(self):
 
@@ -323,7 +327,6 @@ class MyFrame(gtk.Frame):
 
                 self.remove(self.inside)
                 self.inside = child1.inside
-                child1.inside.myframe = self
                 self.add(child1.inside)
                 self.mode = child1.mode
 
@@ -334,7 +337,6 @@ class MyFrame(gtk.Frame):
 
                 self.remove(self.inside)
                 self.inside = child2.inside
-                child2.inside.myframe = self
                 self.add(child2.inside)
                 self.mode = child2.mode
 
@@ -420,8 +422,14 @@ class MyFrame(gtk.Frame):
             self.inside.get_child().myframe = self
 
         self.myframe = self
-        
+    
+myentry = None
+    
+class MyEntry(gtk.Entry):
 
+    def __init__(self):
+
+        gtk.Entry.__init__(self)
 
 class MyEditor:
     
@@ -449,6 +457,17 @@ class MyEditor:
 
         mainFrame = MyFrame(sw)
 
+        #entry = MyEntry()
+        #entry.set_editable(False)        
+        #myentry = entry
+        #entry.show()
+
+        #root_layout = gtk.VPaned()
+        #root_layout.pack1(mainFrame, False, False)
+        #root_layout.pack2(entry, False, False)
+        #root_layout.show()        
+
+        #window.add(root_layout)
         window.add(mainFrame)
 
         mainwin = window
