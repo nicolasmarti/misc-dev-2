@@ -74,6 +74,10 @@ class Strat2(Thread):
 
             try:
                 bars = self.c.bars
+
+                if len(bars) < self.params["N"]:
+                    raise Exception("not yet")
+                
                 (mu, sig) = musig.value(bars)
                 self.musig = (mu, sig)
                 rsi = rsiind.value(bars)
