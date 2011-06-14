@@ -139,6 +139,7 @@ class MyView(gtk.TextView):
 
         if valid:
             self.set_editable(False)
+            state["mainwin"].set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
             self.grab_focus()
             return
 
@@ -146,6 +147,7 @@ class MyView(gtk.TextView):
             self.set_editable(False)
             self.validkeysequences = []
             self.grab_focus()
+            state["mainwin"].set_title(self.get_buffer().name + " Unknown sequence")
             return
         
         if not valid:
