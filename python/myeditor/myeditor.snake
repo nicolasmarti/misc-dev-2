@@ -1,3 +1,14 @@
+/*
+
+embedded language in ocaml
+functional, object, et tutti quantti
+
+statically typecheck what you can
+dynamically typecheck the rest
+allow to use with python (opycaml)
+
+*/
+
 class Buffer
 
 class View
