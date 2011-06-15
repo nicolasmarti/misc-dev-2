@@ -10,3 +10,5 @@
 
 <langs/icic/ast.{byte,native}>: pkg_str
 
+<langs/trep/trep.{byte,native}>: pkg_str
+

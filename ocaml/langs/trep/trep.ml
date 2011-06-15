@@ -115,11 +115,21 @@ type env =
  
 }
 
-(*
-  TODO:
-  * write the parser for declaration
-  * write the pprinter for declaration
-*)
+open Parser;;
+
+let term_parser (pb: parserbuffer) : term =
+  raise (Failure "NYI")
+and declaration_parser (pb: parserbuffer) : declaration =
+    raise (Failure "NYI")
+;;
+
+open Pprinter;;
+
+let term_pprinter (te: term) : token =
+    raise (Failure "NYI")
+let declaration_pprinter (decl: declaration) : token =
+    raise (Failure "NYI")
+;;
 
 module IndexMap = Map.Make(
   struct
