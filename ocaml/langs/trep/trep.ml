@@ -29,10 +29,25 @@ let position_to_string (p: position) : string =
   let ((b1, e1), (b2, e2)) = p in
   String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
 
+(* object are really usefull in order to manipulate Ocaml value from trep 
+   but they cannot be compiled ...
+*)
+
+class virtual ['a] tObj =
+object 
+  method uuid: int = 0
+  method virtual get_name: string
+  method virtual get_type: 'a
+  method virtual pprint: token
+  method virtual apply: 'a list -> 'a
+end;;
+
+
 type term = Type of univ option
 	    | Var of index * name
 	    | AVar of index 
 	    | Cste of symbol
+	    | Obj of term tObj
 	    | Impl of quantifier * term
 	    | Lambda of quantifier list * term
 	    | Let of bool * (pattern * term) list * term
@@ -214,6 +229,8 @@ let rec term_substitution (s: substitution) (te: term) : term =
 
     | Cste _ as c -> c
 
+    | Obj _ as o -> o
+
     | Impl (q, te) -> 
 	let (q', s') = quantifier_substitution s q in
 	let te' = term_substitution s' te in
@@ -360,6 +377,10 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 
     | AVar i as v -> v
 
+    | Cste _ as c -> c
+
+    | Obj _ as o -> o
+
     | Impl (q, te) ->
       let (q', level') = leveled_shift_quantifier q level delta in
       let te' = leveled_shift_term te level' delta in
@@ -415,8 +436,6 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | SrcInfo (te, pos) ->
       SrcInfo (leveled_shift_term te level delta,
 	       pos)
-
-    | _ -> raise (Failure "leveled_shift_term: case not yet supported")
 
 and shift_quantifier (q: quantifier) (delta: int) : quantifier * int =
   leveled_shift_quantifier q 0 delta
