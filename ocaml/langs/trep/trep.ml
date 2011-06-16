@@ -38,7 +38,7 @@ object
   method uuid: int = 0
   method virtual get_name: string
   method virtual get_type: 'a
-  method virtual pprint: string
+  method virtual pprint: token
   method virtual apply: 'a list -> 'a
 end;;
 
