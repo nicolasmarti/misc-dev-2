@@ -1,29 +1,8 @@
 open Printf;;
 
-(* Language definition *)
-
-type kind = KStar (* notation := * *)
-	    | KImpl of (kind * kind) (* notation := -> *)
-
-type mltype = TyVar of string (* :: KStar *)
-	      | TyCste of string
-	      | Unit | Int of int | Double | Float | Bool (* :: * *)
-	      | Array of int | TyImpl | TyRef (* :: * -> * *)
-	      | TyApp (* :: ( * -> k ) -> k *)
-
-(* for now no wf inductive types ... 
-   defined as type / fct axioms
-   ex:
-
-list :: * -> *
-(:) :: a -> list a -> list a
-[[]] :: list a
-
-*)
-
 type typeclass_quantification = string (* class name *) * string (* TyVar *)
 
-type signature = typeclass_quantification list * mltype
+type signature = typeclass_quantification list * Trep.term
 
 type index = int
 
@@ -62,11 +41,11 @@ and guard = term
 and term_declaration = TeSignature of name * property list * signature
 		       | TeDef of equation
 
-type type_declaration = name * kind
+type type_declaration = name * Trep.term
 
-type typeclass_declaration = name * string (* type var *) * kind * term_declaration list
+type typeclass_declaration = name * string (* type var *) * Trep.term * term_declaration list
 
-type typeclass_instance = typeclass_quantification list * name * mltype * term_declaration list
+type typeclass_instance = typeclass_quantification list * name * Trep.term * term_declaration list
 
 type declaration = TermDecl of term_declaration 
 		   | TypeDecl of type_declaration

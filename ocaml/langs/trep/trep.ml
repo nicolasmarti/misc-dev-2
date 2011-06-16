@@ -33,6 +33,8 @@ let position_to_string (p: position) : string =
    but they cannot be compiled ...
 *)
 
+open Pprinter;;
+
 class virtual ['a] tObj =
 object 
   method uuid: int = 0
@@ -51,7 +53,7 @@ type term = Type of univ option
 	    | Impl of quantifier * term
 	    | Lambda of quantifier list * term
 	    | Let of bool * (pattern * term) list * term
-	    | If of term * term * term
+	    | Ifte of term * term * term
 	    | App of term * arg list
 	    | Case of term * equation list
 	    | Where of term * declaration list
@@ -129,22 +131,6 @@ type env =
   ) list;
  
 }
-
-open Parser;;
-
-let term_parser (pb: parserbuffer) : term =
-  raise (Failure "NYI")
-and declaration_parser (pb: parserbuffer) : declaration =
-    raise (Failure "NYI")
-;;
-
-open Pprinter;;
-
-let term_pprinter (te: term) : token =
-    raise (Failure "NYI")
-let declaration_pprinter (decl: declaration) : token =
-    raise (Failure "NYI")
-;;
 
 module IndexMap = Map.Make(
   struct
@@ -260,10 +246,10 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	   term_substitution s' te
       )
 
-    | If (t1, t2, t3) ->
-      If (term_substitution s t1,
-	  term_substitution s t2,
-	  term_substitution s t3
+    | Ifte (t1, t2, t3) ->
+      Ifte (term_substitution s t1,
+	    term_substitution s t2,
+	    term_substitution s t3
       )
 
     | App (f, args) ->
@@ -408,10 +394,10 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 	   leveled_shift_term te level' delta
       )
 
-    | If (t1, t2, t3) ->
-      If (leveled_shift_term t1 level delta,
-	  leveled_shift_term t2 level delta,
-	  leveled_shift_term t3 level delta
+    | Ifte (t1, t2, t3) ->
+      Ifte (leveled_shift_term t1 level delta,
+	    leveled_shift_term t2 level delta,
+	    leveled_shift_term t3 level delta
       )
 
     | App (f, args) ->

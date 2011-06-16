@@ -1,4 +1,4 @@
-<lib> or <llvm> or <ibtws>: include
+<lib> or <llvm> or <ibtws> or <langs/trep>: include
 
 <tests/testparser.{byte,native}>: pkg_str
 
@@ -9,6 +9,4 @@
 <tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads
 
 <langs/icic/ast.{byte,native}>: pkg_str
-
-<langs/trep/trep.{byte,native}>: pkg_str
 
