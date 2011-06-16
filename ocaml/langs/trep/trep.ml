@@ -229,6 +229,8 @@ let rec term_substitution (s: substitution) (te: term) : term =
 
     | Cste _ as c -> c
 
+    | Obj _ as o -> o
+
     | Impl (q, te) -> 
 	let (q', s') = quantifier_substitution s q in
 	let te' = term_substitution s' te in
@@ -375,6 +377,10 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 
     | AVar i as v -> v
 
+    | Cste _ as c -> c
+
+    | Obj _ as o -> o
+
     | Impl (q, te) ->
       let (q', level') = leveled_shift_quantifier q level delta in
       let te' = leveled_shift_term te level' delta in
@@ -430,8 +436,6 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | SrcInfo (te, pos) ->
       SrcInfo (leveled_shift_term te level delta,
 	       pos)
-
-    | _ -> raise (Failure "leveled_shift_term: case not yet supported")
 
 and shift_quantifier (q: quantifier) (delta: int) : quantifier * int =
   leveled_shift_quantifier q 0 delta
