@@ -29,10 +29,25 @@ let position_to_string (p: position) : string =
   let ((b1, e1), (b2, e2)) = p in
   String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
 
+(* object are really usefull in order to manipulate Ocaml value from trep 
+   but they cannot be compiled ...
+*)
+
+class virtual ['a] tObj =
+object 
+  method uuid: int = 0
+  method virtual get_name: string
+  method virtual get_type: 'a
+  method virtual pprint: string
+  method virtual apply: 'a list -> 'a
+end;;
+
+
 type term = Type of univ option
 	    | Var of index * name
 	    | AVar of index 
 	    | Cste of symbol
+	    | Obj of term tObj
 	    | Impl of quantifier * term
 	    | Lambda of quantifier list * term
 	    | Let of bool * (pattern * term) list * term
