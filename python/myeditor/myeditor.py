@@ -44,7 +44,6 @@ def switchbuffer(mv):
             mv.set_buffer(buffer)
             return
 
-
 # list of key bindings
 state["keysemantics"] = [
     ([Set([65507, 120]), Set([48])],
@@ -165,7 +164,8 @@ class MyView(gtk.TextView):
 
     def get_focus(self, widget, event, data=None):
         global state
-
+        self.validkeysequences = []
+        self.pressed_key = Set()
         state["is_focus"] = self
         state["mainwin"].set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
 
@@ -440,6 +440,8 @@ class MyEntry(gtk.Entry):
 
         gtk.Entry.__init__(self)
 
+        self.on_enter = None
+
 class MyEditor:
     
     def close_application(self, widget):
@@ -466,18 +468,18 @@ class MyEditor:
 
         mainFrame = MyFrame(sw)
 
-        #entry = MyEntry()
-        #entry.set_editable(False)        
-        #myentry = entry
-        #entry.show()
+        entry = MyEntry()
+        entry.set_editable(False)        
+        state["myentry"] = entry
+        entry.show()
 
-        #root_layout = gtk.VPaned()
-        #root_layout.pack1(mainFrame, False, False)
-        #root_layout.pack2(entry, False, False)
-        #root_layout.show()        
+        root_layout = gtk.VPaned()
+        root_layout.pack1(mainFrame, True, True)
+        root_layout.pack2(entry, False, True)
+        root_layout.show()        
 
-        #window.add(root_layout)
-        window.add(mainFrame)
+        window.add(root_layout)
+        #window.add(mainFrame)
 
         state["mainwin"] = window
 
@@ -488,6 +490,8 @@ class MyEditor:
         #mainFrame.undivide()
 
         window.resize(800, 600)
+
+        #window.connect("focus-in-event", main_get_focus, None)
 
         window.show()
 
