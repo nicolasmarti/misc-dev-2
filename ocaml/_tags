@@ -8,5 +8,6 @@
 
 <tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads
 
-<langs/icic/ast.{byte,native}>: pkg_str
-
+<langs/trep/trep.ml>: pkg_spotlib, pkg_planck
+<langs/trep/trepparser.ml>: pkg_spotlib, pkg_planck
+<tests/testtrep.{ml,byte,native}>: pkg_spotlib, pkg_planck

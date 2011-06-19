@@ -1,3 +1,6 @@
+open Planck;;
+module Pos = Position.File
+;;
 
 (*
   >= 0 -> quantified var with debruijn index
@@ -21,13 +24,9 @@ type univ = UnivVar of index
 	    | UnivSucc of univ (* u < UnivSucc u *)
 	    | UnivMax of univ * univ (* UnivMax u1 u2 >= u1 /\ UnivMax u1 u2 >= u2 *)
 
-type position = ((int * int) * (int * int))
+type position = Pos.t * Pos.t
 
-let noposition = ((0, 0), (0, 0))
-
-let position_to_string (p: position) : string =
-  let ((b1, e1), (b2, e2)) = p in
-  String.concat "" [string_of_int b1; ":"; string_of_int e1; "-"; string_of_int b2; ":"; string_of_int e2; "-"]
+let noposition = (Pos.none, Pos.none)
 
 (* object are really usefull in order to manipulate Ocaml value from trep 
    but they cannot be compiled ...
@@ -46,8 +45,8 @@ end;;
 
 
 type term = Type of univ option
-	    | Var of index * name
-	    | AVar of index 
+	    | Var of index option * name
+	    | AVar of index option
 	    | Cste of symbol
 	    | Obj of term tObj
 	    | Impl of quantifier * term
@@ -207,7 +206,9 @@ let rec term_substitution (s: substitution) (te: term) : term =
   match te with
     | Type u -> Type u
 
-    | Var (i, n) as v when i < 0 -> (
+    | Var (None, _) -> raise (Failure "un-typechecked variable")
+
+    | Var (Some i, n) as v when i < 0 -> (
 	try IndexMap.find i s 
 	with
 	  | Not_found -> v
@@ -350,16 +351,20 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
   match te with
     | Type u -> Type u
 
-    | Var (i, n) as v when i < 0 -> v
+    | Var (None, _) -> raise (Failure "untypechecked variable")
+
+    | Var (Some i, n) as v when i < 0 -> v
       
-    | Var (i, n) as v ->
+    | Var (Some i, n) as v ->
       if i >= level then
 	if i + delta < level then
 	  raise (TrepException UnShiftable)
 	else
-	  Var (i + level, n)
+	  Var (Some (i + level), n)
       else
 	v
+
+    | AVar None -> raise (Failure "AVar untypechecked")
 
     | AVar i as v -> v
 
