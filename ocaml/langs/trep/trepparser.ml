@@ -90,13 +90,13 @@ end st
 
 let parse_var st = begin
     (parse_name >>= fun s -> 
-       return (Var (None, s))
+       return s
     )
 end st
 
 let parse_avar st = begin
   token '_'  >>= fun _ -> 
-    return (AVar None) 
+    return () 
 end st
 
 let blank = ignore (one_of [' '; '\t'; '\n'; '\r'])
@@ -255,8 +255,8 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
      <|> try_ (parse_alias leftmost)*)
      <|> try_ binop
      <|> try_ parse_Type
-     <|> try_ parse_var 
-     <|> try_ parse_avar
+     <|> try_ (parse_var >>= fun s -> return (Var (None, s)))
+     <|> try_ (parse_avar >>= fun () -> return (AVar None))
     ) 
   ) >>= fun (te, startp, endp) ->
     return (SrcInfo (te, (startp, endp)))
