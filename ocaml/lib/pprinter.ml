@@ -28,6 +28,7 @@ let rec repeat (e: 'a) (n: int) : 'a list =
 type token = 
   | Verbatim of string
   | Box of token list
+  | IBox of token list
   | Newline
   | Space of int
   | Grid of token list list
@@ -245,6 +246,74 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
     | Verbatim s ->
 	string_to_box s
     | Box l -> (
+
+	let spacebox n = { data = (String.concat "" (repeat " " n))::[];
+			   height = 1;
+			   width = n;
+			 } in
+
+	let indentbox = spacebox indent in
+
+	let emptybox = spacebox 0 in
+
+	let (_, lineboxes, totalboxes) = List.fold_left (
+
+	  fun (remainingwidth, lineboxes, totalboxes) hd ->
+	    
+	    match hd with
+
+	      | Newline ->
+		  (w - indent, [], totalboxes @ lineboxes::[])
+
+	      | Space n ->
+		  if (remainingwidth < n) then
+		    (w - indent, indentbox :: [], totalboxes @ lineboxes::[])
+		  else
+		    if remainingwidth = w - indent && List.length totalboxes > 0 then (
+		      (*printf "%d = %d - %d && [linesbox] == %d && [totalboxes] == %d \n" remainingwidth w indent (List.length lineboxes) (List.length totalboxes);*)
+		      (w - indent, lineboxes, totalboxes)
+		      (*(remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)*)
+		    )
+		    else
+		      (remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)
+
+	      | t ->
+		  let b = token2box t remainingwidth indent in
+		    if (b.width > remainingwidth) then (
+
+		      let b = token2box t w indent in
+		      (w - b.width, b :: [], totalboxes @ lineboxes::[])
+			
+		    ) else (
+
+		      (remainingwidth - b.width, lineboxes @ b :: [], totalboxes)
+
+		    )	    
+
+	) (w, [], []) l in
+
+	let l = totalboxes @ lineboxes::[] in
+
+	  List.fold_left (
+	    
+	    fun acc hd ->
+
+	      vertical_concat Left acc (
+		
+		List.fold_left (
+
+		  fun acc hd ->
+		    
+		    horizontal_concat Center acc hd
+
+		) emptybox hd
+
+	      )
+
+	  ) emptybox l
+
+      )
+    | IBox l -> (
 
 	let spacebox n = { data = (String.concat "" (repeat " " n))::[];
 			   height = 1;

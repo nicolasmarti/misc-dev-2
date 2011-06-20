@@ -35,3 +35,10 @@ let test =
 
 printbox (token2box test 20 2);;
 printf "\n\n";;
+
+let test2 = 
+  Box [Box[Box [Verbatim "b11"; Newline;Verbatim "b12"]; Space 2;Verbatim "doudou1"; Space 2;Verbatim "doudou2"; Space 4; IBox [Verbatim "a11"; Space 2;Verbatim "a21"]]]
+;;
+
+printbox (token2box test2 10 2);;
+printf "\n\n";;
