@@ -22,6 +22,7 @@ type place = InNotation of op * int (*position*)
 	     | InApp
 	     | InArg
 	     | InAs
+	     | InAlias
 
 let rec withParen (t: token) : token =
   Box [Verbatim "("; t; Verbatim ")"]
@@ -95,13 +96,12 @@ and pattern2token pat p =
     | PCste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
     | PCste (Name n) -> Verbatim n
     | PApp (hd, tl) -> (
-
       (match p with
-	| InArg -> withParen
+	| InArg | InAlias -> withParen
 	| _ -> fun x -> x	  
       ) (Box (intercalate ((pattern2token hd InApp) :: (List.map (fun x -> parg2token x) tl)) (Space 1)))
-
     )
+    | PAlias (n, p) -> Box [Verbatim n; Verbatim "@"; pattern2token p InAlias]
 and parg2token arg =
   match arg with
     | (te, Explicit) -> Box [pattern2token te InArg]

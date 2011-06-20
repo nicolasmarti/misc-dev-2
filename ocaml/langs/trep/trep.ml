@@ -65,7 +65,8 @@ type term = Type of univ option
 and equation = Guarded of pattern * (guard * term) list
 	       | NotGuarded of pattern * term
 
-and pattern = PVar of name
+and pattern = PType
+	      | PVar of name
 	      | PAVar 
 	      | PCste of symbol
 	      | PAlias of name * pattern

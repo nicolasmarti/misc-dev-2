@@ -124,8 +124,32 @@ end st
 
 (*fold : ('a -> 'b -> 'c -> 'c) -> ('a, 'b) t -> 'c -> 'c*)
 
-let infix st = begin
-  
+let infix_pattern st = begin
+  Hashtbl.fold (fun symb op acc ->
+    match op.kind with
+      | `Infix _ -> (
+	try_ (parse_string symb >>= fun () ->
+	      return (Op_prec.infix symb (fun left right -> 
+		PApp (PCste (Symbol (symb, op)), [(left, Explicit); (right, Explicit)])
+	      )
+	      )
+	) <|> acc
+      )
+      | _ -> acc
+  ) Op_prec.tbl (error "Not a infix")
+end st
+
+let binop_pattern st = begin
+  Hashtbl.fold (fun symb op acc ->
+    try_ (surrounded 
+	 (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
+	 (?* blank >>= fun () -> token ')') 
+	 (parse_string symb) >>= fun () -> return (PCste (Symbol (symb, op)))
+    ) <|> acc
+  ) Op_prec.tbl (error "Not a binop")
+end st
+
+let infix_term st = begin
   Hashtbl.fold (fun symb op acc ->
     match op.kind with
       | `Infix _ -> (
@@ -138,11 +162,9 @@ let infix st = begin
       )
       | _ -> acc
   ) Op_prec.tbl (error "Not a infix")
-
 end st
 
-let binop st = begin
-  
+let binop_term st = begin
   Hashtbl.fold (fun symb op acc ->
     try_ (surrounded 
 	 (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
@@ -150,7 +172,6 @@ let binop st = begin
 	 (parse_string symb) >>= fun () -> return (Cste (Symbol (symb, op)))
     ) <|> acc
   ) Op_prec.tbl (error "Not a binop")
-
 end st
 
 let combine_leftrec (non_leftrec : 'a Parser.t) (leftrec : 'a -> 'a Parser.t) =
@@ -163,33 +184,36 @@ let combine_leftrec (non_leftrec : 'a Parser.t) (leftrec : 'a -> 'a Parser.t) =
   in
   leftrecs left
 
-let rec parse_term (leftmost: Pos.t) : term Parser.t =
-  try_ (expr leftmost >>= fun x -> return (build x))
+let parse_Type : unit Parser.t =  
+  parse_string "Type" >>= fun _ -> 
+  return ()
+;;
+
+let rec parse_pattern (leftmost: Pos.t) : pattern Parser.t =
+  try_ (expr_pattern leftmost >>= fun x -> return (build x))
   <|> try_ (
     ?* blank >>= fun () ->
     parse_leftmost leftmost (
-      withPos (with_type (parse_appterm leftmost)) >>= fun (te, startp, endp) ->
-      return (SrcInfo (te, (startp, endp)))
+      (parse_apppattern leftmost) >>= fun te ->
+      return te
     )
   )
+and expr_pattern (leftmost: Pos.t) st = begin
 
-(* Eta expansions with [st] are required, unfortunatelly *)
-and expr (leftmost: Pos.t) st = begin
-
-  combine_leftrec (expr_non_leftrec leftmost) (expr_leftrec leftmost)
+  combine_leftrec (expr_pattern_non_leftrec leftmost) (expr_pattern_leftrec leftmost)
 
 end st
 
-and expr_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary minus *)  
+and expr_pattern_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary minus *)  
 
   (* Skip spaces *)
   ?* blank >>= fun () -> 
 
-  try_ (parse_appterm leftmost >>= fun sv -> return (Op_prec.terminal sv))
+  try_ (parse_apppattern leftmost >>= fun sv -> return (Op_prec.terminal sv))
 
   <|> try_ (token '(' >>= fun () ->
        ?* blank >>= fun () ->
-       expr leftmost  >>= fun e ->
+       expr_pattern leftmost  >>= fun e ->
        ?* blank >>= fun () ->
        token ')' <?> "missing closing paren" >>= fun () ->
        return (Op_prec.parened (fun s -> s) e))
@@ -206,13 +230,99 @@ and expr_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary
 
 end st
 
-and expr_leftrec (leftmost: Pos.t) e_left st = begin (* binop expr *)
+and expr_pattern_leftrec (leftmost: Pos.t) e_left st = begin (* binop expr *)
 
   ?* blank >>= fun () ->
 
-  (infix >>= fun binop ->
+  (infix_pattern >>= fun binop ->
    ?* blank >>= fun () ->
-   expr leftmost >>= fun e_right ->
+   expr_pattern leftmost >>= fun e_right ->
+   return (binop e_left e_right))
+
+end st
+
+and parse_apppattern (leftmost: Str.Pos.t) : pattern Parser.t =
+  list_with_sep ~sep:(?+ blank <|> eos) 
+    (
+      try_ (parse_basepattern leftmost >>= fun res -> return (res, Explicit))
+      <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_pattern Pos.none >>= fun res -> return (res, Explicit)))
+      <|> try_ (surrounded (token '{' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token '}') (parse_pattern Pos.none >>= fun res -> return (res, Hidden)))
+      <|> try_ (surrounded (token '[' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ']') (parse_pattern Pos.none >>= fun res -> return (res, Implicit))) 
+    )
+  >>= fun l -> 
+    match l with
+      | [] -> raise (Failure "this case should never happen")
+      | hd::[] -> return (fst hd)
+      | hd::tl -> return (PApp (fst hd, tl))
+
+and parse_basepattern (leftmost: Str.Pos.t) : pattern Parser.t =
+  parse_leftmost leftmost (
+    try_ binop_pattern
+    <|> try_ (parse_alias leftmost)
+    <|> try_ (parse_Type >>= fun () -> return PType)
+    <|> try_ (parse_var >>= fun s -> return (PVar s))
+    <|> try_ (parse_avar >>= fun () -> return PAVar)
+  ) >>= fun te ->
+  return te
+
+and parse_alias (leftmost: Pos.t) : pattern Parser.t =  
+  parse_name >>= fun alias ->
+  token '@'  >>= fun _ -> 
+  parse_pattern leftmost >>= fun te ->
+    return (PAlias (alias, te))
+
+;;
+
+let rec parse_term (leftmost: Pos.t) : term Parser.t =
+  try_ (expr_term leftmost >>= fun x -> return (build x))
+  <|> try_ (
+    ?* blank >>= fun () ->
+    parse_leftmost leftmost (
+      withPos (with_type (parse_appterm leftmost)) >>= fun (te, startp, endp) ->
+      return (SrcInfo (te, (startp, endp)))
+    )
+  )
+
+(* Eta expansions with [st] are required, unfortunatelly *)
+and expr_term (leftmost: Pos.t) st = begin
+
+  combine_leftrec (expr_term_non_leftrec leftmost) (expr_term_leftrec leftmost)
+
+end st
+
+and expr_term_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary minus *)  
+
+  (* Skip spaces *)
+  ?* blank >>= fun () -> 
+
+  try_ (parse_appterm leftmost >>= fun sv -> return (Op_prec.terminal sv))
+
+  <|> try_ (token '(' >>= fun () ->
+       ?* blank >>= fun () ->
+       expr_term leftmost  >>= fun e ->
+       ?* blank >>= fun () ->
+       token ')' <?> "missing closing paren" >>= fun () ->
+       return (Op_prec.parened (fun s -> s) e))
+      
+(*
+
+  TODO: fold for prefix
+  (* Unary minus *)      
+  <|> (token '-' >>= fun () ->
+       ?* blank >>= fun () ->
+       expr >>= fun e ->
+       return (prefix "~" (fun (s,v) -> Printf.sprintf "~ %s" s, -v) e))
+*)
+
+end st
+
+and expr_term_leftrec (leftmost: Pos.t) e_left st = begin (* binop expr *)
+
+  ?* blank >>= fun () ->
+
+  (infix_term >>= fun binop ->
+   ?* blank >>= fun () ->
+   expr_term leftmost >>= fun e_right ->
    return (binop e_left e_right))
 
 end st
@@ -253,8 +363,8 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
      <|> try_ (parse_ifte leftmost)
      <|> try_ (parse_lambda leftmost)
      <|> try_ (parse_alias leftmost)*)
-     <|> try_ binop
-     <|> try_ parse_Type
+     <|> try_ binop_term
+     <|> try_ (parse_Type >>= fun () -> return (Type None))
      <|> try_ (parse_var >>= fun s -> return (Var (None, s)))
      <|> try_ (parse_avar >>= fun () -> return (AVar None))
     ) 
@@ -281,28 +391,4 @@ and parse_letbind (leftmost: Pos.t) : term Parser.t =
 
   parse_term leftmost >>= fun te ->
     return (Let ((match r with Some _ -> true | _ -> false), bindings, te))    
-
-and parse_pattern (leftmost: Pos.t) : pattern Parser.t =
-  (* This is not correct ... we lack the PAlias constructor *)
-  parse_term leftmost >>= fun te -> (
-    let rec term2pattern (te: term) =
-	match te with
-	  | Var (_, n) -> PVar n
-	  | Cste c -> PCste c
-	  | AVar _ -> PAVar
-	  | App (f, args) ->
-	    PApp (term2pattern f, List.map (fun (p, n) -> (term2pattern p, n)) args)
-	  | TyAnnotation (te, _) -> term2pattern te
-	  | SrcInfo (te, _) -> term2pattern te
-    in
-    try
-      return (term2pattern te)
-    with
-      | _ -> error "not a pattern"
-  )
-  
- 
-and parse_Type : term Parser.t =  
-  parse_string "Type" >>= fun _ -> 
-  return (Type None)
 ;;
