@@ -262,13 +262,14 @@ and parse_basepattern (leftmost: Str.Pos.t) : pattern Parser.t =
     <|> try_ (parse_Type >>= fun () -> return PType)
     <|> try_ (parse_var >>= fun s -> return (PVar s))
     <|> try_ (parse_avar >>= fun () -> return PAVar)
+    <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_pattern Pos.none >>= fun res -> return res))
   ) >>= fun te ->
   return te
 
 and parse_alias (leftmost: Pos.t) : pattern Parser.t =  
   parse_name >>= fun alias ->
   token '@'  >>= fun _ -> 
-  parse_pattern leftmost >>= fun te ->
+  parse_basepattern leftmost >>= fun te ->
     return (PAlias (alias, te))
 
 ;;
@@ -359,14 +360,15 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
   parse_leftmost leftmost (
     withPos(
      try_ (parse_letbind leftmost)
-     (*<|> try_ (parse_case leftmost)
+     <|> try_ (parse_case leftmost)
      <|> try_ (parse_ifte leftmost)
      <|> try_ (parse_lambda leftmost)
-     <|> try_ (parse_alias leftmost)*)
+     <|> try_ (parse_impl leftmost)
      <|> try_ binop_term
      <|> try_ (parse_Type >>= fun () -> return (Type None))
      <|> try_ (parse_var >>= fun s -> return (Var (None, s)))
      <|> try_ (parse_avar >>= fun () -> return (AVar None))
+     <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_term Pos.none >>= fun res -> return res))
     ) 
   ) >>= fun (te, startp, endp) ->
     return (SrcInfo (te, (startp, endp)))
@@ -391,4 +393,146 @@ and parse_letbind (leftmost: Pos.t) : term Parser.t =
 
   parse_term leftmost >>= fun te ->
     return (Let ((match r with Some _ -> true | _ -> false), bindings, te))    
+
+and parse_case (leftmost: Pos.t) : term Parser.t =
+  parse_string "case" >>= fun _ ->
+  ?+ blank >>= fun _ ->
+
+  parse_term leftmost >>= fun te ->
+  ?+ blank >>= fun _ ->
+
+  parse_string "of" >>= fun _ ->
+  ?+ blank >>= fun _ ->
+
+  token '|' >>= fun _ ->
+  ?+ blank >>= fun _ ->
+
+  list_with_sep ~sep:(surrounded (?* blank) (?* blank) (token '|'))   
+    (
+      parse_equation leftmost
+    ) >>= fun cases ->
+      return (Case (te, cases))
+
+and parse_equation (leftmost: Pos.t) : equation Parser.t =
+
+  position >>= fun equation_pos ->
+
+  parse_pattern leftmost >>= fun te ->
+  ?+ blank >>= fun _ ->
+    
+  option (
+    parse_string "with" >>= fun _ ->
+    ?+ blank >>= fun _ ->
+
+    list_with_sep ~sep:(surrounded (?* blank) (?* blank) (parse_string "with"))   
+      (
+	parse_term equation_pos >>= fun guard ->
+	?+ blank >>= fun _ ->
+	surrounded (?* blank) (?* blank) (parse_string ":=") >>= fun _ ->
+	parse_term equation_pos >>= fun value ->	
+	  return (guard, value)
+      )
+  ) >>= fun guarded ->
+    match guarded with
+      | Some gs -> return (Guarded (te, gs))
+      | None ->
+	  surrounded (?* blank) (?* blank) (parse_string ":=") >>= fun _ ->
+	  parse_term equation_pos >>= fun value ->	
+	    return (NotGuarded (te, value))
+
+and parse_ifte (leftmost: Pos.t) : term Parser.t =	  
+
+  (surrounded (?* blank) (?+ blank) (parse_string "if")) >>= fun _ ->
+
+  parse_term leftmost >>= fun b ->
+
+  (surrounded (?+ blank) (?+ blank) (parse_string "then")) >>= fun _ ->
+
+  parse_term leftmost >>= fun c1 ->
+
+  (surrounded (?+ blank) (?+ blank) (parse_string "else")) >>= fun _ ->
+
+  parse_term leftmost >>= fun c2 ->
+
+    return (Ifte (b, c1, c2))
+
+and parse_lambda (leftmost: Pos.t) : term Parser.t =
+  parse_string "\\" >>= fun _ ->
+  ?+ blank >>= fun _ ->
+
+  list_with_sep ~sep:(?+ blank)
+    (
+      try_ (parse_quantifier leftmost) 
+    ) >>= fun quantifiers ->
+
+  (surrounded (?* blank) (?* blank) (parse_string "->")) >>= fun _ ->
+
+  parse_term leftmost >>= fun te ->
+    return (Lambda (quantifiers, te))    
+
+and parse_impl (leftmost: Pos.t) : term Parser.t =
+  parse_quantifier leftmost >>= fun quantifier ->
+
+  (surrounded (?* blank) (?* blank) (parse_string "->")) >>= fun _ ->
+
+  parse_term leftmost >>= fun te ->
+    return (Impl (quantifier, te))    
+
+and parse_quantifier (leftmost: Pos.t): quantifier Parser.t =
+  try_ (parse_basepattern leftmost >>= fun p -> return ([p], NoAnnotation, Explicit))
+  <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (
+    list_with_sep ~sep:(?+ blank)
+      (
+	try_ (parse_basepattern leftmost) 
+      ) >>= fun patterns ->
+    
+    option
+      (
+	?* blank >>= fun _ ->
+	parse_string "::" >>= fun _ ->
+	?* blank >>= fun _ ->
+	parse_term leftmost
+      ) >>= fun ty ->
+
+    if List.length patterns = 0 then error "need at least one pattern"
+    else
+      return (patterns, (match ty with None -> NoAnnotation | Some ty -> Annotated ty), Explicit)
+  ))
+  <|> try_ (surrounded (token '{' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token '}') (
+    list_with_sep ~sep:(?+ blank)
+      (
+	try_ (parse_basepattern leftmost) 
+      ) >>= fun patterns ->
+    
+    option
+      (
+	?* blank >>= fun _ ->
+	parse_string "::" >>= fun _ ->
+	?* blank >>= fun _ ->
+	parse_term leftmost
+      ) >>= fun ty ->
+
+    if List.length patterns = 0 then error "need at least one pattern"
+    else
+      return (patterns, (match ty with None -> NoAnnotation | Some ty -> Annotated ty), Explicit)
+  ))
+  <|> try_ (surrounded (token '[' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ']') (
+    list_with_sep ~sep:(?+ blank)
+      (
+	try_ (parse_basepattern leftmost) 
+      ) >>= fun patterns ->
+    
+    option
+      (
+	?* blank >>= fun _ ->
+	parse_string "::" >>= fun _ ->
+	?* blank >>= fun _ ->
+	parse_term leftmost
+      ) >>= fun ty ->
+
+    if List.length patterns = 0 then error "need at least one pattern"
+    else
+      return (patterns, (match ty with None -> NoAnnotation | Some ty -> Annotated ty), Implicit)
+  ))
+	      
 ;;

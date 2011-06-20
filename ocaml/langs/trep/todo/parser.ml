@@ -259,8 +259,8 @@ and parse_lambda (leftmost: Pos.t) : term Parser.t =
 
   list_with_sep ~sep:(?+ blank)
     (
-      try_ (parse_baseterm leftmost) 
-      <|> (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_term Pos.none))
+      try_ (parse_basepattern leftmost) 
+      <|> (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_pattern Pos.none))
     ) >>= fun patterns ->
 
   (surrounded (?* blank) (?* blank) (parse_string "->")) >>= fun _ ->

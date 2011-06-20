@@ -27,7 +27,11 @@ type place = InNotation of op * int (*position*)
 let rec withParen (t: token) : token =
   Box [Verbatim "("; t; Verbatim ")"]
 
+let rec withAccol (t: token) : token =
+  Box [Verbatim "["; t; Verbatim "]"]
 
+let rec withBracket (t: token) : token =
+  Box [Verbatim "{"; t; Verbatim "}"]
 
 let rec term2token (te : term) (p: place) : token =
   match te with
@@ -48,6 +52,7 @@ let rec term2token (te : term) (p: place) : token =
 	| InNotation (op', _) when op'.prec > op.prec -> withParen
 	| InNotation (op', 0) when op'.prec = op.prec && op'.kind = `Infix `Right -> withParen (* as an arguments to a notation with equal priority but with non natural associativity*)
 	| InNotation (op', 1) when op'.prec = op.prec && op'.kind = `Infix `Left  -> withParen (* as an arguments to a notation with equal priority but with non natural associativity*)
+	| InApp -> withParen
 	| _ -> fun x -> x
       ) (Box [term2token (fst arg1) (InNotation (op, 0)); Space 1; Verbatim name; Space 1; term2token (fst arg2) (InNotation (op, 1))])
 
@@ -78,7 +83,39 @@ let rec term2token (te : term) (p: place) : token =
 	      Verbatim "in"; Space 1; term2token te InAs
 	     ]
        )
-	   
+
+    | Case (te, eqs) ->
+	Box [Verbatim "case"; Space 1; term2token te InAs; Space 1; Verbatim "of"; Newline;
+	     Box (intercalate (List.map (fun eq -> Box [Verbatim "|"; Space 1; equation2token eq]) eqs 
+	     ) Newline)
+	    ]
+
+    | Ifte (b, c1 ,c2) ->
+	Box [Verbatim "if"; Space 1; term2token b InAs; Space 1; Verbatim "then"; Space 1; term2token c1 InAs; Space 1; Verbatim "else"; Space 1; term2token c2 InAs]
+
+    | Lambda (quantifiers, te) -> (
+
+      (match p with
+	| InArg -> withParen
+	| _ -> fun x -> x	  
+      )
+
+      (Box (
+	[Verbatim "\\"; Space 1]
+	@ (intercalate (List.map quantifier2token quantifiers) (Space 1))
+	@ [Space 1; Verbatim "->"; Space 1; term2token te InAs]			    
+      ))  
+
+    )
+
+    | Impl (quantifier, te) -> (
+
+      (match p with
+	| InArg -> withParen
+	| _ -> fun x -> x	  
+      )
+      (Box [quantifier2token quantifier; Space 1; Verbatim "->"; Space 1; term2token te InAs])  
+    )
 
     | _ -> raise (Failure "term2token: NYI")
 
@@ -89,12 +126,56 @@ and arg2token arg =
     | (te, Hidden) -> Box [Verbatim "{"; term2token te InAs; Verbatim "}"]
 and letdef2token (p, t) =
   Box [pattern2token p InAs; Space 1; Verbatim ":="; Space 1; term2token t InAs]
+and equation2token eq =
+  match eq with
+    | NotGuarded (te1, te2) -> Box [pattern2token te1 InAs; Space 1; Verbatim ":="; Space 1; term2token te2 InAs]
+    | Guarded (te1, gs) -> Box [pattern2token te1 InAs; Space 1; 
+				Box (
+				  intercalate (
+				    List.map 
+				      (fun (g, v) -> Box [Verbatim "with"; Space 1; term2token g InAs; Space 1; Verbatim ":="; Space 1; term2token v InAs; Newline])
+				      gs
+				  ) Newline
+				)
+			       ]
+and quantifier2token q =
+  match q with
+    | (qs, annot, nat) ->  
+      let encadr = (
+	match nat with
+	  | Explicit -> if List.length qs > 1 || annot != NoAnnotation then withParen else (fun x -> x)
+	  | Hidden -> withBracket
+	  | Implicit -> withAccol
+      ) in
+      let postfix = (
+	match annot with
+	  | NoAnnotation -> (fun x -> x)
+	  | Annotated ty | Infered ty -> (fun x -> Box [x; Space 1; Verbatim "::"; Space 1; term2token ty InAs])
+      ) in
+      encadr (
+	postfix (
+	  Box (intercalates (List.map (fun hd -> pattern2token hd InArg) qs) [Space 1])
+	)
+      )
 and pattern2token pat p = 
   match pat with
     | PVar n -> Verbatim n
     | PAVar -> Verbatim "_"
     | PCste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
     | PCste (Name n) -> Verbatim n
+
+    | PApp (PCste (Symbol (name, ({kind = `Infix _; _} as op))), args) when List.length (List.filter (fun x -> snd x = Explicit) args) = 2 -> (
+      let [arg1; arg2] = List.filter (fun x -> snd x = Explicit) args in
+      (match p with
+	| InArg | InApp | InAlias -> withParen
+	| InNotation (op', _) when op'.prec > op.prec -> withParen
+	| InNotation (op', 0) when op'.prec = op.prec && op'.kind = `Infix `Right -> withParen (* as an arguments to a notation with equal priority but with non natural associativity*)
+	| InNotation (op', 1) when op'.prec = op.prec && op'.kind = `Infix `Left  -> withParen (* as an arguments to a notation with equal priority but with non natural associativity*)
+	| _ -> fun x -> x
+      ) (Box [pattern2token (fst arg1) (InNotation (op, 0)); Space 1; Verbatim name; Space 1; pattern2token (fst arg2) (InNotation (op, 1))])
+
+    )      
+
     | PApp (hd, tl) -> (
       (match p with
 	| InArg | InAlias -> withParen

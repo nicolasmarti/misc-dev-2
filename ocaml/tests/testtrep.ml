@@ -49,6 +49,13 @@ let _ = test_term "Nat + (List (List Type) - Nat)";;
 
 let _ = test_term "(*) x";;
 
-
 let _ = test_term "let x := y; f@(x + y) a r := sdf in z";;
+
+let _ = test_term "case f x of | _ := x | f x := y" ;;
+
+let _ = test_term "if x then x else x" ;;
+
+let _ = test_term "\\ A (a b :: A) {f :: B} [H :: Num A] -> a + b" ;;
+
+let _ = test_term "A -> (a b :: A) -> {f :: B} -> [H :: Num A] -> a + b" ;;
 
