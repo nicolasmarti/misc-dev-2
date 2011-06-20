@@ -67,6 +67,19 @@ let rec term2token (te : term) (p: place) : token =
 
     | SrcInfo (te, _) -> term2token te p
 
+    | Let (r, binders, te) -> 
+      (match p with
+	| InArg -> withParen
+	| _ -> fun x -> x	  
+      ) (IBox [Verbatim (if r then "let rec" else "let"); 
+	      Space 1; 				      
+	      Box (intercalates (List.map letdef2token binders) [Verbatim ";"; Space 1; Newline]); 
+	      Verbatim "in"; 
+	      Space 1; term2token te InAs
+	     ]
+       )
+	   
+
     | _ -> raise (Failure "term2token: NYI")
 
 and arg2token arg =
@@ -74,5 +87,25 @@ and arg2token arg =
     | (te, Explicit) -> Box [term2token te InArg]
     | (te, Implicit) -> Box [Verbatim "["; term2token te InAs; Verbatim "]"]
     | (te, Hidden) -> Box [Verbatim "{"; term2token te InAs; Verbatim "}"]
+and letdef2token (p, t) =
+  Box [pattern2token p InAs; Space 1; Verbatim ":="; Space 1; term2token t InAs]
+and pattern2token pat p = 
+  match pat with
+    | PVar n -> Verbatim n
+    | PAVar -> Verbatim "_"
+    | PCste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
+    | PCste (Name n) -> Verbatim n
+    | PApp (hd, tl) -> (
 
+      (match p with
+	| InArg -> withParen
+	| _ -> fun x -> x	  
+      ) (Box (intercalate ((pattern2token hd InApp) :: (List.map (fun x -> parg2token x) tl)) (Space 1)))
+
+    )
+and parg2token arg =
+  match arg with
+    | (te, Explicit) -> Box [pattern2token te InArg]
+    | (te, Implicit) -> Box [Verbatim "["; pattern2token te InAs; Verbatim "]"]
+    | (te, Hidden) -> Box [Verbatim "{"; pattern2token te InAs; Verbatim "}"]
 ;;

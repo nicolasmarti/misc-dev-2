@@ -49,3 +49,6 @@ let _ = test_term "Nat + (List (List Type) - Nat)";;
 
 let _ = test_term "(*) x";;
 
+
+let _ = test_term "let x := y; f a r := sdf in z";;
+

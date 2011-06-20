@@ -5,6 +5,8 @@ open Printf;;
 
 open Trep;;
 
+open Trepprinter;;
+
 (* Stream of chars with buffering and memoization *)
 module Stream = struct
 
@@ -281,7 +283,24 @@ and parse_letbind (leftmost: Pos.t) : term Parser.t =
     return (Let ((match r with Some _ -> true | _ -> false), bindings, te))    
 
 and parse_pattern (leftmost: Pos.t) : pattern Parser.t =
-  error "NYI: should first do the prefix|infix|postfix parser for term"
+  (* This is not correct ... we lack the PAlias constructor *)
+  parse_term leftmost >>= fun te -> (
+    let rec term2pattern (te: term) =
+	match te with
+	  | Var (_, n) -> PVar n
+	  | Cste c -> PCste c
+	  | AVar _ -> PAVar
+	  | App (f, args) ->
+	    PApp (term2pattern f, List.map (fun (p, n) -> (term2pattern p, n)) args)
+	  | TyAnnotation (te, _) -> term2pattern te
+	  | SrcInfo (te, _) -> term2pattern te
+    in
+    try
+      return (term2pattern te)
+    with
+      | _ -> error "not a pattern"
+  )
+  
  
 and parse_Type : term Parser.t =  
   parse_string "Type" >>= fun _ -> 

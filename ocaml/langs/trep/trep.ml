@@ -69,7 +69,7 @@ and pattern = PVar of name
 	      | PAVar 
 	      | PCste of symbol
 	      | PAlias of name * pattern
-	      | PApp of symbol * (pattern * nature) list
+	      | PApp of pattern * (pattern * nature) list
 
 and nature = Explicit
 	     | Hidden
