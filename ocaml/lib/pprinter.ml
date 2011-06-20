@@ -245,7 +245,7 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
   match t with
     | Verbatim s ->
 	string_to_box s
-    | Box l -> (
+    | IBox l -> (
 
 	let spacebox n = { data = (String.concat "" (repeat " " n))::[];
 			   height = 1;
@@ -269,7 +269,7 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 		  if (remainingwidth < n) then
 		    (w - indent, indentbox :: [], totalboxes @ lineboxes::[])
 		  else
-		    if remainingwidth = w - indent && List.length totalboxes > 0 then (
+		    if remainingwidth = w - indent && List.length lineboxes = 0 then (
 		      (*printf "%d = %d - %d && [linesbox] == %d && [totalboxes] == %d \n" remainingwidth w indent (List.length lineboxes) (List.length totalboxes);*)
 		      (w - indent, lineboxes, totalboxes)
 		      (*(remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)*)
@@ -279,11 +279,14 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 
 	      | t ->
 		  let b = token2box t remainingwidth indent in
-		    if (b.width > remainingwidth) then (
+		    if (b.width > remainingwidth || b.height > 1) then (
 
-		      let b = token2box t w indent in
-		      (w - b.width, b :: [], totalboxes @ lineboxes::[])
-			
+		      let b = token2box t (w - indent) indent in
+			if (b.height > 1) then 
+			  (w - indent, indentbox::[], totalboxes @ lineboxes::(indentbox :: b :: [])::[])
+			else
+			  (w - indent - b.width, indentbox :: b :: [], totalboxes @ lineboxes::[])
+
 		    ) else (
 
 		      (remainingwidth - b.width, lineboxes @ b :: [], totalboxes)
@@ -313,7 +316,7 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 	  ) emptybox l
 
       )
-    | IBox l -> (
+    | Box l -> (
 
 	let spacebox n = { data = (String.concat "" (repeat " " n))::[];
 			   height = 1;
@@ -337,7 +340,7 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 		  if (remainingwidth < n) then
 		    (w - indent, indentbox :: [], totalboxes @ lineboxes::[])
 		  else
-		    if remainingwidth = w - indent && List.length totalboxes > 0 then (
+		    if remainingwidth = w - indent && List.length lineboxes = 0 then (
 		      (*printf "%d = %d - %d && [linesbox] == %d && [totalboxes] == %d \n" remainingwidth w indent (List.length lineboxes) (List.length totalboxes);*)
 		      (w - indent, lineboxes, totalboxes)
 		      (*(remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)*)
@@ -351,9 +354,9 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 
 		      let b = token2box t (w - indent) indent in
 			if (b.height > 1) then 
-			  (w - indent, indentbox::[], totalboxes @ lineboxes::(indentbox :: b :: [])::[])
+			  (w, [], totalboxes @ lineboxes::(indentbox :: b :: [])::[])
 			else
-			  (w - indent - b.width, indentbox :: b :: [], totalboxes @ lineboxes::[])
+			  (w - b.width, b :: [], totalboxes @ lineboxes::[])
 
 		    ) else (
 

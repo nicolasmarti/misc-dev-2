@@ -71,11 +71,10 @@ let rec term2token (te : term) (p: place) : token =
       (match p with
 	| InArg -> withParen
 	| _ -> fun x -> x	  
-      ) (IBox [Verbatim (if r then "let rec" else "let"); 
+      ) (Box [Verbatim (if r then "let rec" else "let"); 
 	      Space 1; 				      
 	      Box (intercalates (List.map letdef2token binders) [Verbatim ";"; Space 1; Newline]); 
-	      Verbatim "in"; 
-	      Space 1; term2token te InAs
+	      Verbatim "in"; Space 1; term2token te InAs
 	     ]
        )
 	   
