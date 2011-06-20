@@ -2,6 +2,8 @@ open Planck;;
 module Pos = Position.File
 ;;
 
+open Op_prec;;
+
 (*
   >= 0 -> quantified var with debruijn index
   < 0 -> free var
@@ -11,7 +13,7 @@ type index = int
 type name = string
 
 type symbol = Name of name
-	      | Symbol of name (* * symbol info: prefix|infix|suffix + assoc/prio *)
+	      | Symbol of name * op
 
 module SymbolMap = Map.Make(
   struct
@@ -39,7 +41,7 @@ object
   method uuid: int = 0
   method virtual get_name: string
   method virtual get_type: 'a
-  method virtual pprint: token
+  method virtual pprint: unit -> token
   method virtual apply: 'a list -> 'a
 end;;
 

@@ -120,12 +120,103 @@ let constant_int st = begin
    return (int_of_string s))
 end st
 
+(*fold : ('a -> 'b -> 'c -> 'c) -> ('a, 'b) t -> 'c -> 'c*)
+
+let infix st = begin
+  
+  Hashtbl.fold (fun symb op acc ->
+    match op.kind with
+      | `Infix _ -> (
+	(parse_string symb >>= fun () ->
+	 return (Op_prec.infix symb (fun left right -> 
+	   App (Cste (Symbol (symb, op)), [(left, Explicit); (right, Explicit)])
+	 )
+	 )
+	) <|> acc
+      )
+      | _ -> acc
+  ) Op_prec.tbl (error "Not a infix")
+
+end st
+
+let binop st = begin
+  
+  Hashtbl.fold (fun symb op acc ->
+    (surrounded 
+       (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
+       (?* blank >>= fun () -> token ')') 
+       (parse_string symb)) >>= fun () -> return (Cste (Symbol (symb, op))
+     ) <|> acc
+  ) Op_prec.tbl (error "Not a binop")
+
+end st
+
+let combine_leftrec (non_leftrec : 'a Parser.t) (leftrec : 'a -> 'a Parser.t) =
+  
+  non_leftrec >>= fun left ->
+  
+  let rec leftrecs left =
+    (leftrec left >>= fun left' -> leftrecs left')
+    <|> return left
+  in
+  leftrecs left
+
+
+
 let rec parse_term (leftmost: Pos.t) : term Parser.t =
-  ?* blank >>= fun () ->
+  try_ (expr leftmost >>= fun x -> return (build x))
+  <|> try_ (
+    ?* blank >>= fun () ->
     parse_leftmost leftmost (
       withPos (with_type (parse_appterm leftmost)) >>= fun (te, startp, endp) ->
-	return (SrcInfo (te, (startp, endp)))
+      return (SrcInfo (te, (startp, endp)))
     )
+  )
+
+(* Eta expansions with [st] are required, unfortunatelly *)
+and expr (leftmost: Pos.t) st = begin
+
+  combine_leftrec (expr_non_leftrec leftmost) (expr_leftrec leftmost)
+
+end st
+
+and expr_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary minus *)  
+
+  (* Skip spaces *)
+  ?* blank >>= fun () -> 
+
+  (parse_appterm leftmost >>= fun sv -> return (Op_prec.terminal sv))
+
+  <|> (token '(' >>= fun () ->
+       ?* blank >>= fun () ->
+       expr leftmost  >>= fun e ->
+       ?* blank >>= fun () ->
+       token ')' <?> "missing closing paren" >>= fun () ->
+       return (Op_prec.parened (fun s -> s) e))
+      
+(*
+
+  TODO: fold for prefix
+  (* Unary minus *)      
+  <|> (token '-' >>= fun () ->
+       ?* blank >>= fun () ->
+       expr >>= fun e ->
+       return (prefix "~" (fun (s,v) -> Printf.sprintf "~ %s" s, -v) e))
+*)
+
+end st
+
+and expr_leftrec (leftmost: Pos.t) e_left st = begin (* binop expr *)
+
+  ?* blank >>= fun () ->
+
+  (infix >>= fun binop ->
+   ?* blank >>= fun () ->
+   expr leftmost >>= fun e_right ->
+   return (binop e_left e_right))
+
+end st
+
 
 and with_type (p: term Parser.t) : term Parser.t =
   p >>= fun res ->
@@ -156,18 +247,42 @@ and parse_appterm (leftmost: Str.Pos.t) : term Parser.t =
 
 and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
   parse_leftmost leftmost (
-    withPos((*
+    withPos(
      try_ (parse_letbind leftmost)
-     <|> try_ (parse_case leftmost)
+     (*<|> try_ (parse_case leftmost)
      <|> try_ (parse_ifte leftmost)
      <|> try_ (parse_lambda leftmost)
      <|> try_ (parse_alias leftmost)*)
-     try_ parse_Type
+     <|> try_ parse_Type
      <|> try_ parse_var 
      <|> try_ parse_avar
     ) 
   ) >>= fun (te, startp, endp) ->
     return (SrcInfo (te, (startp, endp)))
+
+and parse_letbind (leftmost: Pos.t) : term Parser.t =
+  parse_string "let" >>= fun _ ->
+  ?+ blank >>= fun _ ->
+
+  option (
+    parse_string "rec" >>= fun _ ->
+    ?+ blank) >>= fun r ->
+
+  list_with_sep ~sep:(surrounded (?* blank) (?* blank) (token ';')) 
+    (
+      parse_pattern leftmost >>= fun pattern ->
+      surrounded (?* blank) (?* blank) (parse_string ":=") >>= fun _ ->
+      parse_term leftmost >>= fun value ->	
+	return (pattern, value)
+    ) >>= fun bindings ->
+
+  (surrounded (?+ blank) (?+ blank) (parse_string "in")) >>= fun _ ->
+
+  parse_term leftmost >>= fun te ->
+    return (Let ((match r with Some _ -> true | _ -> false), bindings, te))    
+
+and parse_pattern (leftmost: Pos.t) : pattern Parser.t =
+  error "NYI: should first do the prefix|infix|postfix parser for term"
  
 and parse_Type : term Parser.t =  
   parse_string "Type" >>= fun _ -> 

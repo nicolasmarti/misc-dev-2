@@ -10,4 +10,5 @@
 
 <langs/trep/trep.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepparser.ml>: pkg_spotlib, pkg_planck
+<langs/trep/trepprinter.ml>: pkg_spotlib, pkg_planck
 <tests/testtrep.{ml,byte,native}>: pkg_spotlib, pkg_planck
