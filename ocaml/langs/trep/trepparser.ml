@@ -127,11 +127,11 @@ let infix st = begin
   Hashtbl.fold (fun symb op acc ->
     match op.kind with
       | `Infix _ -> (
-	(parse_string symb >>= fun () ->
-	 return (Op_prec.infix symb (fun left right -> 
-	   App (Cste (Symbol (symb, op)), [(left, Explicit); (right, Explicit)])
-	 )
-	 )
+	try_ (parse_string symb >>= fun () ->
+	      return (Op_prec.infix symb (fun left right -> 
+		App (Cste (Symbol (symb, op)), [(left, Explicit); (right, Explicit)])
+	      )
+	      )
 	) <|> acc
       )
       | _ -> acc
@@ -142,11 +142,11 @@ end st
 let binop st = begin
   
   Hashtbl.fold (fun symb op acc ->
-    (surrounded 
-       (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
-       (?* blank >>= fun () -> token ')') 
-       (parse_string symb)) >>= fun () -> return (Cste (Symbol (symb, op))
-     ) <|> acc
+    try_ (surrounded 
+	 (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
+	 (?* blank >>= fun () -> token ')') 
+	 (parse_string symb) >>= fun () -> return (Cste (Symbol (symb, op)))
+    ) <|> acc
   ) Op_prec.tbl (error "Not a binop")
 
 end st
@@ -160,8 +160,6 @@ let combine_leftrec (non_leftrec : 'a Parser.t) (leftrec : 'a -> 'a Parser.t) =
     <|> return left
   in
   leftrecs left
-
-
 
 let rec parse_term (leftmost: Pos.t) : term Parser.t =
   try_ (expr leftmost >>= fun x -> return (build x))
@@ -185,9 +183,9 @@ and expr_non_leftrec (leftmost: Pos.t) st = begin (* constant, parened and unary
   (* Skip spaces *)
   ?* blank >>= fun () -> 
 
-  (parse_appterm leftmost >>= fun sv -> return (Op_prec.terminal sv))
+  try_ (parse_appterm leftmost >>= fun sv -> return (Op_prec.terminal sv))
 
-  <|> (token '(' >>= fun () ->
+  <|> try_ (token '(' >>= fun () ->
        ?* blank >>= fun () ->
        expr leftmost  >>= fun e ->
        ?* blank >>= fun () ->
@@ -253,6 +251,7 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
      <|> try_ (parse_ifte leftmost)
      <|> try_ (parse_lambda leftmost)
      <|> try_ (parse_alias leftmost)*)
+     <|> try_ binop
      <|> try_ parse_Type
      <|> try_ parse_var 
      <|> try_ parse_avar
