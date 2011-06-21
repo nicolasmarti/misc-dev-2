@@ -221,7 +221,7 @@ let tickPriceFromInt (i: int) : tickType =
 
 ;;
 
-
+type mktDepthTable = ((float * int * string option) option) array;;
 
 module IBTWS: sig 
     
@@ -233,6 +233,12 @@ module IBTWS: sig
 
   val reqMktData: t -> contract -> genericTickType list -> bool -> (msg -> unit) -> int
   val cancelMktData: t -> int -> unit
+
+  (* the handler function arguments correspond to market depth 
+     in (bid, ask)
+  *)
+  val reqMktDepth: t -> contract -> int -> (mktDepthTable * mktDepthTable -> unit) -> int
+  val cancelMktDepth: t -> int -> unit
 
   val recv_and_process: t -> unit
 
@@ -272,6 +278,18 @@ end = struct
     (*  handler *)
     mutable mktDataHandlers: (msg -> unit) IndexMap.t;
 
+    (********************************************************************)
+
+    (* counter *)
+    mutable mktDepthIds: int;
+    
+    (*  handler *)
+    mutable mktDepthHandlers: (mktDepthTable * mktDepthTable -> unit) IndexMap.t;
+    
+    (* data *)
+    mutable mktDepthData: (mktDepthTable * mktDepthTable) IndexMap.t
+    
+
   };;
 
   let connect ?(addr = "127.0.0.1") ?(port = 7496) () = 
@@ -290,7 +308,13 @@ end = struct
       mktDataIds = 0;
       mktDataHandlers = IndexMap.empty;
 
+      mktDepthIds = 0;
+      mktDepthHandlers = IndexMap.empty;
+      mktDepthData = IndexMap.empty;
+
     };;
+
+  (***********************************************)
 
   let reqContractDetails data contract handler = 
     let id = data.contractDetailsIds in
@@ -298,6 +322,8 @@ end = struct
     data.contractDetailsHandlers <- IndexMap.add id handler data.contractDetailsHandlers;
     data.contractDetailsData <- IndexMap.add id [] data.contractDetailsData;
     reqContractDetails id contract data.out_c;;
+
+  (***********************************************)
 
   let reqMktData data contract genticklist snapshot handler =
     let id = data.mktDataIds in
@@ -312,29 +338,93 @@ end = struct
     data.mktDataHandlers <- IndexMap.remove id data.mktDataHandlers    
   ;;
 
+  (***********************************************)
+
+  let reqMktDepth data contract size handler =
+    let id = data.mktDepthIds in
+    data.mktDepthIds <- id + 1;
+    data.mktDepthHandlers <- IndexMap.add id handler data.mktDepthHandlers;
+    data.mktDepthData <- IndexMap.add id (Array.make size None, Array.make size None) data.mktDepthData;
+    reqMktDepth id contract size data.out_c;
+    id
+  ;;    
+
+  let cancelMktDepth data id =
+    cancelMktDepth id data.out_c;
+    data.mktDepthHandlers <- IndexMap.remove id data.mktDepthHandlers;
+    data.mktDepthData <- IndexMap.remove id data.mktDepthData;
+  ;;
+
+
+  (* TODO: better error management!!! *)
   let recv_and_process data =
     let msg = processMsg data.in_c in
     match msg with
       (* contractDetails: buffered until end *)
-      | ContractData (_, id, _) -> 
-	let msgs = IndexMap.find id data.contractDetailsData in
-	data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
-      | BondData (_, id, _) -> 
-	let msgs = IndexMap.find id data.contractDetailsData in
-	data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
-      | ContractDataEnd (_, id) ->
-	let f = IndexMap.find id data.contractDetailsHandlers in
-	let msgs = IndexMap.find id data.contractDetailsData in
-	data.contractDetailsHandlers <- IndexMap.remove id data.contractDetailsHandlers;
-	data.contractDetailsData <- IndexMap.remove id data.contractDetailsData;
-	f msgs
-      | TickPrice (_, id, _, _, _, _) | TickSize (_, id, _, _) | TickString (_, id, _, _) | TickGeneric (_, id, _, _) ->
-	let f = IndexMap.find id data.mktDataHandlers in
-	f msg
-      | TickSnapshotEnd (_, id) ->
-	let f = IndexMap.find id data.mktDataHandlers in
-	data.mktDataHandlers <- IndexMap.remove id data.mktDataHandlers;
-	f msg
+      | ContractData (_, id, _) -> (
+	try (
+	  let msgs = IndexMap.find id data.contractDetailsData in
+	  data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
+	) with 
+	  | _ -> ()
+      )
+      | BondData (_, id, _) -> (
+	try (
+	  let msgs = IndexMap.find id data.contractDetailsData in
+	  data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
+	) with
+	  | _ -> ()
+      )
+      | ContractDataEnd (_, id) -> (
+	try (
+	  let f = IndexMap.find id data.contractDetailsHandlers in
+	  let msgs = IndexMap.find id data.contractDetailsData in
+	  data.contractDetailsHandlers <- IndexMap.remove id data.contractDetailsHandlers;
+	  data.contractDetailsData <- IndexMap.remove id data.contractDetailsData;
+	  f msgs
+	) with
+	  | _ -> ()
+      )
+      | TickPrice (_, id, _, _, _, _) | TickSize (_, id, _, _) | TickString (_, id, _, _) | TickGeneric (_, id, _, _) -> (
+	try (
+	  let f = IndexMap.find id data.mktDataHandlers in
+	  f msg
+	) with
+	  | _ -> ()
+      )
+      | TickSnapshotEnd (_, id) -> (
+	try (
+	  let f = IndexMap.find id data.mktDataHandlers in
+	  data.mktDataHandlers <- IndexMap.remove id data.mktDataHandlers;
+	  f msg
+	) with
+	  | _ -> ()
+      )
+      | MktDepth (version, id, position, operation, side, price, size) -> (
+	try (
+	  let f = IndexMap.find id data.mktDepthHandlers in
+	  let d = IndexMap.find id data.mktDepthData in
+	  let a = if side = 0 then snd d else fst d in
+	  let _ = (
+	    match operation with
+	      | 0 | 1 -> a.(position) <- Some (price, size, None)
+	      | 2 -> a.(position) <- None
+	  ) in
+	  f d
+	) with
+	  | _ -> ()
+      )
+      | MktDepth2 (version, id, position, mktmaker, operation, side, price, size) -> (
+	  let f = IndexMap.find id data.mktDepthHandlers in
+	  let d = IndexMap.find id data.mktDepthData in
+	  let a = if side = 0 then snd d else fst d in
+	  let _ = (
+	    match operation with
+	      | 0 | 1 -> a.(position) <- Some (price, size, Some mktmaker)
+	      | 2 -> a.(position) <- None
+	  ) in
+	  f d
+      )
       | _ -> raise (Failure "recv_and_process: msg not yet supported")
 ;;
 
