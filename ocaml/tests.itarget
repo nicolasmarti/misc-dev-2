@@ -3,3 +3,5 @@ tests/testmllvm.native
 tests/testpprinter.native
 tests/testibtws.native
 tests/testtrep.native
+
+langs/lisp/lisp.native
