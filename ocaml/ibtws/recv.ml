@@ -72,32 +72,45 @@ type version = int;;
 type id = int;;
 
 type msg = ErrMsg of version * id * int * string
+
+	   | NextValidId of version * id 
+
 	   | TickPrice of version * id * int * float * int * int
 	   | TickSize of version * id * int * int
-	   | NextValidId of version * id 
 	   | TickString of version * id * int * string
 	   | TickGeneric of version * id * int * float
 	   | TickSnapshotEnd of version * id
+
 	   | MktDepth of version * id * int * int * int * float * int
 	   | MktDepth2 of version * id * int * string * int * int * float * int
+
 	   | HistData of version * id * string * string * (string * float * float * float * float * int * float * string * int) list
+
 	   | RTBar of version * id * int * float * float * float * float * int * float * int
+
 	   | ScannerParams of version * string
 	   | ScannerData of version * id * scanData array
+
 	   | FundamentalData of version * id * string
+
 	   | ContractData of version * id * contractDetails
 	   | BondData of version * id * contractDetails
 	   | ContractDataEnd of version * id
+
 	   | CurrentTime of version * int
+
 	   | OrderStatus of version * id * string * int * int * float * int * int * float * int * string
 	   | OpenOrder of version * order * contract * orderState
+
 	   | AccountValue of version * string * string * string * string
 	   | PortFolioValue of version * contract * int * float * float * float * float * float * string
 	   | AccountUpdateTime of version * string
+	   | AccountDownloadEnd of version * string
+
 	   | ExecutionData of version * id * int64 * contract * execution 
 	   | OpenOrderEnd of version
-	   | AccountDownloadEnd of version * string
 	   | ExecutionDataEnd of version * id
+
 ;;
 
 (* EClientSocketBase::processMsg *)

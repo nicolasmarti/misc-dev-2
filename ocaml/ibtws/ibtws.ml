@@ -98,7 +98,7 @@ type tickType = BID_SIZE
 		| VOLUME_RATE
 ;;
 
-let tickPrice2Int (t: tickType) : int =
+let tickType2Int (t: tickType) : int =
   match t with
     | BID_SIZE -> 0
     | BID_PRICE -> 1
@@ -159,7 +159,7 @@ let tickPrice2Int (t: tickType) : int =
     | VOLUME_RATE -> 56
 ;;
 
-let tickPriceFromInt (i: int) : tickType =
+let tickTypeFromInt (i: int) : tickType =
   match i with
     | 0 -> BID_SIZE
     | 1 -> BID_PRICE
@@ -245,6 +245,12 @@ let whatToShow2strign (w: whatToShow) : string =
     | OPTION_OPEN_INTEREST -> "OPTION_OPEN_INTEREST"
 ;;
 
+type mktData = MDTickPrice of tickType * float * int * bool
+	       | MDTickSize of tickType * int
+	       | MDTickGeneric of tickType * float
+	       | MDTickString of tickType * string
+;;
+
 
 type mktDepthTable = ((float * int * string option) option) array;;
 
@@ -256,9 +262,9 @@ module IBTWS: sig
 
   val connect: ?addr:string -> ?port:int -> unit -> t  
 
-  val reqContractDetails: t -> contract -> (msg list -> unit) -> unit
+  val reqContractDetails: t -> contract -> (contractDetails list -> unit) -> unit
 
-  val reqMktData: t -> contract -> genericTickType list -> bool -> (msg -> unit) -> int
+  val reqMktData: t -> contract -> genericTickType list -> bool -> (mktData -> unit) -> int
   val cancelMktData: t -> int -> unit
 
   (* the handler function arguments correspond to market depth 
@@ -294,10 +300,10 @@ end = struct
     mutable contractDetailsIds: int;
 
     (* contract details handler *)
-    mutable contractDetailsHandlers: (msg list -> unit) IndexMap.t;
+    mutable contractDetailsHandlers: (contractDetails list -> unit) IndexMap.t;
 
     (* contract details data *)
-    mutable contractDetailsData: (msg list) IndexMap.t;
+    mutable contractDetailsData: (contractDetails list) IndexMap.t;
 
     (********************************************************************)
 
@@ -305,7 +311,7 @@ end = struct
     mutable mktDataIds: int;
 
     (*  handler *)
-    mutable mktDataHandlers: (msg -> unit) IndexMap.t;
+    mutable mktDataHandlers: (mktData -> unit) IndexMap.t;
 
     (********************************************************************)
 
@@ -409,17 +415,17 @@ end = struct
     let msg = processMsg data.in_c in
     match msg with
       (* contractDetails: buffered until end *)
-      | ContractData (_, id, _) -> (
+      | ContractData (_, id, cd) -> (
 	try (
-	  let msgs = IndexMap.find id data.contractDetailsData in
-	  data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
+	  let cds = IndexMap.find id data.contractDetailsData in
+	  data.contractDetailsData <- IndexMap.add id (cds @ [cd]) data.contractDetailsData;
 	) with 
 	  | _ -> ()
       )
-      | BondData (_, id, _) -> (
+      | BondData (_, id, cd) -> (
 	try (
-	  let msgs = IndexMap.find id data.contractDetailsData in
-	  data.contractDetailsData <- IndexMap.add id (msgs @ [msg]) data.contractDetailsData;
+	  let cds = IndexMap.find id data.contractDetailsData in
+	  data.contractDetailsData <- IndexMap.add id (cds @ [cd]) data.contractDetailsData;
 	) with
 	  | _ -> ()
       )
@@ -433,18 +439,37 @@ end = struct
 	) with
 	  | _ -> ()
       )
-      | TickPrice (_, id, _, _, _, _) | TickSize (_, id, _, _) | TickString (_, id, _, _) | TickGeneric (_, id, _, _) -> (
+      | TickPrice (_, id, ticktype, price, size, canauto) -> (
 	try (
 	  let f = IndexMap.find id data.mktDataHandlers in
-	  f msg
+	  f (MDTickPrice (tickTypeFromInt ticktype, price, size, if canauto = 0 then false else true))
+	) with
+	  | _ -> ()
+      )
+      | TickSize (_, id, ticktype, size) -> (
+	try (
+	  let f = IndexMap.find id data.mktDataHandlers in
+	  f (MDTickSize (tickTypeFromInt ticktype, size))
+	) with
+	  | _ -> ()
+      )
+      | TickString (_, id, ticktype, value) -> (
+	try (
+	  let f = IndexMap.find id data.mktDataHandlers in
+	  f (MDTickString (tickTypeFromInt ticktype, value))
+	) with
+	  | _ -> ()
+      )
+      | TickGeneric (_, id, ticktype, value) -> (
+	try (
+	  let f = IndexMap.find id data.mktDataHandlers in
+	  f (MDTickGeneric (tickTypeFromInt ticktype, value))
 	) with
 	  | _ -> ()
       )
       | TickSnapshotEnd (_, id) -> (
 	try (
-	  let f = IndexMap.find id data.mktDataHandlers in
-	  data.mktDataHandlers <- IndexMap.remove id data.mktDataHandlers;
-	  f msg
+	  data.mktDataHandlers <- IndexMap.remove id data.mktDataHandlers
 	) with
 	  | _ -> ()
       )
