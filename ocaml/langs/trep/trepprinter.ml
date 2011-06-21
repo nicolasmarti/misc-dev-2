@@ -188,4 +188,16 @@ and parg2token arg =
     | (te, Explicit) -> Box [pattern2token te InArg]
     | (te, Implicit) -> Box [Verbatim "["; pattern2token te InAs; Verbatim "]"]
     | (te, Hidden) -> Box [Verbatim "{"; pattern2token te InAs; Verbatim "}"]
+and declaration2token (d: declaration) = 
+  match d with
+    | Signature (s, ty) -> (
+      Box [
+	(match s with
+	  | Symbol (s, _) -> Verbatim (String.concat "" ["("; s; ")"])
+	  | Name s -> Verbatim s
+	); Space 1; Verbatim "::"; Space 1; term2token ty InAs
+      ]
+    )
+    | Equation eq -> equation2token eq
+    | _ -> raise (Failure "NYI")
 ;;

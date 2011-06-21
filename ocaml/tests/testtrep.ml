@@ -25,12 +25,18 @@ let test_parse_print parse print s =
   | Result.Ok (res, _) -> 
       printbox (print res)
   | Result.Error (pos, s) ->
-      Format.eprintf "%a: syntax error: %s@." Position.File.format pos s;      
+    Format.eprintf "%a: syntax error: %s@." Position.File.format pos s;      
+    raise Pervasives.Exit
 ;;
 
 
 let test_term = test_parse_print (fun x -> parse_term (Position.File.top "test") x) (fun res -> (token2box (term2token res InAs) 400 2))
 ;;
+
+let test_pattern = test_parse_print (fun x -> parse_pattern (Position.File.top "test") x) (fun res -> (token2box (pattern2token res InAs) 400 2))
+;;
+
+let _ = test_pattern "a+b :=" ;;
 
 
 let _ = test_term "Type";;
@@ -43,19 +49,26 @@ let _ = test_term "List (List Type)";;
 
 let _ = test_term "Nat + List (List Type)";;
 
-let _ = test_term "Nat + List (List Type) - Nat * x";;
+let _ = test_term "(Nat + List (List Type) - Nat * x) - d";;
 
 let _ = test_term "Nat + (List (List Type) - Nat)";;
 
 let _ = test_term "(*) x";;
 
-let _ = test_term "let x := y; f@(x + y) a r := sdf in z";;
+let _ = test_term "let x := y; f@(x + y) a r := doudou; g@(x+y) := sdf in z";;
 
 let _ = test_term "case f x of | _ := x | f x := y" ;;
 
-let _ = test_term "if x then x else x" ;;
+let _ = test_term "if x + y then x - r else x - z" ;;
 
 let _ = test_term "\\ A (a b :: A) {f :: B} [H :: Num A] -> a + b" ;;
 
 let _ = test_term "A -> (a b :: A) -> {f :: B} -> [H :: Num A] -> a + b" ;;
+
+let test_declaration = test_parse_print (fun x -> parse_declaration (Position.File.top "test") x) (fun res -> (token2box (declaration2token res) 400 2))
+;;
+
+let _ = test_declaration "(+) :: {A} -> [Num A] -> A -> A -> A" ;;
+
+let _ = test_declaration "b + a  :=  b + a" ;;
 

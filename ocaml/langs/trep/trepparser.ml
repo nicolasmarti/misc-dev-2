@@ -111,8 +111,10 @@ let parse_string (s: string) : unit Parser.t =
 
 let parse_leftmost (leftmost: Pos.t) (p : 'a Parser.t) : 'a Parser.t =
   position >>= fun curr_pos ->
-    if curr_pos.Pos.column < leftmost.Pos.column then
+    if curr_pos.Pos.column < leftmost.Pos.column then (
+      printf "Lefter than leftmost\n";
       error "Lefter than leftmost"
+    )
     else
       p
 
@@ -179,7 +181,7 @@ let combine_leftrec (non_leftrec : 'a Parser.t) (leftrec : 'a -> 'a Parser.t) =
   non_leftrec >>= fun left ->
   
   let rec leftrecs left =
-    (leftrec left >>= fun left' -> leftrecs left')
+    try_ (leftrec left >>= fun left' -> leftrecs left')
     <|> return left
   in
   leftrecs left
@@ -418,11 +420,11 @@ and parse_equation (leftmost: Pos.t) : equation Parser.t =
   position >>= fun equation_pos ->
 
   parse_pattern leftmost >>= fun te ->
-  ?+ blank >>= fun _ ->
     
+  printbox (token2box (pattern2token te InAs) 400 2);
+
   option (
-    parse_string "with" >>= fun _ ->
-    ?+ blank >>= fun _ ->
+    surrounded (?+ blank) (?+ blank) (parse_string "with") >>= fun _ ->
 
     list_with_sep ~sep:(surrounded (?* blank) (?* blank) (parse_string "with"))   
       (
@@ -435,10 +437,11 @@ and parse_equation (leftmost: Pos.t) : equation Parser.t =
   ) >>= fun guarded ->
     match guarded with
       | Some gs -> return (Guarded (te, gs))
-      | None ->
-	  surrounded (?* blank) (?* blank) (parse_string ":=") >>= fun _ ->
-	  parse_term equation_pos >>= fun value ->	
-	    return (NotGuarded (te, value))
+      | None -> (
+	surrounded (?* blank) (?* blank) (parse_string ":=") >>= fun _ ->
+	parse_term equation_pos >>= fun value ->	
+	return (NotGuarded (te, value))
+      )
 
 and parse_ifte (leftmost: Pos.t) : term Parser.t =	  
 
@@ -534,5 +537,22 @@ and parse_quantifier (leftmost: Pos.t): quantifier Parser.t =
     else
       return (patterns, (match ty with None -> NoAnnotation | Some ty -> Annotated ty), Implicit)
   ))
-	      
+
+and  parse_declaration (leftmost: Pos.t) : declaration Parser.t =
+  try_ (parse_signature leftmost)
+  <|> try_ (parse_equation leftmost >>= fun eq -> return (Equation eq))
+
+and parse_signature (leftmost: Pos.t) : declaration Parser.t =
+  (try_ (binop_pattern >>= fun (PCste s) -> return s)
+   <|> (parse_name >>= fun s -> return (Name s))   
+  ) >>= fun symbol ->
+  
+  (surrounded (?* blank) (?* blank) (parse_string "::")) >>= fun _ ->
+
+  position >>= fun start_pos -> 
+
+  parse_term start_pos >>= fun ty ->
+
+  return (Signature (symbol, ty))
+
 ;;
