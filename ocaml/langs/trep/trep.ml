@@ -57,7 +57,7 @@ type term = Type of univ option
 	    | Ifte of term * term * term
 	    | App of term * arg list
 	    | Case of term * equation list
-	    | Where of term * declaration list
+	    (*| Where of term * declaration list*)
 
 	    | TyAnnotation of term * tyAnnotation
 	    | SrcInfo of term * position
@@ -87,7 +87,7 @@ and tyAnnotation = NoAnnotation
 		   | Annotated of term
 
 and declaration = Signature of symbol * term
-		  | Equation of equation
+		  | Equation of equation * (* where clause *) declaration list
 		  | Inductive of name * quantifier list * term * (symbol * term) list
 		  | RecordDecl of name * quantifier list * term * declaration list
 
@@ -265,12 +265,12 @@ let rec term_substitution (s: substitution) (te: term) : term =
       Case (term_substitution s te,
 	    List.map (fun hd -> equation_substitution s hd) eqs
       )
-
+(*
     | Where (te, decls) ->
       Where (term_substitution s te,
 	    List.map (fun hd -> declaration_substitution s hd) decls
       )
-
+*)
     | TyAnnotation (te, ty) ->
       TyAnnotation (term_substitution s te,
 		    tyAnnotation_substitution s ty)
@@ -309,7 +309,7 @@ and declaration_substitution (s: substitution) (decl: declaration) : declaration
     | Signature (symb, te) ->
       Signature (symb, term_substitution s te)
 
-    | Equation eq -> Equation (equation_substitution s eq)
+    | Equation (eq, decls) -> Equation (equation_substitution s eq, List.map (declaration_substitution s) decls)
 
     | Inductive (n, args, ty, constrs) ->
       let (args', s') = List.fold_left (fun (args, s) hd -> 
@@ -417,12 +417,12 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       Case (leveled_shift_term te level delta,
 	    List.map (fun hd -> leveled_shift_equation hd level delta) eqs
       )
-
+(*
     | Where (te, decls) ->
       Where (leveled_shift_term te level delta,
 	    List.map (fun hd -> leveled_shift_declaration hd level delta) decls
       )
-
+*)
     | TyAnnotation (te, ty) ->
       TyAnnotation (leveled_shift_term te level delta,
 		    leveled_shift_tyAnnotation ty level delta)
@@ -471,7 +471,7 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
     | Signature (symb, te) ->
       Signature (symb, leveled_shift_term te level delta)
 
-    | Equation eq -> Equation (leveled_shift_equation eq level delta)
+    | Equation (eq, decls) -> Equation (leveled_shift_equation eq level delta, List.map (fun hd -> leveled_shift_declaration hd level delta) decls)
 
     | Inductive (n, args, ty, constrs) ->
       let (args', level') = List.fold_left (fun (args, level) hd -> 

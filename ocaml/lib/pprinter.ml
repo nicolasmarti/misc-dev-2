@@ -31,6 +31,7 @@ type token =
   | IBox of token list
   | Newline
   | Space of int
+  | ISpace of int
   | Grid of token list list
   | Frac of token * (token list)
 ;;
@@ -277,6 +278,12 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 		    else
 		      (remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)
 
+	      | ISpace n ->
+		  if (remainingwidth < n) then
+		    (w - indent, indentbox :: [], totalboxes @ lineboxes::[])
+		  else
+		    (remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)
+
 	      | t ->
 		  let b = token2box t remainingwidth indent in
 		    if (b.width > remainingwidth || b.height > 1) then (
@@ -347,6 +354,12 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 		    )
 		    else
 		      (remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)
+
+	      | ISpace n ->
+		  if (remainingwidth < n) then
+		    (w - indent, indentbox :: [], totalboxes @ lineboxes::[])
+		  else
+		    (remainingwidth - n, lineboxes @ (spacebox n) :: [], totalboxes)
 
 	      | t ->
 		  let b = token2box t remainingwidth indent in

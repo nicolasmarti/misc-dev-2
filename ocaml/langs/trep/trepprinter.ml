@@ -117,8 +117,6 @@ let rec term2token (te : term) (p: place) : token =
       (Box [quantifier2token quantifier; Space 1; Verbatim "->"; Space 1; term2token te InAs])  
     )
 
-    | _ -> raise (Failure "term2token: NYI")
-
 and arg2token arg =
   match arg with
     | (te, Explicit) -> Box [term2token te InArg]
@@ -159,6 +157,7 @@ and quantifier2token q =
       )
 and pattern2token pat p = 
   match pat with
+    | PType -> Verbatim "Type"
     | PVar n -> Verbatim n
     | PAVar -> Verbatim "_"
     | PCste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
@@ -198,7 +197,15 @@ and declaration2token (d: declaration) =
 	); Space 1; Verbatim "::"; Space 1; term2token ty InAs
       ]
     )
-    | Equation eq -> equation2token eq
+    | Equation (eq, decls) -> (
+      Box ([equation2token eq] @ 
+	      if List.length decls > 0 then
+		[Newline; ISpace 1; Verbatim "where"; Space 1;
+		 Box (intercalate (List.map (fun decl -> declaration2token decl) decls) Newline)
+		]
+	      else []
+      )
+    )
     | Inductive (name, qs, ty, cons) -> (
       Box (
 	[ Verbatim "inductive"; Space 1;
