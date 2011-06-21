@@ -199,5 +199,23 @@ and declaration2token (d: declaration) =
       ]
     )
     | Equation eq -> equation2token eq
+    | Inductive (name, qs, ty, cons) -> (
+      Box (
+	[ Verbatim "inductive"; Space 1;
+	  Verbatim name; Space 1]
+	@ (intercalate (List.map quantifier2token qs) (Space 1))
+	@ [Space (if List.length qs > 0 then 1 else 0); Verbatim "::"; Space 1; term2token ty InAs; Space 1; Verbatim ":="; Newline;
+	   Box (intercalate (List.map (fun (s, ty) -> Box [Verbatim "|"; Space 1; 
+							   (match s with
+							     | Symbol (s, _) -> Verbatim (String.concat "" ["("; s; ")"])
+							     | Name s -> Verbatim s
+							   ); Space 1; Verbatim "::"; Space 1; term2token ty InAs
+							  ]
+	   ) cons
+	   ) Newline)
+	  ]	 
+      )	
+	
+    )
     | _ -> raise (Failure "NYI")
 ;;

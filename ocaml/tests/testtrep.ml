@@ -70,5 +70,7 @@ let test_declaration = test_parse_print (fun x -> parse_declaration (Position.Fi
 
 let _ = test_declaration "(+) :: {A} -> [Num A] -> A -> A -> A" ;;
 
-let _ = test_declaration "b + a  :=  b + a" ;;
+let _ = test_declaration "(+) {Type} [isNum {Type} plus] a b :=  plus a b" ;;
+
+let _ = test_declaration "inductive List A :: Type := nil :: List A | cons :: A -> List A -> List A" ;;
 

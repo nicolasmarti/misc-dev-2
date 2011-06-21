@@ -84,6 +84,8 @@ let parse_name st = begin
 
 	 | "Type" -> error "reserved keyword: Type"
 
+	 | "inductive" -> error "reserved keyword: inductive"
+
 	 | _ -> return s
     )    
 end st
@@ -541,6 +543,7 @@ and parse_quantifier (leftmost: Pos.t): quantifier Parser.t =
 and  parse_declaration (leftmost: Pos.t) : declaration Parser.t =
   try_ (parse_signature leftmost)
   <|> try_ (parse_equation leftmost >>= fun eq -> return (Equation eq))
+  <|> try_ (parse_inductive leftmost)
 
 and parse_signature (leftmost: Pos.t) : declaration Parser.t =
   (try_ (binop_pattern >>= fun (PCste s) -> return s)
@@ -554,5 +557,49 @@ and parse_signature (leftmost: Pos.t) : declaration Parser.t =
   parse_term start_pos >>= fun ty ->
 
   return (Signature (symbol, ty))
+
+and parse_inductive (leftmost: Pos.t) : declaration Parser.t =
+  (surrounded (?* blank) (?+ blank) (parse_string "inductive")) >>= fun _ ->
+
+  (surrounded (?* blank) (?+ blank) parse_name) >>= fun name ->  
+
+  list_with_sep ~sep:(?+ blank)
+    (
+      try_ (parse_quantifier leftmost) 
+    ) >>= fun quantifiers ->
+
+  (surrounded (?* blank) (?* blank) (parse_string "::")) >>= fun _ ->
+
+  position >>= fun start_pos -> 
+
+  parse_term start_pos >>= fun ty ->
+
+  (surrounded (?* blank) (?* blank) (parse_string ":=")) >>= fun _ ->
+
+  option
+    (
+      ?* blank >>= fun _ ->
+      parse_string "|" >>= fun _ ->
+      ?* blank 
+    ) >>= fun _ ->
+
+  list_with_sep ~sep:(surrounded (?* blank) (?* blank) (token '|'))   
+    (
+      surrounded (?* blank) (?* blank) 
+	(try_ (binop_pattern >>= fun (PCste s) -> return s)
+	 <|> (parse_name >>= fun s -> return (Name s))   
+	) >>= fun symbol ->
+      
+      (surrounded (?* blank) (?* blank) (parse_string "::")) >>= fun _ ->
+
+      position >>= fun start_pos -> 
+      
+      parse_term start_pos >>= fun ty ->
+
+      return (symbol, ty)
+
+    ) >>= fun constructors ->
+
+  return (Inductive (name, quantifiers, ty, constructors))
 
 ;;

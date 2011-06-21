@@ -88,7 +88,7 @@ and tyAnnotation = NoAnnotation
 
 and declaration = Signature of symbol * term
 		  | Equation of equation
-		  | Inductive of name * quantifier list * term * (symbol * term) SymbolMap.t
+		  | Inductive of name * quantifier list * term * (symbol * term) list
 		  | RecordDecl of name * quantifier list * term * declaration list
 
 type env = 
@@ -317,7 +317,7 @@ and declaration_substitution (s: substitution) (decl: declaration) : declaration
 	(args @ [hd'], s')
       ) ([], s) args in
       let ty' = term_substitution s' ty in
-      let constrs' = SymbolMap.map (fun (symb, ty) -> symb, term_substitution s' ty) constrs in
+      let constrs' = List.map (fun (symb, ty) -> symb, term_substitution s' ty) constrs in
       Inductive (n, args', ty', constrs')
  
     | RecordDecl (n, args, ty, decls) ->
@@ -479,7 +479,7 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
 	(args @ [hd'], level')
       ) ([], level) args in
       let ty' = leveled_shift_term ty level' delta in
-      let constrs' = SymbolMap.map (fun (symb, ty) -> symb, leveled_shift_term ty level' delta) constrs in
+      let constrs' = List.map (fun (symb, ty) -> symb, leveled_shift_term ty level' delta) constrs in
       Inductive (n, args', ty', constrs')
  
     | RecordDecl (n, args, ty, decls) ->
