@@ -6,9 +6,11 @@
 <tests/testmllvm.{byte,native}>: use_llvm_executionengine, use_llvm_target
 <tests/testmllvm.{byte,native}>:  use_llvm_scalar_opts, use_bindings, use_llvm_bitwriter
 
-<tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads
+<ibtws/date.ml>: pkg_spotlib, pkg_planck
+<tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads, pkg_spotlib, pkg_planck
 
 <langs/trep/trep.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepparser.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepprinter.ml>: pkg_spotlib, pkg_planck
 <tests/testtrep.{ml,byte,native}>: pkg_spotlib, pkg_planck
+

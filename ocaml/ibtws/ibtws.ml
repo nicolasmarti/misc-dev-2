@@ -221,8 +221,35 @@ let tickPriceFromInt (i: int) : tickType =
 
 ;;
 
+type whatToShow = TRADES
+		  | MIDPOINT
+		  | BID
+		  | ASK
+		  | BID_ASK
+		  | HISTORICAL_VOLATILITY
+		  | OPTION_IMPLIED_VOLATILITY
+		  | OPTION_VOLUME
+		  | OPTION_OPEN_INTEREST
+;;
+
+let whatToShow2strign (w: whatToShow) : string =
+  match w with
+    | TRADES -> "TRADES"
+    | MIDPOINT -> "MIDPOINT"
+    | BID -> "BID"
+    | ASK -> "ASK"
+    | BID_ASK -> "BID_ASK"
+    | HISTORICAL_VOLATILITY -> "HISTORICAL_VOLATILITY"
+    | OPTION_IMPLIED_VOLATILITY -> "OPTION_IMPLIED_VOLATILITY"
+    | OPTION_VOLUME -> "OPTION_VOLUME"
+    | OPTION_OPEN_INTEREST -> "OPTION_OPEN_INTEREST"
+;;
+
+
 type mktDepthTable = ((float * int * string option) option) array;;
 
+open Date;;      
+      
 module IBTWS: sig 
     
   type t
@@ -239,6 +266,8 @@ module IBTWS: sig
   *)
   val reqMktDepth: t -> contract -> int -> (mktDepthTable * mktDepthTable -> unit) -> int
   val cancelMktDepth: t -> int -> unit
+
+  val reqHistoricalData: t -> contract -> datetime -> duration -> barSize -> whatToShow -> bool -> (msg -> unit) -> unit
 
   val recv_and_process: t -> unit
 
@@ -283,12 +312,19 @@ end = struct
     (* counter *)
     mutable mktDepthIds: int;
     
-    (*  handler *)
+    (* handler *)
     mutable mktDepthHandlers: (mktDepthTable * mktDepthTable -> unit) IndexMap.t;
     
     (* data *)
-    mutable mktDepthData: (mktDepthTable * mktDepthTable) IndexMap.t
+    mutable mktDepthData: (mktDepthTable * mktDepthTable) IndexMap.t;
     
+    (********************************************************************)
+      
+    (* counter *)
+    mutable mktHistIds: int;
+      
+    (* handlers *)
+    mutable mktHistHandlers: (msg -> unit) IndexMap.t;
 
   };;
 
@@ -311,6 +347,9 @@ end = struct
       mktDepthIds = 0;
       mktDepthHandlers = IndexMap.empty;
       mktDepthData = IndexMap.empty;
+
+      mktHistIds = 0;
+      mktHistHandlers = IndexMap.empty;
 
     };;
 
@@ -355,6 +394,15 @@ end = struct
     data.mktDepthData <- IndexMap.remove id data.mktDepthData;
   ;;
 
+  (***********************************************)
+
+  let reqHistoricalData data contract endDatetime duration barSize whatToShow useRTH handler =
+    let id = data.mktHistIds in
+    data.mktHistIds <- id + 1;
+    data.mktHistHandlers <- IndexMap.add id handler data.mktHistHandlers;
+    reqHistoricalData id contract (datetime_to_string endDatetime) (duration2string duration) (barSize2string barSize) (whatToShow2strign whatToShow) (if useRTH then 1 else 0) 0 data.out_c
+
+  (***********************************************)
 
   (* TODO: better error management!!! *)
   let recv_and_process data =
@@ -424,6 +472,14 @@ end = struct
 	      | 2 -> a.(position) <- None
 	  ) in
 	  f d
+      )
+      | HistData (_, id, _, _, _) -> (
+	try (
+	  let f = IndexMap.find id data.mktHistHandlers in
+	  data.mktHistHandlers <- IndexMap.remove id data.mktHistHandlers;
+	  f msg
+	) with 
+	  | _ -> ()
       )
       | _ -> raise (Failure "recv_and_process: msg not yet supported")
 ;;
