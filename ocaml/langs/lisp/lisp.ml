@@ -200,6 +200,15 @@ let rec parse_expr st = begin
 end st
 ;; 
 
+
+let parse_exprs st = begin
+  (list_with_sep 
+     ~sep:(?* blank <|> parse_comment <|> eos)
+     parse_expr
+  )
+end st
+;;
+
 (******************************************************************************)
 
 type env = expr NameMap.t
@@ -251,7 +260,6 @@ let rec drop (l: 'a list) (n: int) : 'a list =
     | _ -> drop (List.tl l) (n-1)
 ;;
 
-(* this first version does not take account for default val of parameters*)
 class lambda (name: string) (doc: string) (listargs: (name * expr option) list) (body: expr list) =
 object (self)
   inherit [expr] eObj
@@ -262,7 +270,7 @@ object (self)
     let args = args @ List.map (fun (name, value) -> 
       match value with
 	| None -> raise (ExecException (StringError "not enough arguments (or missing default value)"))
-	| Some value -> value
+	| Some value -> eval value ctxt
     ) (drop listargs (List.length args)) in
       
     let oldvals = List.fold_right (fun (n, _) acc ->
@@ -393,6 +401,81 @@ object (self)
       String o#get_doc
 end;;
 
+class elet =
+object (self)
+  inherit [expr] eObj
+  method get_name = "let"
+  method get_doc = "lisp let expression\n format: (let varlist body)\n with varlist := ((var0 val0) ... (vari vali))"
+  method apply args ctxt =     
+  
+    if List.length args < 2 then
+      raise (ExecException (StringError "not enough arguments for let"))
+    else
+      let vars = 
+	try 
+	  let l = extractList (List.nth args 0) in
+	  List.map (fun hd ->
+	    let [var; value] = extractList hd in
+	    let n = extractName var in
+	    (n, value)
+	  ) l
+	with
+	  | _ -> raise (ExecException (FreeError ("this is an improper list of bindings for let", List.nth args 0)))
+      in
+      
+      let oldvals = List.fold_right (fun (n, _) acc ->
+	try 
+	  (n, NameMap.find n !ctxt)::acc
+	with
+	  | Not_found -> acc
+      ) vars [] in
+    
+      let _ = List.map (fun (n, value) -> 
+	ctxt := NameMap.add n (eval value ctxt) !ctxt
+      ) vars in    
+      
+      let body = drop args 1 in
+
+      let res = List.fold_left (fun acc expr -> eval expr ctxt) (List []) body in
+      
+      let _ = List.map (fun (n, v) -> 
+	ctxt := NameMap.add n v !ctxt
+      ) oldvals in
+      
+      res
+end;;
+
+class set =
+object (self)
+  inherit [expr] eObj
+  method get_name = "set"
+  method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: both args are evaluated prior to mutation"
+  method apply args ctxt =     
+    if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+      let [var; value] = List.map (fun hd -> eval hd ctxt) args in
+      let n = extractName var in
+      ctxt := NameMap.add n value !ctxt;
+      value      
+end;;
+
+class setq =
+object (self)
+  inherit [expr] eObj
+  method get_name = "setq"
+  method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: only value is evaluated prior to mutation"
+  method apply args ctxt =     
+    if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+      let [var; value] = args in
+      let value = eval value ctxt in
+      let n = extractName var in
+      ctxt := NameMap.add n value !ctxt;
+      value      
+end;;
+
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
@@ -400,6 +483,9 @@ let ctxt : env ref = ref NameMap.empty;;
 let primitives = [new plus;
 		  new defun;
 		  new getdoc;
+		  new elet;
+		  new set;
+		  new setq;
 		 ];;
 
 let _ = 
@@ -426,7 +512,7 @@ let rec execException2box (e: lisp_error) : token =
 				       ]
 ;;
 
-let interp expr = 
+let interp_expr expr = 
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_expr stream with
@@ -437,7 +523,31 @@ let interp expr =
       *)
       try (
 	let res' = eval res ctxt in
-	printf "res = "; printbox (token2box (expr2token res') 400 2);
+	printbox (token2box (expr2token res') 400 2);
+	res'
+      )
+      with
+	| ExecException e -> printbox (token2box (execException2box e) 400 2); List []
+    )
+    | Result.Error (pos, s) ->
+      Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
+      raise Pervasives.Exit
+;;
+
+let interp_exprs expr = 
+  (*printf "term = '%s'\n" s;*)
+  let stream = Stream.from_string ~filename:"stdin" expr in
+  match parse_exprs stream with
+    | Result.Ok (res, _) -> (
+      (*
+      let _ = List.map (fun hd -> 
+	printf "pprint = "; 
+	printbox (token2box (expr2token hd) 400 2);
+      ) res in
+      *)
+      try (
+	let res' = List.fold_left (fun acc hd -> eval hd ctxt) (List []) res in
+	printbox (token2box (expr2token res') 400 2);
 	res'
       )
       with
@@ -451,9 +561,9 @@ let interp expr =
 (******************************************************************************)
 
 
-let _ = interp "(+ 2.3 5 6 2.1)";;
+let _ = interp_expr "(+ 2.3 5 6 2.1)";;
 
-let _ = interp "
+let _ = interp_expr "
 ; this is a function
 (defun add1 ((a 0)) ; this is a comment
  \"la doc\"         
@@ -461,8 +571,28 @@ let _ = interp "
 )
 ";;
 
-let _ = interp "(add1 8)";;
+let _ = interp_expr "(add1 8)";;
 
-let _ = interp "(add1)";;
+let _ = interp_expr "(add1)";;
 
-let _ = interp "(getdoc add1)";;
+let _ = interp_expr "(getdoc add1)";;
+
+let _ = interp_expr "(setq x 0)";;
+
+let _ = interp_expr "(set 'y 0)";;
+
+let _ = interp_expr "(let ((x 2) (y 1)) (+ x y))";;
+
+let _ = interp_expr "x";;
+
+let _ = interp_expr "y";;
+
+
+let _ = interp_exprs "
+(setq x 0)
+(set 'y 0)
+(let ((x 2) (y 1)) (+ x y))
+(+ x y)
+"
+;;
+
