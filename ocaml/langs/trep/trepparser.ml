@@ -368,7 +368,7 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
      <|> try_ (parse_lambda leftmost)
      <|> try_ binop_term
      <|> try_ (parse_Type >>= fun () -> return (Type None))
-     <|> try_ (parse_var >>= fun s -> return (Var (None, s)))
+     <|> try_ (parse_var >>= fun s -> return (Var (Left s)))
      <|> try_ (parse_avar >>= fun () -> return (AVar None))
      <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_term Pos.none >>= fun res -> return res))
     ) 

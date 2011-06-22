@@ -45,9 +45,12 @@ object
   method virtual apply: 'a list -> 'a
 end;;
 
+type ('a, 'b) either = Left of 'a
+		       | Right of 'b
+;;
 
 type term = Type of univ option
-	    | Var of index option * name
+	    | Var of (name, index) either
 	    | AVar of index option
 	    | Cste of symbol
 	    | Obj of term tObj
@@ -209,9 +212,9 @@ let rec term_substitution (s: substitution) (te: term) : term =
   match te with
     | Type u -> Type u
 
-    | Var (None, _) -> raise (Failure "un-typechecked variable")
+    | Var (Left _) -> raise (Failure "un-typechecked variable")
 
-    | Var (Some i, n) as v when i < 0 -> (
+    | Var (Right i) as v when i < 0 -> (
 	try IndexMap.find i s 
 	with
 	  | Not_found -> v
@@ -354,16 +357,16 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
   match te with
     | Type u -> Type u
 
-    | Var (None, _) -> raise (Failure "untypechecked variable")
+    | Var (Left _) -> raise (Failure "untypechecked variable")
 
-    | Var (Some i, n) as v when i < 0 -> v
+    | Var (Right i) as v when i < 0 -> v
       
-    | Var (Some i, n) as v ->
+    | Var (Right i) as v ->
       if i >= level then
 	if i + delta < level then
 	  raise (TrepException UnShiftable)
 	else
-	  Var (Some (i + level), n)
+	  Var (Right (i + level))
       else
 	v
 
@@ -529,7 +532,7 @@ let subst_env (e: env) (s: substitution) : env =
 
 (* result of unification *)
 type unification_result = Unified
-			  | CannotUnified of position * position
+			  | CannotUnified of (position * term) * (position * term) * string
 			  | DontKnow of position * position
 
 (* unification of terms 
@@ -539,7 +542,13 @@ type unification_result = Unified
    we use (Pos.none, Pos.none) when there is no position
 *)
 let unify (ctxt: env ref) (te1: term) (pos1: position) (te2: term) (pos2: position) : term =
-  raise (Failure "NYI")
+  match te1, te2 with
+    (* THIS IS FALSE DUE TO THE UNIVERSE *)
+    | Type _, Type _ -> Type None
+
+    | Var (Right i), Var (Right i') when i = i' -> Var (Right i)
+
+    | _ -> raise (Failure "NYI")
 ;;
 
 (*

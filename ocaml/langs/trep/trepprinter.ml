@@ -37,7 +37,9 @@ let rec term2token (te : term) (p: place) : token =
   match te with
     | Type _ -> Verbatim "Type"
 
-    | Var (_, n) -> Verbatim n
+    | Var (Left n) -> Verbatim n
+
+    | Var (Right i) -> Verbatim (String.concat "" ["<"; string_of_int i; ">"])
 
     | AVar _ -> Verbatim "_"
 
