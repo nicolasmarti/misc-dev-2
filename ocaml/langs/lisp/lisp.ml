@@ -9,7 +9,7 @@ type name = string;;
 
 module NameMap = Map.Make(
   struct
-    type t = name
+    type t = name	
     let compare x y = compare x y
   end
 );;
@@ -17,6 +17,7 @@ module NameMap = Map.Make(
 class virtual ['a] eObj =
 object
   method virtual get_name: string
+  method virtual get_doc: string
   method virtual apply: 'a list -> ('a NameMap.t) ref -> 'a
 end;;
 
@@ -226,36 +227,46 @@ let rec eval (e: expr) (ctxt: env ref) : expr =
 
 (*********************************)
 
+let rec drop (l: 'a list) (n: int) : 'a list =
+  match n with 
+    | 0 -> l
+    | _ -> drop (List.tl l) (n-1)
+;;
+
 (* this first version does not take account for default val of parameters*)
-class lambda (name: string) (listargs: (name * expr option) list) (body: expr list) =
+class lambda (name: string) (doc: string) (listargs: (name * expr option) list) (body: expr list) =
 object (self)
   inherit [expr] eObj
   method get_name = name
+  method get_doc = doc
   method apply args ctxt =     
-    if List.length args != List.length listargs then
-      raise (ExecException (StringError "wrong number of arguments"))
-    else
+  
+    let args = args @ List.map (fun (name, value) -> 
+      match value with
+	| None -> raise (ExecException (StringError "not enough arguments (or missing default value)"))
+	| Some value -> value
+    ) (drop listargs (List.length args)) in
       
-      let oldvals = List.fold_right (fun (n, _) acc ->
-	try 
-	  (n, NameMap.find n !ctxt)::acc
-	with
-	  | Not_found -> acc
-      ) listargs [] in
-
-      let args' = List.map (fun e -> eval e ctxt) args in
-      
-      let _ = List.map (fun ((n, _), v) -> 
-	  ctxt := NameMap.add n v !ctxt
-	) (List.combine listargs args') in
-      
-      let res = List.fold_left (fun acc expr -> eval expr ctxt) (List []) body in
-
-      let _ = List.map (fun (n, v) -> 
-	ctxt := NameMap.add n v !ctxt
-      ) oldvals in
-
-      res
+    let oldvals = List.fold_right (fun (n, _) acc ->
+      try 
+	(n, NameMap.find n !ctxt)::acc
+      with
+	| Not_found -> acc
+    ) listargs [] in
+    
+    let args' = List.map (fun e -> eval e ctxt) args in
+    
+    let _ = List.map (fun ((n, _), v) -> 
+      ctxt := NameMap.add n v !ctxt
+    ) (List.combine listargs args') in
+    
+    let res = List.fold_left (fun acc expr -> eval expr ctxt) (List []) body in
+    
+    let _ = List.map (fun (n, v) -> 
+      ctxt := NameMap.add n v !ctxt
+    ) oldvals in
+    
+    res
 end;;
 
 let rec extractList (e: expr) : expr list =
@@ -278,38 +289,55 @@ let rec extractName (e: expr) : string =
     | _ -> raise (ExecException (FreeError ("not a name", e)))
 ;;
 
-let rec drop (l: 'a list) (n: int) : 'a list =
-  match n with 
-    | 0 -> l
-    | _ -> drop (List.tl l) (n-1)
+let rec extractString (e: expr) : string =
+  match e with
+    | String s -> s
+    | SrcInfo (e, pos) -> (
+      try extractString e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not a string", e)))
 ;;
 
 class defun =
 object (self)
   inherit [expr] eObj
   method get_name = "defun"
+  method get_doc = "primitive to define a function\nformat:\n(defun name (params) \"doc\" body"
   method apply args ctxt =     
-    if List.length args < 4 then
+    if List.length args != 4 then
       raise (ExecException (StringError "wrong number of arguments"))
     else
            
       let listargs = 
 	let l = extractList (List.nth args 1) in
-	List.map (fun hd -> (extractName hd, None)) l
+	List.map (fun hd -> 
+	  try 
+	    (extractName hd, None)
+	  with
+	    | _ -> (
+	      try 
+		let [argname; defaultvalue] = extractList hd in
+		(extractName argname, Some defaultvalue)
+	      with
+		| _ -> raise (ExecException (FreeError ("wrong argument form", hd)))
+	    )
+	) l
       in 
       let body = drop args 2 in
       let name = extractName (List.hd args) in
-      let o = Obj (new lambda name listargs body) in
+      let doc = extractString (List.nth args 2) in
+      let o = Obj (new lambda name doc listargs body) in
       ctxt := NameMap.add name o !ctxt;
       o
 
 end;;
 
-(* this first version does not take account for default val of parameters*)
 class plus =
 object (self)
   inherit [expr] eObj
   method get_name = "+"
+  method get_doc = "sum its arguments"
   method apply args ctxt =     
     let args' = List.map (fun e -> eval e ctxt) args in
     List.fold_left (fun acc hd ->
@@ -322,12 +350,38 @@ object (self)
     ) (Int 0) args'
 end;;
 
+let rec extractObj (e: expr) : expr eObj =
+  match e with
+    | Obj o -> o
+    | SrcInfo (e, pos) -> (
+      try extractObj e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not an object", e)))
+;;
+
+class getdoc =
+object (self)
+  inherit [expr] eObj
+  method get_name = "getdoc"
+  method get_doc = "return the documentation of the function symbol passed as argument"
+  method apply args ctxt =     
+    if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+      let n = extractName (List.nth args 0) in
+      let value = try NameMap.find n !ctxt with | Not_found -> raise (ExecException (FreeError ("unknown name", (List.nth args 0)))) in
+      let o = extractObj value in
+      String o#get_doc
+end;;
+
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
 
 let primitives = [new plus;
-		  new defun
+		  new defun;
+		  new getdoc;
 		 ];;
 
 let _ = 
@@ -378,21 +432,23 @@ let interp expr =
       raise Pervasives.Exit
 ;;
 
-let e1 = "(+ 2.3 5 6 2.1)";;
+(******************************************************************************)
 
-interp e1;;
 
-let e2 = "
-(defun add1 (a)
+let _ = interp "(+ 2.3 5 6 2.1)";;
+
+let _ = interp "
+(defun add1 ((a 0))
  \"la doc\"
  (+ a 1)
 )
 "
 ;;
 
-interp e2;;
-
-let e3 = "(add1 8)"
+let _ = interp "(add1 8)"
 ;;
 
-interp e3;;
+let _ = interp "(add1)"
+;;
+
+let _ = interp "(getdoc add1)";;
