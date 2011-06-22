@@ -173,16 +173,15 @@ let rec quantifier_qfvars (q: quantifier) : name list =
   List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) [] ps
 
 (* the quantified free variables in patterns 
-   - all variables that have no DeBruijn Index
-     * this is consistent, as the quantifier is already typed
-   - all aliasing @
+   there is an order !!!
+   (same as debruijn index)
 *)
 
 and pattern_qfvars (p: pattern) : name list =
   match p with
     | PVar n -> [n]
     | PAlias (n, p) -> n::pattern_qfvars p
-    | PApp (f, arg) -> List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) [] (List.map fst arg)
+    | PApp (f, arg) -> List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) (pattern_qfvars f) (List.map fst arg)
     | _ -> []
 
 ;;
