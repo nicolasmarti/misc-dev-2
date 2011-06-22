@@ -603,14 +603,6 @@ let infer (ctxt: env ref) (te: term) : term option =
 ;;
 
 (*
-  grab the "pattern vars" of a terms
-  warning: there is an order, so we use a list (order is the same as fv in env)
-*)
-let pattern_var_term (ctxt: env ref) (p: term) : name list =
-  raise (Failure "NYI")
-;;
-
-(*
   grab the freevariables of a term
   no needs for order, so we use a set
 *)
