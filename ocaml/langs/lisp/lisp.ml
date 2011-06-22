@@ -415,9 +415,14 @@ object (self)
 	try 
 	  let l = extractList (List.nth args 0) in
 	  List.map (fun hd ->
-	    let [var; value] = extractList hd in
-	    let n = extractName var in
-	    (n, value)
+	    try 
+	      let [var; value] = extractList hd in
+	      let n = extractName var in
+	      (n, value)
+	    with
+	      | _ -> 
+		let n = extractName hd in
+		(n, List [])
 	  ) l
 	with
 	  | _ -> raise (ExecException (FreeError ("this is an improper list of bindings for let", List.nth args 0)))
@@ -581,7 +586,7 @@ let _ = interp_expr "(setq x 0)";;
 
 let _ = interp_expr "(set 'y 0)";;
 
-let _ = interp_expr "(let ((x 2) (y 1)) (+ x y))";;
+let _ = interp_expr "(let ((x 2) (y 2)) (+ x y))";;
 
 let _ = interp_expr "x";;
 
@@ -589,10 +594,11 @@ let _ = interp_expr "y";;
 
 
 let _ = interp_exprs "
-(setq x 0)
-(set 'y 0)
-(let ((x 2) (y 1)) (+ x y))
-(+ x y)
+(setq counter 0)                ; Let's call this the initializer.
+     
+(setq counter (+ counter 1))    ; This is the incrementer.
+     
+counter                         ; This is the counter.
 "
 ;;
 
