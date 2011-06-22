@@ -44,30 +44,6 @@ let tick_snapshot_end = 57;;
 
 let currId = ref 0;;    
 
-type bardata = {
-  mutable date: string;
-  mutable bopen: float;
-  mutable high: float;
-  mutable low: float;
-  mutable close: float;
-  mutable volume: int;
-  mutable average: float;
-  mutable hasGaps: string;
-  mutable barCount: int;
-};;
-
-let mkbardata () = {
-  date = "";
-  bopen = 0.0;
-  high = 0.0;
-  low = 0.0;
-  close = 0.0;
-  volume = 0;
-  average = 0.0;
-  hasGaps = "";
-  barCount = 0;
-};;
-
 type version = int;;
 type id = int;;
 
@@ -84,9 +60,9 @@ type msg = ErrMsg of version * id * int * string
 	   | MktDepth of version * id * int * int * int * float * int
 	   | MktDepth2 of version * id * int * string * int * int * float * int
 
-	   | HistData of version * id * string * string * (string * float * float * float * float * int * float * string * int) list
+	   | HistData of version * id * string * string * (string * float * float * float * float * int64 * float * string * int) list
 
-	   | RTBar of version * id * int * float * float * float * float * int * float * int
+	   | RTBar of version * id * int64 * float * float * float * float * int64 * float * int
 
 	   | ScannerParams of version * string
 	   | ScannerData of version * id * scanData array
@@ -204,7 +180,7 @@ let processMsg (ic: in_channel) : msg =
 		let high = decode_float ic in
 		let low = decode_float ic in
 		let close = decode_float ic in
-		let volume = decode_int ic in
+		let volume = decode_int64 ic in
 		let average = decode_float ic in
 		let hasGaps = decode_string ic in
 		let barCount = decode_int ic in
@@ -218,13 +194,13 @@ let processMsg (ic: in_channel) : msg =
       | 50 (* real_time_bars *) -> (
 	  let version = decode_int ic in
 	  let reqId = decode_int ic in
-	  let time = decode_int ic in
+	  let time = decode_int64 ic in
 
 	  let bopen = decode_float ic in
 	  let high = decode_float ic in
 	  let low = decode_float ic in
 	  let close = decode_float ic in
-	  let volume = decode_int ic in
+	  let volume = decode_int64 ic in
 	  let average = decode_float ic in
 	  let count = decode_int ic in
 	

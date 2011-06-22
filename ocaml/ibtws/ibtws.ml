@@ -9,6 +9,8 @@ open Req;;
    allow one to make request, giving handlers (closure) to manage results
 *)
 
+open Unix;;
+
 type genericTickType = OptVol
 		       | OptOpenInt
 		       | HistVol
@@ -253,13 +255,13 @@ type mktData = MDTickPrice of tickType * float * int * bool
 
 open Date;;      
 
-type histBar = {
+type bar = {
   bstartdt: datetime;
   bopen: float;
   high: float;
   low: float;
   close: float;
-  volume: int;
+  volume: int64;
   average: float;
   hasGaps: string;
   barCount: int;
@@ -268,7 +270,7 @@ type histBar = {
 type histData = {
   startdt: datetime;
   enddt: datetime;
-  bars: histBar array;
+  bars: bar array;
 };;
 
 type mktDepthTable = ((float * int * string option) option) array;;
@@ -291,6 +293,9 @@ module IBTWS: sig
   val cancelMktDepth: t -> int -> unit
 
   val reqHistoricalData: t -> contract -> datetime -> duration -> barSize -> whatToShow -> bool -> (histData -> unit) -> unit
+
+  val reqRTBars: t -> contract -> whatToShow -> bool -> (bar -> unit) -> int
+  val cancelRTBars: t -> int -> unit
 
   val recv_and_process: t -> unit
 
@@ -349,6 +354,14 @@ end = struct
     (* handlers *)
     mutable mktHistHandlers: (histData -> unit) IndexMap.t;
 
+    (********************************************************************)
+      
+    (* counter *)
+    mutable rtBarsIds: int;
+      
+    (* handlers *)
+    mutable rtBarsHandlers: (bar -> unit) IndexMap.t;
+
   };;
 
   let connect ?(addr = "127.0.0.1") ?(port = 7496) () = 
@@ -373,6 +386,9 @@ end = struct
 
       mktHistIds = 0;
       mktHistHandlers = IndexMap.empty;
+
+      rtBarsIds = 0;
+      rtBarsHandlers = IndexMap.empty;
 
     };;
 
@@ -424,6 +440,20 @@ end = struct
     data.mktHistIds <- id + 1;
     data.mktHistHandlers <- IndexMap.add id handler data.mktHistHandlers;
     reqHistoricalData id contract (datetime_to_string endDatetime) (duration2string duration) (barSize2string barSize) (whatToShow2strign whatToShow) (if useRTH then 1 else 0) 0 data.out_c
+
+  (***********************************************)
+
+  let reqRTBars data contract whatToShow useRTH handler =
+    let id = data.rtBarsIds in
+    data.rtBarsIds <- id + 1;
+    data.rtBarsHandlers <- IndexMap.add id handler data.rtBarsHandlers;
+    reqRealTimeBars id contract 5 (whatToShow2strign whatToShow) (if useRTH then 1 else 0) data.out_c;
+    id
+
+  let cancelRTBars data id =
+    cancelRealTimeBars id data.out_c;
+    data.rtBarsHandlers <- IndexMap.remove id data.rtBarsHandlers
+  ;;
 
   (***********************************************)
 
@@ -537,6 +567,30 @@ end = struct
 	    ) bars)
 
 	  })
+	) with 
+	  | _ -> ()
+      )
+      | RTBar (_, id, startdt, bopen, high, low, close, volume, average, count) -> (
+	try (
+	  let f = IndexMap.find id data.rtBarsHandlers in
+	  f ({ bstartdt =( let dtm = Unix.gmtime (Int64.to_float startdt) in
+			  { year = dtm.tm_year;
+			    mounth = dtm.tm_mon+1;
+			    day = dtm.tm_mday;
+			    hour = dtm.tm_hour;
+			    minute = dtm.tm_min;
+			    second = dtm.tm_sec;
+			    tz = "UTC";
+			  });
+	       bopen = bopen;
+	       high = high;
+	       low = low;
+	       close = close;
+	       volume = volume;
+	       average = average;
+	       hasGaps = "";
+	       barCount = count;
+	     })
 	) with 
 	  | _ -> ()
       )
