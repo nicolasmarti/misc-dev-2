@@ -4,6 +4,7 @@ ocamlfind ocamlopt -package spotlib,planck -c lisp.ml
 ocamlfind ocamlopt -package spotlib,planck -o test lisp.cmx -linkpkg
 
 *)
+open Printf;;
 
 type name = string;;
 
@@ -125,6 +126,8 @@ let withPos (p: 'a Parser.t) st = begin
     return (res, start_pos, end_pos)
 end st
 
+let blank = ignore (one_of [' '; '\t'; '\n'; '\r'])
+
 let constant_int st = begin
   (* [0-9]+ *)
   (matched (?+ (tokenp (function '0'..'9' -> true | _ -> false) <?> "decimal")) >>= fun s -> 
@@ -153,6 +156,15 @@ let parse_string st = begin
     )    
 end st
 
+let parse_comment st = begin
+  (?* blank) >>= fun _ -> 
+  token ';' >>= fun _ -> 
+  (?+ (tokenp (function '\n' -> false | '\r' -> false | c -> true) <?> "comment") >>= fun _ -> 
+  (?* blank) >>= fun _ -> 
+   return ()
+  )    
+end st
+
 let parse_symbol st = begin
     (matched (?+ (tokenp (fun x ->  
       List.mem x ['+'; '-'; '*']
@@ -163,8 +175,6 @@ let parse_symbol st = begin
     )    
 end st
 
-let blank = ignore (one_of [' '; '\t'; '\n'; '\r'])
-
 let rec parse_expr st = begin
   withPos (
     try_ (constant_float >>= fun i -> return (Float i))
@@ -174,8 +184,16 @@ let rec parse_expr st = begin
     <|> try_ (token '"' >>= fun _ -> parse_string >>= fun s -> token '"' >>= fun _ -> return (String s))
     <|> try_ (token '\'' >>= fun _ -> parse_expr >>= fun e -> return (Quoted e))
     <|> try_ (token '(' >>= fun _ -> token ')' >>= fun _ -> return (List []))
-    <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (list_with_sep ~sep:(?+ blank) parse_expr) >>= fun l -> return (List l))	   
-    <|> surrounded (?+ blank) (?+ blank) parse_expr
+    <|> try_ (surrounded 
+		(token '(' >>= fun _ -> ?* (blank <|> parse_comment) >>= fun () -> return ()) 
+		(?* (blank <|> parse_comment) >>= fun () -> token ')') 
+		(list_with_sep 
+		   ~sep:(?+ blank) 
+		   parse_expr
+		) >>= fun l -> return (List l)
+    )	   
+    <|> try_ (surrounded (?+ blank) (?* blank) parse_expr)
+    <|> try_ (parse_comment >>= fun _ -> parse_expr)
   ) >>= fun (e, startp, endp) ->
   return (SrcInfo (e, (startp, endp)))
 
@@ -390,8 +408,6 @@ let _ =
   ) () primitives
 
 
-open Printf;;
-
 let rec execException2box (e: lisp_error) : token =
   match e with
     | StringError s -> Verbatim s
@@ -438,17 +454,15 @@ let interp expr =
 let _ = interp "(+ 2.3 5 6 2.1)";;
 
 let _ = interp "
-(defun add1 ((a 0))
- \"la doc\"
- (+ a 1)
+; this is a function
+(defun add1 ((a 0)) ; this is a comment
+ \"la doc\"         
+ (+ a 1)   
 )
-"
-;;
+";;
 
-let _ = interp "(add1 8)"
-;;
+let _ = interp "(add1 8)";;
 
-let _ = interp "(add1)"
-;;
+let _ = interp "(add1)";;
 
 let _ = interp "(getdoc add1)";;
