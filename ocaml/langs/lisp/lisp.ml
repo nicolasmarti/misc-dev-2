@@ -139,7 +139,15 @@ let constant_float st = begin
 end st
 
 let parse_name st = begin
-    (matched (?+ (tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | _ -> false) <?> "var")) >>= fun s -> 
+  
+  tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | _ -> false) >>= fun c1 -> 
+  matched (?* (tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | '0' .. '9' -> true | _ -> false) <?> "var")) >>= fun s2 -> 
+  return (String.concat "" [String.make 1 c1; s2])
+    
+end st
+
+let parse_string st = begin
+    (matched (?+ (tokenp (function '"' -> false | _ -> true) <?> "string")) >>= fun s -> 
      return s
     )    
 end st
@@ -162,10 +170,14 @@ let rec parse_expr st = begin
     <|> try_ (constant_int >>= fun i -> return (Int i))
     <|> try_ (parse_symbol >>= fun s -> return (Name s))
     <|> try_ (parse_name >>= fun s -> return (Name s))
+    <|> try_ (token '"' >>= fun _ -> parse_string >>= fun s -> token '"' >>= fun _ -> return (String s))
     <|> try_ (token '\'' >>= fun _ -> parse_expr >>= fun e -> return (Quoted e))
-    <|> (surrounded (token '(') (token ')') (list_with_sep ~sep:(?+ blank) parse_expr) >>= fun l -> return (List l))
+    <|> try_ (token '(' >>= fun _ -> token ')' >>= fun _ -> return (List []))
+    <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (list_with_sep ~sep:(?+ blank) parse_expr) >>= fun l -> return (List l))	   
+    <|> surrounded (?+ blank) (?+ blank) parse_expr
   ) >>= fun (e, startp, endp) ->
   return (SrcInfo (e, (startp, endp)))
+
 end st
 ;; 
 
@@ -246,6 +258,53 @@ object (self)
       res
 end;;
 
+let rec extractList (e: expr) : expr list =
+  match e with
+    | List l -> l
+    | SrcInfo (e, pos) -> (
+      try extractList e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not a list", e)))
+;;
+
+let rec extractName (e: expr) : string =
+  match e with
+    | Name n -> n
+    | SrcInfo (e, pos) -> (
+      try extractName e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not a name", e)))
+;;
+
+let rec drop (l: 'a list) (n: int) : 'a list =
+  match n with 
+    | 0 -> l
+    | _ -> drop (List.tl l) (n-1)
+;;
+
+class defun =
+object (self)
+  inherit [expr] eObj
+  method get_name = "defun"
+  method apply args ctxt =     
+    if List.length args < 4 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+           
+      let listargs = 
+	let l = extractList (List.nth args 1) in
+	List.map (fun hd -> (extractName hd, None)) l
+      in 
+      let body = drop args 2 in
+      let name = extractName (List.hd args) in
+      let o = Obj (new lambda name listargs body) in
+      ctxt := NameMap.add name o !ctxt;
+      o
+
+end;;
+
 (* this first version does not take account for default val of parameters*)
 class plus =
 object (self)
@@ -267,7 +326,9 @@ end;;
 
 let ctxt : env ref = ref NameMap.empty;;
 
-let primitives = [(new plus)];;
+let primitives = [new plus;
+		  new defun
+		 ];;
 
 let _ = 
   List.fold_left (fun acc o -> 
@@ -295,9 +356,9 @@ let rec execException2box (e: lisp_error) : token =
 				       ]
 ;;
 
-let interp s = 
+let interp expr = 
   (*printf "term = '%s'\n" s;*)
-  let stream = Stream.from_string ~filename:"stdin" s in
+  let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_expr stream with
     | Result.Ok (res, _) -> (
       (*
@@ -306,19 +367,32 @@ let interp s =
       *)
       try (
 	let res' = eval res ctxt in
-	printbox (token2box (expr2token res') 400 2);
+	printf "res = "; printbox (token2box (expr2token res') 400 2);
 	res'
       )
       with
 	| ExecException e -> printbox (token2box (execException2box e) 400 2); List []
     )
     | Result.Error (pos, s) ->
-      Format.eprintf "%a: syntax error: %s@." Position.File.format pos s;      
-      List []
+      Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
+      raise Pervasives.Exit
 ;;
 
-
-let e1 = "(+ 2.3 5 6 2.1)"
-;;
+let e1 = "(+ 2.3 5 6 2.1)";;
 
 interp e1;;
+
+let e2 = "
+(defun add1 (a)
+ \"la doc\"
+ (+ a 1)
+)
+"
+;;
+
+interp e2;;
+
+let e3 = "(add1 8)"
+;;
+
+interp e3;;
