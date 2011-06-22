@@ -251,11 +251,28 @@ type mktData = MDTickPrice of tickType * float * int * bool
 	       | MDTickString of tickType * string
 ;;
 
+open Date;;      
+
+type histBar = {
+  bstartdt: datetime;
+  bopen: float;
+  high: float;
+  low: float;
+  close: float;
+  volume: int;
+  average: float;
+  hasGaps: string;
+  barCount: int;
+};;
+
+type histData = {
+  startdt: datetime;
+  enddt: datetime;
+  bars: histBar array;
+};;
 
 type mktDepthTable = ((float * int * string option) option) array;;
 
-open Date;;      
-      
 module IBTWS: sig 
     
   type t
@@ -273,7 +290,7 @@ module IBTWS: sig
   val reqMktDepth: t -> contract -> int -> (mktDepthTable * mktDepthTable -> unit) -> int
   val cancelMktDepth: t -> int -> unit
 
-  val reqHistoricalData: t -> contract -> datetime -> duration -> barSize -> whatToShow -> bool -> (msg -> unit) -> unit
+  val reqHistoricalData: t -> contract -> datetime -> duration -> barSize -> whatToShow -> bool -> (histData -> unit) -> unit
 
   val recv_and_process: t -> unit
 
@@ -330,7 +347,7 @@ end = struct
     mutable mktHistIds: int;
       
     (* handlers *)
-    mutable mktHistHandlers: (msg -> unit) IndexMap.t;
+    mutable mktHistHandlers: (histData -> unit) IndexMap.t;
 
   };;
 
@@ -498,11 +515,28 @@ end = struct
 	  ) in
 	  f d
       )
-      | HistData (_, id, _, _, _) -> (
+      | HistData (_, id, startdt, enddt, bars) -> (
 	try (
 	  let f = IndexMap.find id data.mktHistHandlers in
-	  data.mktHistHandlers <- IndexMap.remove id data.mktHistHandlers;
-	  f msg
+	  data.mktHistHandlers <- IndexMap.remove id data.mktHistHandlers;	  
+	  f ({
+	    startdt = parse_datetime startdt;
+	    enddt = parse_datetime enddt;
+	    bars = Array.of_list (List.map (
+	      fun (date, bopen, high, low, close, volume, average, hasGaps, barCount) ->
+		{ bstartdt = parse_datetime date;
+		  bopen = bopen;
+		  high = high;
+		  low = low;
+		  close = close;
+		  volume = volume;
+		  average = average;
+		  hasGaps = hasGaps;
+		  barCount = barCount;
+		}
+	    ) bars)
+
+	  })
 	) with 
 	  | _ -> ()
       )
