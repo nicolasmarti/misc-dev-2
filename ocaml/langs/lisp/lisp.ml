@@ -85,6 +85,18 @@ let rec expr2string (e: expr) : string =
     | SrcInfo (e, _) -> expr2string e
 ;;
 
+let rec exprtype (e: expr) : string =
+  match e with
+    | Obj o -> "Obj"
+    | Int i -> "Int"
+    | Float f -> "Float"
+    | String s -> "String"
+    | Name n -> "Name"
+    | Quoted e -> String.concat "" ["'"; exprtype e]
+    | List l -> String.concat "" ["("; String.concat " " (List.map exprtype l); ")"]
+    | SrcInfo (e, _) -> String.concat "" ["@"; exprtype e]
+;;
+
 open Pprinter;;
 
 let rec intercalate l e =
@@ -368,6 +380,12 @@ object (self)
 
 end;;
 
+let rec unSrcInfo (e: expr) : expr =
+  match e with
+    | SrcInfo (e, _) -> unSrcInfo e
+    | _ -> e
+;;
+
 class plus =
 object (self)
   inherit [expr] eObj
@@ -376,13 +394,30 @@ object (self)
   method apply args ctxt =     
     let args' = List.map (fun e -> eval e ctxt) args in
     List.fold_left (fun acc hd ->
-      match acc, hd with
+      match acc, (unSrcInfo hd) with
 	| (Int sum, Int a) -> Int (sum + a)
 	| (Int sum, Float a) -> Float (float sum +. a)
 	| (Float sum, Int a) -> Float (sum +. float a)
 	| (Float sum, Float a) -> Float (sum +. a)
-	| _ -> raise (ExecException (FreeError ("neither an int or a float", hd)))
+	| _ -> raise (ExecException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
     ) (Int 0) args'
+end;;
+
+class mult =
+object (self)
+  inherit [expr] eObj
+  method get_name = "*"
+  method get_doc = "product its arguments"
+  method apply args ctxt =     
+    let args' = List.map (fun e -> eval e ctxt) args in
+    List.fold_left (fun acc hd ->
+      match acc, (unSrcInfo hd) with
+	| (Int sum, Int a) -> Int (sum * a)
+	| (Int sum, Float a) -> Float (float sum *. a)
+	| (Float sum, Int a) -> Float (sum *. float a)
+	| (Float sum, Float a) -> Float (sum *. a)
+	| _ -> raise (ExecException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
+    ) (Int 1) args'
 end;;
 
 let rec extractObj (e: expr) : expr eObj =
@@ -1095,7 +1130,7 @@ end;;
 
 let ctxt : env ref = ref NameMap.empty;;
 
-let primitives = [new plus; new plusone; new minusone;
+let primitives = [new plus; new mult; new plusone; new minusone;
 		  new defun;
 		  new getdoc;
 		  new elet;
@@ -1121,7 +1156,7 @@ let _ =
 let rec execException2box (e: lisp_error) : token =
   match e with
     | StringError s -> Verbatim s
-    | FreeError (s, e) -> Box [Verbatim s; Verbatim ":"; Space 1; expr2token e]
+    | FreeError (s, e) -> Box [Verbatim s; Verbatim ":"; Space 1; Verbatim "'"; expr2token e; Verbatim "'"; ]
     | AtPos (_, ((AtPos _) as e)) -> execException2box e
     | AtPos ((startp, endp), e) -> Box [Verbatim (string_of_int (startp.Pos.line)); 
 					Verbatim ":"; 
@@ -1132,6 +1167,7 @@ let rec execException2box (e: lisp_error) : token =
 					Verbatim (string_of_int (endp.Pos.column)); 
 					Space 1;
 					Verbatim ":"; 
+					Space 1;
 					execException2box e;
 				       ]
 ;;
@@ -1317,4 +1353,16 @@ let _ = interp_exprs "
              (1- number)))))               ; next-step-expression
      
      (triangle-recursively 7)
+";;
+
+let _ = interp_exprs "
+(defun square-each (numbers-list)
+       \"Square each of a NUMBERS LIST, recursively.\"
+       (if (not numbers-list)                ; do-again-test
+           nil
+         (cons
+          (* (car numbers-list) (car numbers-list))
+          (square-each (cdr numbers-list))))) ; next-step-expression
+     
+     (square-each '(1 2 3))
 ";;
