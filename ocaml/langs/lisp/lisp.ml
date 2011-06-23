@@ -1065,12 +1065,37 @@ Markers are converted to integers."
 
 end;;
 
+class minusone =
+object (self)
+  inherit [expr] eObj
+  method get_name = "1-"
+  method get_doc = "(1- NUMBER)
+
+Return NUMBER minus one.  NUMBER may be a number or a marker.
+Markers are converted to integers."
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       try 
+	 let i = extractInt (eval (List.nth args 0) ctxt) in
+	 Int (i - 1)
+       with
+	 | _ -> 
+	   try 
+	     let f = extractFloat (eval (List.nth args 0) ctxt) in
+	     Float (f -. 1.)
+	   with
+	     | _ -> raise (ExecException (FreeError ("not a numerical", List.nth args 0)))
+
+end;;
+
 
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
 
-let primitives = [new plus; new plusone;
+let primitives = [new plus; new plusone; new minusone;
 		  new defun;
 		  new getdoc;
 		  new elet;
@@ -1279,4 +1304,17 @@ let _ = interp_exprs "
               (cdr list))))                  ; next-step-expression
      
      (print-elements-recursively animals)
+";;
+
+let _ = interp_exprs "
+(defun triangle-recursively (number)
+       \"Return the sum of the numbers 1 through NUMBER inclusive.
+     Uses recursion.\"
+       (if (= number 1)                    ; do-again-test
+           1                               ; then-part
+         (+ number                         ; else-part
+            (triangle-recursively          ; recursive call
+             (1- number)))))               ; next-step-expression
+     
+     (triangle-recursively 7)
 ";;
