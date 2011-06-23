@@ -796,7 +796,9 @@ object (self)
        let stream = Stream.from_string ~filename:"stdin" msg in
        match parse_msg args stream with
 	 | Result.Ok (res, _) -> 
-	   String (String.concat "" res)
+	   let s = (String.concat "" res) in
+	   printf "%s" s;
+	   String s
 	 | Result.Error (pos, s) ->
 	   raise (ExecException (StringError (String.concat "\n" ["in:"; msg; 
 								  String.concat "" ["error @"; 
@@ -936,6 +938,43 @@ object (self)
 
 end;;
 
+let rec extractBool (e: expr) : bool =
+  match e with
+    | SrcInfo (e, pos) -> extractBool e
+    | List [] -> false
+    | _ -> true
+;;
+
+class enot =
+object (self)
+  inherit [expr] eObj
+  method get_name = "not"
+  method get_doc = "negation"
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       exprbool (not (extractBool (eval (List.nth args 0) ctxt)))
+end;;
+
+class ewhile =
+object (self)
+  inherit [expr] eObj
+  method get_name = "while"
+  method get_doc = "while loop\nformat: (while test body...)"
+  method apply args ctxt = 
+     if List.length args < 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let test = List.hd args in
+       let body = List.tl args in
+       let res = ref (List []) in
+       while extractBool (eval test ctxt) do
+	 res := List.fold_left (fun acc hd -> eval hd ctxt) (List []) body
+       done;      
+       !res
+end;;
+
 
 
 (******************************************************************************)
@@ -955,6 +994,8 @@ let primitives = [new plus;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message;
 		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
+		  new enot;
+		  new ewhile; 
 		 ];;
 
 let _ = 
@@ -1095,3 +1136,16 @@ x
 "
 ;;
 
+let _ = interp_exprs "
+(setq animals '(gazelle giraffe lion tiger))
+     
+(defun print-elements-of-list (list)
+       \"Print each element of LIST on a line of its own.\"
+       (while list
+         (message \"%s\n\" (car list))
+         (setq list (cdr list))))
+
+(print-elements-of-list animals)
+
+"
+;;
