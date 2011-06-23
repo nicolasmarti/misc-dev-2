@@ -830,7 +830,7 @@ object (self)
        let [e] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e in
        match l with
-	 | [] -> raise (ExecException (StringError "argument is the empty list"))
+	 | [] -> List []
 	 | hd::tl -> hd
 end;;
 
@@ -846,7 +846,7 @@ object (self)
        let [e] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e in
        match l with
-	 | [] -> raise (ExecException (StringError "argument is the empty list"))
+	 | [] -> List []
 	 | hd::tl -> List tl
 end;;
 
