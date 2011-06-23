@@ -80,6 +80,7 @@ let rec expr2string (e: expr) : string =
     | String s -> String.concat "" ["\""; s; "\""]
     | Name n -> n
     | Quoted e -> String.concat "" ["'"; expr2string e]
+    | List [] -> "nil"
     | List l -> String.concat "" ["("; String.concat " " (List.map expr2string l); ")"]
     | SrcInfo (e, _) -> expr2string e
 ;;
@@ -101,6 +102,7 @@ let rec expr2token (e: expr) : token =
     | String s -> Verbatim (String.concat "" ["\""; s; "\""])
     | Name n -> Verbatim n
     | Quoted e -> Box [Verbatim "'"; expr2token e]
+    | List [] -> Verbatim "nil"
     | List l -> Box ([Verbatim "("] @ (intercalate (List.map (fun x -> expr2token x) l) (Space 1)) @ [Verbatim ")"])
     | SrcInfo (e, _) -> expr2token e
 ;;
