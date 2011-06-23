@@ -490,6 +490,13 @@ object (self)
       value      
 end;;
 
+let rec extractBool (e: expr) : bool =
+  match e with
+    | SrcInfo (e, pos) -> extractBool e
+    | List [] -> false
+    | _ -> true
+;;
+
 class ifte =
 object (self)
   inherit [expr] eObj
@@ -499,18 +506,30 @@ object (self)
     if List.length args < 2 || List.length args > 3 then
       raise (ExecException (StringError "wrong number of arguments"))
     else
-      let test = eval (List.nth args 0) ctxt in
-      let test_val = 
-	try
-	  let [] = extractList test in
-	  false
-	with
-	  | _ -> true
-      in
-      if test_val then
+      if extractBool (eval (List.nth args 0) ctxt) then
 	eval (List.nth args 1) ctxt else
 	if List.length args = 2 then List [] else eval (List.nth args 2) ctxt
 end;;
+
+class ewhen =
+object (self)
+  inherit [expr] eObj
+  method get_name = "when"
+  method get_doc = "(when COND BODY...)
+
+If COND yields non-nil, do BODY, else return nil.
+When COND yields non-nil, eval BODY forms sequentially and return
+value of last one, or nil if there are none.
+"
+  method apply args ctxt =     
+    if List.length args < 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+      if extractBool (eval (List.nth args 0) ctxt) then 
+	List.fold_left (fun acc hd -> eval hd ctxt) (List []) (List.tl args) 
+      else (List [])
+end;;
+
 
 class eTrue =
 object (self)
@@ -785,6 +804,21 @@ object (self)
 
 end;;
 
+class print =
+object (self)
+  inherit [expr] eObj
+  method get_name = "print"
+  method get_doc = "print an expr"
+  method apply args ctxt = 
+     if List.length args < 1 then
+       raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let e = eval (List.hd args) ctxt in
+       let s = box2string (token2box (expr2token e) 400 2) in
+       printf "%s\n" s;
+       String s
+end;;
+
 class econs =
 object (self)
   inherit [expr] eObj
@@ -913,12 +947,6 @@ object (self)
 
 end;;
 
-let rec extractBool (e: expr) : bool =
-  match e with
-    | SrcInfo (e, pos) -> extractBool e
-    | List [] -> false
-    | _ -> true
-;;
 
 class enot =
 object (self)
@@ -1048,12 +1076,12 @@ let primitives = [new plus; new plusone;
 		  new elet;
 		  new set;
 		  new setq;
-		  new ifte;
+		  new ifte; new ewhen;
 		  new eTrue;
 		  new eEq; new eLt; new eLe; new eGt; new eGe;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
-		  new message;
+		  new message; new print;
 		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
 		  new enot;
 		  new ewhile; new dolist; new dotimes;
@@ -1237,4 +1265,18 @@ let _ = interp_exprs "
          (setq total (+ total (1+ number))))))
      
      (triangle-using-dotimes 4)
+";;
+
+let _ = interp_exprs "
+(setq animals '(gazelle giraffe lion tiger))
+     
+     (defun print-elements-recursively (list)
+       \"Print each element of LIST on a line of its own.
+     Uses recursion.\"
+       (when list                            ; do-again-test
+             (print (car list))              ; body
+             (print-elements-recursively     ; recursive call
+              (cdr list))))                  ; next-step-expression
+     
+     (print-elements-recursively animals)
 ";;
