@@ -1597,7 +1597,7 @@ let _ = interp_exprs "
 
 let _ = interp_exprs "
 ()
- (silly-loop 50000000) ; 10 sec on my emacs ... 1 min 16 sec. in ocaml :((
+; (silly-loop 50000000) ; 10 sec on my emacs ... ~40 sec. in ocaml :((
 ";;
 
 
