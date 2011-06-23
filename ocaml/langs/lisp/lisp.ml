@@ -40,6 +40,14 @@ type expr = Obj of expr eObj
 	    | SrcInfo of expr * position
 ;;
 
+type lisp_error = AtPos of position * lisp_error
+		  | FreeError of string * expr
+		  | StringError of string
+;;
+
+exception LispException of lisp_error
+;;
+
 let rec eq e1 e2 = 
   match e1, e2 with
     | (Obj o1, Obj o2) -> o1 = o2
@@ -67,6 +75,87 @@ let rec equal e1 e2 =
     | (SrcInfo (e1, _), _) -> equal e1 e2
     | (_, SrcInfo (e2, _)) -> equal e1 e2
     | _ -> false
+;;
+
+let rec extractList (e: expr) : expr list =
+  match e with
+    | List l -> l
+    | SrcInfo (e, pos) -> (
+      try extractList e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not a list", e)))
+;;
+
+let rec extractName (e: expr) : string =
+  match e with
+    | Name n -> n
+    | SrcInfo (e, pos) -> (
+      try extractName e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not a name", e)))
+;;
+
+let rec extractString (e: expr) : string =
+  match e with
+    | String s -> s
+    | SrcInfo (e, pos) -> (
+      try extractString e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not a string", e)))
+;;
+
+let rec unSrcInfo (e: expr) : expr =
+  match e with
+    | SrcInfo (e, _) -> unSrcInfo e
+    | _ -> e
+;;
+
+let rec extractObj (e: expr) : expr eObj =
+  match e with
+    | Obj o -> o
+    | SrcInfo (e, pos) -> (
+      try extractObj e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not an object", e)))
+;;
+
+let rec extractBool (e: expr) : bool =
+  match e with
+    | SrcInfo (e, pos) -> extractBool e
+    | List [] -> false
+    | _ -> true
+;;
+
+let exprbool (b: bool) : expr =
+  if b then Name "t" else List []
+;;
+
+let extractStringOrName (e: expr) : string =
+  try extractString e with | _ -> extractName e
+;;
+
+let rec extractInt (e: expr) : int =
+  match e with
+    | Int i -> i
+    | SrcInfo (e, pos) -> (
+      try extractInt e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not an int", e)))
+;;
+
+let rec extractFloat (e: expr) : float =
+  match e with
+    | Float f -> f
+    | SrcInfo (e, pos) -> (
+      try extractFloat e with
+	| LispException err -> raise (LispException (AtPos (pos, err)))
+    )
+    | _ -> raise (LispException (FreeError ("not a float", e)))
 ;;
 
 
@@ -235,14 +324,6 @@ end st
 type env = (name, expr) Hashtbl.t
 ;;
 
-type lisp_error = AtPos of position * lisp_error
-		  | FreeError of string * expr
-		  | StringError of string
-;;
-
-exception ExecException of lisp_error
-;;
-
 let rec eval (e: expr) (ctxt: env) : expr =
   (*printf "%s\n" (expr2string e);*)
   match e with
@@ -250,7 +331,7 @@ let rec eval (e: expr) (ctxt: env) : expr =
       try
 	eval e ctxt
       with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+	| LispException err -> raise (LispException (AtPos (pos, err)))
 	(*| _ -> raise Pervasives.Exit*)
     )    
     | Obj _ as o -> o
@@ -262,14 +343,14 @@ let rec eval (e: expr) (ctxt: env) : expr =
       try 
 	Hashtbl.find ctxt n
       with
-	| Not_found -> raise (ExecException (FreeError ("unknown name", e)))
+	| Not_found -> raise (LispException (FreeError ("unknown name", e)))
     )
     | List [] -> List []
     | List ((Obj o)::tl) -> o#apply tl ctxt
     | List (hd::tl) -> 
       let hd' = eval hd ctxt in
       if hd = hd' then
-	raise (ExecException (FreeError ("not a function", e)))
+	raise (LispException (FreeError ("not a function", e)))
       else
 	eval (List (hd'::tl)) ctxt
 ;;
@@ -308,7 +389,7 @@ object (self)
   
     let args = args @ List.map (fun (name, value) -> 
       match value with
-	| None -> raise (ExecException (StringError "not enough arguments (or missing default value)"))
+	| None -> raise (LispException (StringError "not enough arguments (or missing default value)"))
 	| Some value -> eval value ctxt
     ) (drop listargs (List.length args)) in
       
@@ -325,36 +406,6 @@ object (self)
     )
 end;;
 
-let rec extractList (e: expr) : expr list =
-  match e with
-    | List l -> l
-    | SrcInfo (e, pos) -> (
-      try extractList e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not a list", e)))
-;;
-
-let rec extractName (e: expr) : string =
-  match e with
-    | Name n -> n
-    | SrcInfo (e, pos) -> (
-      try extractName e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not a name", e)))
-;;
-
-let rec extractString (e: expr) : string =
-  match e with
-    | String s -> s
-    | SrcInfo (e, pos) -> (
-      try extractString e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not a string", e)))
-;;
-
 class defun =
 object (self)
   inherit [expr] eObj
@@ -362,7 +413,7 @@ object (self)
   method get_doc = "primitive to define a function\nformat:\n(defun name (params) \"doc\" body"
   method apply args ctxt =     
     if List.length args != 4 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
            
       let listargs = 
@@ -376,7 +427,7 @@ object (self)
 		let [argname; defaultvalue] = extractList hd in
 		(extractName argname, Some defaultvalue)
 	      with
-		| _ -> raise (ExecException (FreeError ("wrong argument form", hd)))
+		| _ -> raise (LispException (FreeError ("wrong argument form", hd)))
 	    )
 	) l
       in 
@@ -388,12 +439,6 @@ object (self)
       o
 
 end;;
-
-let rec unSrcInfo (e: expr) : expr =
-  match e with
-    | SrcInfo (e, _) -> unSrcInfo e
-    | _ -> e
-;;
 
 class plus =
 object (self)
@@ -408,7 +453,7 @@ object (self)
 	| (Int sum, Float a) -> Float (float sum +. a)
 	| (Float sum, Int a) -> Float (sum +. float a)
 	| (Float sum, Float a) -> Float (sum +. a)
-	| _ -> raise (ExecException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
+	| _ -> raise (LispException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
     ) (Int 0) args'
 end;;
 
@@ -425,19 +470,9 @@ object (self)
 	| (Int sum, Float a) -> Float (float sum *. a)
 	| (Float sum, Int a) -> Float (sum *. float a)
 	| (Float sum, Float a) -> Float (sum *. a)
-	| _ -> raise (ExecException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
+	| _ -> raise (LispException (FreeError (String.concat "" ["neither an int or a float ("; exprtype hd; ")"], hd)))
     ) (Int 1) args'
 end;;
-
-let rec extractObj (e: expr) : expr eObj =
-  match e with
-    | Obj o -> o
-    | SrcInfo (e, pos) -> (
-      try extractObj e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not an object", e)))
-;;
 
 class getdoc =
 object (self)
@@ -446,10 +481,10 @@ object (self)
   method get_doc = "return the documentation of the function symbol passed as argument"
   method apply args ctxt =     
     if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
       let n = extractName (List.nth args 0) in
-      let value = try Hashtbl.find ctxt n with | Not_found -> raise (ExecException (FreeError ("unknown name", (List.nth args 0)))) in
+      let value = try Hashtbl.find ctxt n with | Not_found -> raise (LispException (FreeError ("unknown name", (List.nth args 0)))) in
       let o = extractObj value in
       String o#get_doc
 end;;
@@ -462,7 +497,7 @@ object (self)
   method apply args ctxt =     
   
     if List.length args < 2 then
-      raise (ExecException (StringError "not enough arguments for let"))
+      raise (LispException (StringError "not enough arguments for let"))
     else
       let vars = 
 	try 
@@ -478,7 +513,7 @@ object (self)
 		(n, List [])
 	  ) l
 	with
-	  | _ -> raise (ExecException (FreeError ("this is an improper list of bindings for let", List.nth args 0)))
+	  | _ -> raise (LispException (FreeError ("this is an improper list of bindings for let", List.nth args 0)))
       in
       
       save_and_restore (fst (List.split vars)) ctxt (
@@ -501,7 +536,7 @@ object (self)
   method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: both args are evaluated prior to mutation"
   method apply args ctxt =     
     if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
       let [var; value] = List.map (fun hd -> eval hd ctxt) args in
       let n = extractName var in
@@ -516,7 +551,7 @@ object (self)
   method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: only value is evaluated prior to mutation"
   method apply args ctxt =     
     if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
       let [var; value] = args in
       let value = eval value ctxt in
@@ -525,13 +560,6 @@ object (self)
       value      
 end;;
 
-let rec extractBool (e: expr) : bool =
-  match e with
-    | SrcInfo (e, pos) -> extractBool e
-    | List [] -> false
-    | _ -> true
-;;
-
 class ifte =
 object (self)
   inherit [expr] eObj
@@ -539,7 +567,7 @@ object (self)
   method get_doc = "conditional branching\nformat (if test then ?else)"
   method apply args ctxt =     
     if List.length args < 2 || List.length args > 3 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
       if extractBool (eval (List.nth args 0) ctxt) then
 	eval (List.nth args 1) ctxt else
@@ -558,7 +586,7 @@ value of last one, or nil if there are none.
 "
   method apply args ctxt =     
     if List.length args < 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
     else
       if extractBool (eval (List.nth args 0) ctxt) then 
 	List.fold_left (fun acc hd -> eval hd ctxt) (List []) (List.tl args) 
@@ -611,12 +639,8 @@ object (self)
   method get_name = "t"
   method get_doc = "true value"
   method apply args ctxt = 
-    raise (ExecException (StringError "not executable"))
+    raise (LispException (StringError "not executable"))
 end;;
-
-let exprbool (b: bool) : expr =
-  if b then Name "t" else List []
-;;
 
 class eEq =
 object (self)
@@ -625,14 +649,14 @@ object (self)
   method get_doc = "numerical equality"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        match List.map (fun hd -> eval hd ctxt) args with
 	 | [Int i1; Int i2] -> exprbool (i1 = i2)
 	 | [Int i1; Float f2] -> exprbool (float i1 = f2)
 	 | [Float f1; Int i2] -> exprbool (f1 = float i2)
 	 | [Float f1; Float f2] -> exprbool (f1 = f2)
-	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+	 | _ -> raise (LispException (StringError "not numerical arguments"))
 end;;
 
 class eGt =
@@ -642,14 +666,14 @@ object (self)
   method get_doc = "numerical Gt"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        match List.map (fun hd -> eval hd ctxt) args with
 	 | [Int i1; Int i2] -> exprbool (i1 > i2)
 	 | [Int i1; Float f2] -> exprbool (float i1 > f2)
 	 | [Float f1; Int i2] -> exprbool (f1 > float i2)
 	 | [Float f1; Float f2] -> exprbool (f1 > f2)
-	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+	 | _ -> raise (LispException (StringError "not numerical arguments"))
 end;;
 
 class eGe =
@@ -659,14 +683,14 @@ object (self)
   method get_doc = "numerical Ge"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        match List.map (fun hd -> eval hd ctxt) args with
 	 | [Int i1; Int i2] -> exprbool (i1 >= i2)
 	 | [Int i1; Float f2] -> exprbool (float i1 >= f2)
 	 | [Float f1; Int i2] -> exprbool (f1 >= float i2)
 	 | [Float f1; Float f2] -> exprbool (f1 >= f2)
-	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+	 | _ -> raise (LispException (StringError "not numerical arguments"))
 end;;
 
 class eLt =
@@ -676,14 +700,14 @@ object (self)
   method get_doc = "numerical Lt"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        match List.map (fun hd -> eval hd ctxt) args with
 	 | [Int i1; Int i2] -> exprbool (i1 < i2)
 	 | [Int i1; Float f2] -> exprbool (float i1 < f2)
 	 | [Float f1; Int i2] -> exprbool (f1 < float i2)
 	 | [Float f1; Float f2] -> exprbool (f1 < f2)
-	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+	 | _ -> raise (LispException (StringError "not numerical arguments"))
 end;;
 
 class eLe =
@@ -693,14 +717,14 @@ object (self)
   method get_doc = "numerical Le"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        match List.map (fun hd -> eval hd ctxt) args with
 	 | [Int i1; Int i2] -> exprbool (i1 <= i2)
 	 | [Int i1; Float f2] -> exprbool (float i1 <= f2)
 	 | [Float f1; Int i2] -> exprbool (f1 <= float i2)
 	 | [Float f1; Float f2] -> exprbool (f1 <= f2)
-	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+	 | _ -> raise (LispException (StringError "not numerical arguments"))
 end;;
 
 class eeq =
@@ -710,7 +734,7 @@ object (self)
   method get_doc = "strict equality"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
        exprbool (eq e1 e2)
@@ -723,7 +747,7 @@ object (self)
   method get_doc = "equiv equality"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
        exprbool (equal e1 e2)
@@ -736,7 +760,7 @@ object (self)
   method get_doc = "string lt"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [s1; s2] = List.map (fun hd -> 
 	 let hd' = eval hd ctxt in
@@ -751,10 +775,6 @@ object (self)
   method get_name = "string-lessp"
 end;;
 
-let extractStringOrName (e: expr) : string =
-  try extractString e with | _ -> extractName e
-;;
-
 class estringeq =
 object (self)
   inherit [expr] eObj
@@ -762,7 +782,7 @@ object (self)
   method get_doc = "string eq"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [s1; s2] = List.map (fun hd -> 
 	 let hd' = eval hd ctxt in
@@ -780,26 +800,6 @@ end;;
 let parse_common : string Parser.t =
   matched (?+ (tokenp (function |'\\' | '%' -> false | _ -> true) <?> "common")) >>= fun s -> 
   return s
-;;
-
-let rec extractInt (e: expr) : int =
-  match e with
-    | Int i -> i
-    | SrcInfo (e, pos) -> (
-      try extractInt e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not an int", e)))
-;;
-
-let rec extractFloat (e: expr) : float =
-  match e with
-    | Float f -> f
-    | SrcInfo (e, pos) -> (
-      try extractFloat e with
-	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-    )
-    | _ -> raise (ExecException (FreeError ("not a float", e)))
 ;;
 
 let parse_formatter args : string Parser.t =
@@ -856,7 +856,7 @@ object (self)
   method get_doc = "format a message"
   method apply args ctxt = 
      if List.length args < 1 then
-       raise (ExecException (StringError "wrong number of arguments"))
+       raise (LispException (StringError "wrong number of arguments"))
      else
        let args = List.map (fun hd -> eval hd ctxt) args in
        let msg = extractString (List.hd args) in
@@ -868,7 +868,7 @@ object (self)
 	   printf "%s" s;
 	   String s
 	 | Result.Error (pos, s) ->
-	   raise (ExecException (StringError (String.concat "\n" ["in:"; msg; 
+	   raise (LispException (StringError (String.concat "\n" ["in:"; msg; 
 								  String.concat "" ["error @"; 
 										    string_of_int (pos.Pos.line); 
 										    ":"; 
@@ -885,7 +885,7 @@ object (self)
   method get_doc = "print an expr"
   method apply args ctxt = 
      if List.length args < 1 then
-       raise (ExecException (StringError "wrong number of arguments"))
+       raise (LispException (StringError "wrong number of arguments"))
      else
        let e = eval (List.hd args) ctxt in
        let s = box2string (token2box (expr2token e) 400 2) in
@@ -900,7 +900,7 @@ object (self)
   method get_doc = "constructor"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e2 in
@@ -914,7 +914,7 @@ object (self)
   method get_doc = "extract head of list"
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e in
@@ -930,7 +930,7 @@ object (self)
   method get_doc = "extract tail of list"
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e in
@@ -946,7 +946,7 @@ object (self)
   method get_doc = "correspond to nth call to cdr"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e2 in
@@ -961,7 +961,7 @@ object (self)
   method get_doc = "returns the nth element of a list"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
        let l = extractList e2 in
@@ -976,7 +976,7 @@ object (self)
   method get_doc = "mutate the variable, replacing its head"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let value = eval (List.nth args 1) ctxt in
        let n = extractName (List.nth args 0) in
@@ -984,11 +984,11 @@ object (self)
 	 try 
 	   Hashtbl.find ctxt n
 	 with
-	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
+	   | Not_found -> raise (LispException (FreeError ("unknown name", Name n)))
        in 
        let nl = extractList nvalue in
        match nl with
-	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
+	 | [] -> raise (LispException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (value::tl) in
 		     Hashtbl.replace ctxt n nvalue;
 		     value
@@ -1002,7 +1002,7 @@ object (self)
   method get_doc = "mutate the variable, replacing its tail"
   method apply args ctxt = 
      if List.length args != 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let value = extractList (eval (List.nth args 1) ctxt) in
        let n = extractName (List.nth args 0) in
@@ -1010,11 +1010,11 @@ object (self)
 	 try 
 	   Hashtbl.find ctxt n 
 	 with
-	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
+	   | Not_found -> raise (LispException (FreeError ("unknown name", Name n)))
        in 
        let nl = extractList nvalue in
        match nl with
-	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
+	 | [] -> raise (LispException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (hd::value) in
 		     Hashtbl.replace ctxt n nvalue;
 		     List value
@@ -1035,7 +1035,7 @@ To get the number of bytes, use `string-bytes'.
 "
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let e = eval (List.hd args) ctxt in
        Int (
@@ -1054,7 +1054,7 @@ Return SYMBOL's name, a string.
 "
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        String (extractName (eval (List.hd args) ctxt))
 end;;
@@ -1067,7 +1067,7 @@ object (self)
   method get_doc = "negation"
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        exprbool (not (extractBool (eval (List.nth args 0) ctxt)))
 end;;
@@ -1079,7 +1079,7 @@ object (self)
   method get_doc = "while loop\nformat: (while test body...)"
   method apply args ctxt = 
      if List.length args < 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let test = List.hd args in
        let body = List.tl args in
@@ -1097,7 +1097,7 @@ object (self)
   method get_doc = "(dolist (VAR LIST [RESULT]) BODY...)\nLoop over a list.\nEvaluate BODY with VAR bound to each car from LIST, in turn.\nThen evaluate RESULT to get return value, default nil.\n"
   method apply args ctxt = 
      if List.length args < 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let param = List.hd args in
        let body = List.tl args in
@@ -1134,7 +1134,7 @@ inclusive, to COUNT, exclusive.  Then evaluate RESULT to get
 the return value (nil if RESULT is omitted)."
   method apply args ctxt = 
      if List.length args < 2 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let param = List.hd args in
        let body = List.tl args in
@@ -1164,7 +1164,7 @@ Return NUMBER plus one.  NUMBER may be a number or a marker.
 Markers are converted to integers."
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        try 
 	 let i = extractInt (eval (List.nth args 0) ctxt) in
@@ -1175,7 +1175,7 @@ Markers are converted to integers."
 	     let f = extractFloat (eval (List.nth args 0) ctxt) in
 	     Float (f +. 1.)
 	   with
-	     | _ -> raise (ExecException (FreeError ("not a numerical", List.nth args 0)))
+	     | _ -> raise (LispException (FreeError ("not a numerical", List.nth args 0)))
 
 end;;
 
@@ -1189,7 +1189,7 @@ Return NUMBER minus one.  NUMBER may be a number or a marker.
 Markers are converted to integers."
   method apply args ctxt = 
      if List.length args != 1 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        try 
 	 let i = extractInt (eval (List.nth args 0) ctxt) in
@@ -1200,7 +1200,7 @@ Markers are converted to integers."
 	     let f = extractFloat (eval (List.nth args 0) ctxt) in
 	     Float (f -. 1.)
 	   with
-	     | _ -> raise (ExecException (FreeError ("not a numerical", List.nth args 0)))
+	     | _ -> raise (LispException (FreeError ("not a numerical", List.nth args 0)))
 
 end;;
 
@@ -1225,7 +1225,7 @@ object (self)
   method get_doc = "simple version without args"
   method apply args ctxt = 
      if List.length args != 0 then
-      raise (ExecException (StringError "wrong number of arguments"))
+      raise (LispException (StringError "wrong number of arguments"))
      else
        let mtm = localtime (time ()) in
        String (
@@ -1334,7 +1334,7 @@ let interp_expr expr =
 	res'
       )
       with
-	| ExecException e -> printbox (token2box (execException2box e) 400 2); List []
+	| LispException e -> printbox (token2box (execException2box e) 400 2); List []
     )
     | Result.Error (pos, s) ->
       Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
@@ -1358,7 +1358,7 @@ let interp_exprs expr =
 	res'
       )
       with
-	| ExecException e -> printbox (token2box (execException2box e) 400 2); List []
+	| LispException e -> printbox (token2box (execException2box e) 400 2); List []
     )
     | Result.Error (pos, s) ->
       Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
