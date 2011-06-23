@@ -40,6 +40,36 @@ type expr = Obj of expr eObj
 	    | SrcInfo of expr * position
 ;;
 
+let rec eq e1 e2 = 
+  match e1, e2 with
+    | (Obj o1, Obj o2) -> o1 = o2
+    | (Int i1, Int i2) -> i1 = i2
+    | (Float f1, Float f2) -> f1 = f2
+    | (String s1, String s2) -> s1 = s2
+    | (Name n1, Name n2) -> n1 = n2
+    | (Quoted e1, Quoted e2) -> eq e1 e2
+    | (List l1, List l2) when List.length l1 = List.length l2 -> List.fold_left (fun acc (hd1, hd2) -> acc || eq hd1 hd2) true (List.combine l1 l2)
+    | (SrcInfo (e1, _), _) -> eq e1 e2
+    | (_, SrcInfo (e2, _)) -> eq e1 e2
+    | _ -> false
+;;
+
+let rec equal e1 e2 = 
+  match e1, e2 with
+    | (Obj o1, Obj o2) when o1#get_name != "lambda" -> o1#get_name = o2#get_name 
+    | (Obj o1, Obj o2) when o1#get_name = "lambda" -> o1 = o2
+    | (Int i1, Int i2) -> i1 = i2
+    | (Float f1, Float f2) -> f1 = f2
+    | (String s1, String s2) -> s1 = s2
+    | (Name n1, Name n2) -> n1 = n2
+    | (Quoted e1, Quoted e2) -> equal e1 e2
+    | (List l1, List l2) when List.length l1 = List.length l2 -> List.fold_left (fun acc (hd1, hd2) -> acc || equal hd1 hd2) true (List.combine l1 l2)
+    | (SrcInfo (e1, _), _) -> equal e1 e2
+    | (_, SrcInfo (e2, _)) -> equal e1 e2
+    | _ -> false
+;;
+
+
 (******************************************************************************)
 
 let rec expr2string (e: expr) : string =
@@ -145,7 +175,7 @@ end st
 let parse_name st = begin
   
   tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | _ -> false) >>= fun c1 -> 
-  matched (?* (tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | '0' .. '9' -> true | _ -> false) <?> "var")) >>= fun s2 -> 
+  matched (?* (tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | '0' .. '9' -> true | '<' -> true | '=' -> true | '-' -> true | _ -> false) <?> "var")) >>= fun s2 -> 
   return (String.concat "" [String.make 1 c1; s2])
     
 end st
@@ -167,7 +197,7 @@ end st
 
 let parse_symbol st = begin
     (matched (?+ (tokenp (fun x ->  
-      List.mem x ['+'; '-'; '*']
+      List.mem x ['+'; '-'; '*'; '<'; '>'; '=']
      ) <?> "symbol"
      )
      ) >>= fun s -> 
@@ -481,6 +511,301 @@ object (self)
       value      
 end;;
 
+class ifte =
+object (self)
+  inherit [expr] eObj
+  method get_name = "if"
+  method get_doc = "conditional branching\nformat (if test then ?else)"
+  method apply args ctxt =     
+    if List.length args < 2 || List.length args > 3 then
+      raise (ExecException (StringError "wrong number of arguments"))
+    else
+      let test = eval (List.nth args 0) ctxt in
+      let test_val = 
+	try
+	  let [] = extractList test in
+	  false
+	with
+	  | _ -> true
+      in
+      if test_val then
+	eval (List.nth args 1) ctxt else
+	if List.length args = 2 then List [] else eval (List.nth args 2) ctxt
+end;;
+
+class eTrue =
+object (self)
+  inherit [expr] eObj
+  method get_name = "t"
+  method get_doc = "true value"
+  method apply args ctxt = 
+    raise (ExecException (StringError "not executable"))
+end;;
+
+let exprbool (b: bool) : expr =
+  if b then Name "t" else List []
+;;
+
+class eEq =
+object (self)
+  inherit [expr] eObj
+  method get_name = "="
+  method get_doc = "numerical equality"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       match List.map (fun hd -> eval hd ctxt) args with
+	 | [Int i1; Int i2] -> exprbool (i1 = i2)
+	 | [Int i1; Float f2] -> exprbool (float i1 = f2)
+	 | [Float f1; Int i2] -> exprbool (f1 = float i2)
+	 | [Float f1; Float f2] -> exprbool (f1 = f2)
+	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+end;;
+
+class eGt =
+object (self)
+  inherit [expr] eObj
+  method get_name = ">"
+  method get_doc = "numerical Gt"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       match List.map (fun hd -> eval hd ctxt) args with
+	 | [Int i1; Int i2] -> exprbool (i1 > i2)
+	 | [Int i1; Float f2] -> exprbool (float i1 > f2)
+	 | [Float f1; Int i2] -> exprbool (f1 > float i2)
+	 | [Float f1; Float f2] -> exprbool (f1 > f2)
+	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+end;;
+
+class eGe =
+object (self)
+  inherit [expr] eObj
+  method get_name = ">="
+  method get_doc = "numerical Ge"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       match List.map (fun hd -> eval hd ctxt) args with
+	 | [Int i1; Int i2] -> exprbool (i1 >= i2)
+	 | [Int i1; Float f2] -> exprbool (float i1 >= f2)
+	 | [Float f1; Int i2] -> exprbool (f1 >= float i2)
+	 | [Float f1; Float f2] -> exprbool (f1 >= f2)
+	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+end;;
+
+class eLt =
+object (self)
+  inherit [expr] eObj
+  method get_name = "<"
+  method get_doc = "numerical Lt"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       match List.map (fun hd -> eval hd ctxt) args with
+	 | [Int i1; Int i2] -> exprbool (i1 < i2)
+	 | [Int i1; Float f2] -> exprbool (float i1 < f2)
+	 | [Float f1; Int i2] -> exprbool (f1 < float i2)
+	 | [Float f1; Float f2] -> exprbool (f1 < f2)
+	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+end;;
+
+class eLe =
+object (self)
+  inherit [expr] eObj
+  method get_name = "<="
+  method get_doc = "numerical Le"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       match List.map (fun hd -> eval hd ctxt) args with
+	 | [Int i1; Int i2] -> exprbool (i1 <= i2)
+	 | [Int i1; Float f2] -> exprbool (float i1 <= f2)
+	 | [Float f1; Int i2] -> exprbool (f1 <= float i2)
+	 | [Float f1; Float f2] -> exprbool (f1 <= f2)
+	 | _ -> raise (ExecException (StringError "not numerical arguments"))
+end;;
+
+class eeq =
+object (self)
+  inherit [expr] eObj
+  method get_name = "eq"
+  method get_doc = "strict equality"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
+       exprbool (eq e1 e2)
+end;;
+
+class eequal =
+object (self)
+  inherit [expr] eObj
+  method get_name = "equal"
+  method get_doc = "equiv equality"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
+       exprbool (equal e1 e2)
+end;;
+
+class estringlt =
+object (self)
+  inherit [expr] eObj
+  method get_name = "string<"
+  method get_doc = "string lt"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [s1; s2] = List.map (fun hd -> 
+	 let hd' = eval hd ctxt in
+	 try extractString hd' with | _ -> extractName hd'
+       ) args in
+       exprbool (s1 < s2)
+end;;
+
+class estringlessp =
+object (self)
+  inherit estringlt
+  method get_name = "string-lessp"
+end;;
+
+let extractStringOrName (e: expr) : string =
+  try extractString e with | _ -> extractName e
+;;
+
+class estringeq =
+object (self)
+  inherit [expr] eObj
+  method get_name = "string="
+  method get_doc = "string eq"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [s1; s2] = List.map (fun hd -> 
+	 let hd' = eval hd ctxt in
+	 extractStringOrName hd'
+       ) args in
+       exprbool (s1 = s2)
+end;;
+
+class estringequal =
+object (self)
+  inherit estringlt
+  method get_name = "string-equal"
+end;;
+
+let parse_common : string Parser.t =
+  matched (?+ (tokenp (function |'\\' | '%' -> false | _ -> true) <?> "common")) >>= fun s -> 
+  return s
+;;
+
+let rec extractInt (e: expr) : int =
+  match e with
+    | Int i -> i
+    | SrcInfo (e, pos) -> (
+      try extractInt e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not an int", e)))
+;;
+
+let rec extractFloat (e: expr) : float =
+  match e with
+    | Float f -> f
+    | SrcInfo (e, pos) -> (
+      try extractFloat e with
+	| ExecException err -> raise (ExecException (AtPos (pos, err)))
+    )
+    | _ -> raise (ExecException (FreeError ("not a float", e)))
+;;
+
+let parse_formatter args : string Parser.t =
+  token '%' >>= fun _ ->
+  (token_result (function 
+    | 's' -> ( 
+      try 
+	let s = extractStringOrName (List.hd !args) in
+	args := List.tl !args;
+	Result.Ok s
+      with
+	| _ -> Result.Error (String.concat "" ["not a symbol or string: "; expr2string (List.hd !args)])
+    )
+    | 'd' -> (
+      try 
+	let s = 
+	  try 
+	    string_of_int (extractInt (List.hd !args))
+	  with
+	    | _ -> string_of_float (extractFloat (List.hd !args))
+	in
+	args := List.tl !args;
+	Result.Ok s
+      with
+	| _ -> Result.Error (String.concat "" ["not a numerical: "; expr2string (List.hd !args)])
+    )
+    | 'c' -> Result.Error "NYI"
+    | c -> Result.Error (String.concat "" ["unknown formater: "; String.make 1 c])
+   )
+  ) >>= fun res -> 
+  return res
+;;
+
+let parse_escaped : string Parser.t =
+  matched (
+    token '\\' >>= fun _ ->
+    tokenp (fun _ -> true) >>= fun _ ->
+    return ()
+  ) >>= fun s ->
+  return s
+;;
+
+(* I cannot managed to properly grab the error from parse_formatter ... grrr*)
+let parse_msg args : (string list) Parser.t =
+  (?** (parse_common <|> (parse_formatter args) <|> parse_escaped)) >>= fun l ->
+  eos >>= fun _ ->
+  return l
+;;
+
+class message =
+object (self)
+  inherit [expr] eObj
+  method get_name = "message"
+  method get_doc = "format a message"
+  method apply args ctxt = 
+     if List.length args < 1 then
+       raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let args = List.map (fun hd -> eval hd ctxt) args in
+       let msg = extractString (List.hd args) in
+       let args = ref (List.tl args) in
+       let stream = Stream.from_string ~filename:"stdin" msg in
+       match parse_msg args stream with
+	 | Result.Ok (res, _) -> 
+	   String (String.concat "" res)
+	 | Result.Error (pos, s) ->
+	   raise (ExecException (StringError (String.concat "\n" ["in:"; msg; 
+								  String.concat "" ["error @"; 
+										    string_of_int (pos.Pos.line); 
+										    ":"; 
+										    string_of_int (pos.Pos.column); 
+										   ]; 
+								  s])))
+
+end;;
+
+
+
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
@@ -491,6 +816,12 @@ let primitives = [new plus;
 		  new elet;
 		  new set;
 		  new setq;
+		  new ifte;
+		  new eTrue;
+		  new eEq; new eLt; new eLe; new eGt; new eGe;
+		  new eeq; new eequal;
+		  new estringlt; new estringlessp; new estringeq; new estringequal;
+		  new message;
 		 ];;
 
 let _ = 
@@ -592,6 +923,21 @@ let _ = interp_expr "x";;
 
 let _ = interp_expr "y";;
 
+let _ = interp_expr "(if () 'true 'false)"
+
+let _ = interp_expr "(if t 'true 'false)"
+
+let _ = interp_expr "(= 1 1.0)"
+
+let _ = interp_expr "(< 1 1.0)"
+
+let _ = interp_expr "(eq t t)"
+
+let _ = interp_expr "(string= \"aa\" \"aa\")"
+
+let _ = interp_expr "(string< \"aa\" \"aa\")"
+
+let _ = interp_expr "(message \"salut doudou %s %d times !!!!!!\" 'nicolas 3.23)"
 
 let _ = interp_exprs "
 (setq counter 0)                ; Let's call this the initializer.
