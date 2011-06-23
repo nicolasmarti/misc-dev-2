@@ -282,33 +282,21 @@ let rec drop (l: 'a list) (n: int) : 'a list =
     | _ -> drop (List.tl l) (n-1)
 ;;
 
-let savevals (l: name list) (ctxt: env) : (name * expr option) list =
-  List.fold_left (fun acc n ->
-    try 
-      (n, Some (Hashtbl.find ctxt n))::acc
-    with
-      | _ -> (n, None)::acc
-  ) [] l
-;;
-
-let restorevals (l: (name * expr option) list) (ctxt: env) : unit =
-  Pervasives.ignore (
-    List.map (fun hd -> 
-      match hd with
-	| (n, None) -> Hashtbl.remove ctxt n
-	| (n, Some e) -> Hashtbl.add ctxt n e 
-    ) l
-  )
+let restorevals (l: name list) (ctxt: env) : unit =
+    List.fold_left (fun acc hd -> 
+      Hashtbl.remove ctxt hd
+    ) () l
 ;;
 
 let save_and_restore (l: name list) (ctxt: env) (f: unit -> 'a) : 'a =
-  let l = savevals l ctxt in
-  try 
-    let res = f () in
-    restorevals l ctxt;
-    res
-  with
-    | e -> restorevals l ctxt; raise e
+  let res = 
+    try
+      f ()
+    with
+      | e -> restorevals l ctxt; raise e
+  in  
+  restorevals l ctxt;
+  res
 ;;
 
 class lambda (name: string) (doc: string) (listargs: (name * expr option) list) (body: expr list) =
@@ -396,7 +384,7 @@ object (self)
       let name = extractName (List.hd args) in
       let doc = extractString (List.nth args 2) in
       let o = Obj (new lambda name doc listargs body) in
-      Hashtbl.add ctxt name o;
+      Hashtbl.replace ctxt name o;
       o
 
 end;;
@@ -517,7 +505,7 @@ object (self)
     else
       let [var; value] = List.map (fun hd -> eval hd ctxt) args in
       let n = extractName var in
-      Hashtbl.add ctxt n value;
+      Hashtbl.replace ctxt n value;
       value      
 end;;
 
@@ -533,7 +521,7 @@ object (self)
       let [var; value] = args in
       let value = eval value ctxt in
       let n = extractName var in
-      Hashtbl.add ctxt n value;
+      Hashtbl.replace ctxt n value;
       value      
 end;;
 
@@ -1002,7 +990,7 @@ object (self)
        match nl with
 	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (value::tl) in
-		     Hashtbl.add ctxt n nvalue;
+		     Hashtbl.replace ctxt n nvalue;
 		     value
 
 end;;
@@ -1028,7 +1016,7 @@ object (self)
        match nl with
 	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (hd::value) in
-		     Hashtbl.add ctxt n nvalue;
+		     Hashtbl.replace ctxt n nvalue;
 		     List value
 
 end;;
@@ -1122,7 +1110,7 @@ object (self)
 	 fun _ -> 
 
 	   let _ = List.fold_left (fun acc hd -> 
-	     Hashtbl.add  ctxt var hd;
+	     Hashtbl.add ctxt var hd;
 	     Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
 	   ) () list in
 	   try Hashtbl.find ctxt result with _ -> List []
@@ -1308,7 +1296,7 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 
 let _ = 
   List.fold_left (fun acc o -> 
-    Hashtbl.add ctxt o#get_name (Obj o)
+    Hashtbl.replace ctxt o#get_name (Obj o)
   ) () primitives
 
 
@@ -1604,12 +1592,12 @@ let _ = interp_exprs "
 
 let _ = interp_exprs "
 ()
-; (silly-loop 5000000) ; 7~8 sec in ocaml
+ (silly-loop 5000000) ; 7~8 sec in ocaml
 ";;
 
 let _ = interp_exprs "
 ()
-; (silly-loop 50000000) ; 10 sec on my emacs ... 1 min 16 sec. in ocaml :((
+ (silly-loop 50000000) ; 10 sec on my emacs ... 1 min 16 sec. in ocaml :((
 ";;
 
 
