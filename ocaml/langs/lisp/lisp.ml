@@ -880,6 +880,58 @@ object (self)
        if List.length l <= n then List [] else List.nth l n
 end;;
 
+class setcar =
+object (self)
+  inherit [expr] eObj
+  method get_name = "setcar"
+  method get_doc = "mutate the variable, replacing its head"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let value = eval (List.nth args 1) ctxt in
+       let n = extractName (List.nth args 0) in
+       let nvalue = 
+	 try 
+	   NameMap.find n !ctxt
+	 with
+	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
+       in 
+       let nl = extractList nvalue in
+       match nl with
+	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
+	 | hd::tl -> let nvalue = List (value::tl) in
+		     ctxt := NameMap.add n nvalue !ctxt;
+		     value
+
+end;;
+
+class setcdr =
+object (self)
+  inherit [expr] eObj
+  method get_name = "setcdr"
+  method get_doc = "mutate the variable, replacing its tail"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let value = extractList (eval (List.nth args 1) ctxt) in
+       let n = extractName (List.nth args 0) in
+       let nvalue = 
+	 try 
+	   NameMap.find n !ctxt
+	 with
+	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
+       in 
+       let nl = extractList nvalue in
+       match nl with
+	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
+	 | hd::tl -> let nvalue = List (hd::value) in
+		     ctxt := NameMap.add n nvalue !ctxt;
+		     List value
+
+end;;
+
 
 
 (******************************************************************************)
@@ -898,7 +950,7 @@ let primitives = [new plus;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message;
-		  new econs; new ecar; new ecdr; new nthcdr;		  
+		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
 		 ];;
 
 let _ = 
@@ -1022,12 +1074,20 @@ let _ = interp_expr "(car '(doudou rou)))"
 
 let _ = interp_expr "(cdr '(doudou rou)))"
 
+let _ = interp_expr "(nthcdr 3 '(asd asd asd asd asd ou rou)))"
+
+let _ = interp_expr "(nth 3 '(asd asd asd asd asd ou rou)))"
+
 let _ = interp_exprs "
-(setq counter 0)                ; Let's call this the initializer.
-     
-(setq counter (+ counter 1))    ; This is the incrementer.
-     
-counter                         ; This is the counter.
+(setq x '(rou dou dou))
+
+(setcar x 'prout)
+
+x
+
+(setcdr x '(rpout prout))
+
+x
 "
 ;;
 
