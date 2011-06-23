@@ -281,6 +281,35 @@ let rec drop (l: 'a list) (n: int) : 'a list =
     | _ -> drop (List.tl l) (n-1)
 ;;
 
+let savevals (l: name list) (ctxt: env ref) : (name * expr option) list =
+  List.fold_left (fun acc n ->
+    try 
+      (n, Some (NameMap.find n !ctxt))::acc
+    with
+      | _ -> (n, None)::acc
+  ) [] l
+;;
+
+let restorevals (l: (name * expr option) list) (ctxt: env ref) : unit =
+  Pervasives.ignore (
+    List.map (fun hd -> 
+      match hd with
+	| (n, None) -> ctxt := NameMap.remove n !ctxt
+	| (n, Some e) -> ctxt := NameMap.add n e !ctxt
+    ) l
+  )
+;;
+
+let save_and_restore (l: name list) (ctxt: env ref) (f: unit -> 'a) : 'a =
+  let l = savevals l ctxt in
+  try 
+    let res = f () in
+    restorevals l ctxt;
+    res
+  with
+    | e -> restorevals l ctxt; raise e
+;;
+
 class lambda (name: string) (doc: string) (listargs: (name * expr option) list) (body: expr list) =
 object (self)
   inherit [expr] eObj
@@ -294,26 +323,17 @@ object (self)
 	| Some value -> eval value ctxt
     ) (drop listargs (List.length args)) in
       
-    let oldvals = List.fold_right (fun (n, _) acc ->
-      try 
-	(n, NameMap.find n !ctxt)::acc
-      with
-	| Not_found -> acc
-    ) listargs [] in
+    save_and_restore (fst (List.split listargs)) ctxt (
+      fun _ -> 
     
-    let args' = List.map (fun e -> eval e ctxt) args in
+	let args' = List.map (fun e -> eval e ctxt) args in
     
-    let _ = List.map (fun ((n, _), v) -> 
-      ctxt := NameMap.add n v !ctxt
-    ) (List.combine listargs args') in
+	let _ = List.map (fun ((n, _), v) -> 
+	  ctxt := NameMap.add n v !ctxt
+	) (List.combine listargs args') in
     
-    let res = List.fold_left (fun acc expr -> eval expr ctxt) (List []) body in
-    
-    let _ = List.map (fun (n, v) -> 
-      ctxt := NameMap.add n v !ctxt
-    ) oldvals in
-    
-    res
+	List.fold_left (fun acc expr -> eval expr ctxt) (List []) body
+    )
 end;;
 
 let rec extractList (e: expr) : expr list =
@@ -472,26 +492,17 @@ object (self)
 	  | _ -> raise (ExecException (FreeError ("this is an improper list of bindings for let", List.nth args 0)))
       in
       
-      let oldvals = List.fold_right (fun (n, _) acc ->
-	try 
-	  (n, NameMap.find n !ctxt)::acc
-	with
-	  | Not_found -> acc
-      ) vars [] in
+      save_and_restore (fst (List.split vars)) ctxt (
+	fun _ -> 
     
-      let _ = List.map (fun (n, value) -> 
-	ctxt := NameMap.add n (eval value ctxt) !ctxt
-      ) vars in    
-      
-      let body = drop args 1 in
-
-      let res = List.fold_left (fun acc expr -> eval expr ctxt) (List []) body in
-      
-      let _ = List.map (fun (n, v) -> 
-	ctxt := NameMap.add n v !ctxt
-      ) oldvals in
-      
-      res
+	  let _ = List.map (fun (n, value) -> 
+	    ctxt := NameMap.add n (eval value ctxt) !ctxt
+	  ) vars in    
+	  
+	  let body = drop args 1 in
+	  
+	  List.fold_left (fun acc expr -> eval expr ctxt) (List []) body
+      )
 end;;
 
 class set =
@@ -1078,7 +1089,7 @@ object (self)
   method get_name = "while"
   method get_doc = "while loop\nformat: (while test body...)"
   method apply args ctxt = 
-     if List.length args < 2 then
+     if List.length args < 1 then
       raise (ExecException (StringError "wrong number of arguments"))
      else
        let test = List.hd args in
@@ -1105,15 +1116,16 @@ object (self)
        let var = extractName var in
        let list = extractList (eval list ctxt) in
        let result = extractName result in
-       let oldvarvalue = try Some (NameMap.find var !ctxt) with _ -> None in
-       let _ = List.fold_left (fun acc hd -> 
-	 ctxt := NameMap.add var hd !ctxt;
-	 Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
-       ) () list in
-       let res = try NameMap.find result !ctxt with _ -> List [] in
-       match oldvarvalue with
-	 | None -> res
-	 | Some v -> ctxt := NameMap.add var v !ctxt; res
+       
+       save_and_restore [var] ctxt (
+	 fun _ -> 
+
+	   let _ = List.fold_left (fun acc hd -> 
+	     ctxt := NameMap.add var hd !ctxt;
+	     Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
+	   ) () list in
+	   try NameMap.find result !ctxt with _ -> List []
+       )
 end;;
 
 let rec from_to (from: int) (ito: int) : int list =
@@ -1141,15 +1153,16 @@ the return value (nil if RESULT is omitted)."
        let var = extractName var in
        let count = extractInt (eval count ctxt) in
        let result = extractName result in
-       let oldvarvalue = try Some (NameMap.find var !ctxt) with _ -> None in
-       let _ = List.fold_left (fun acc hd -> 
-	 ctxt := NameMap.add var (Int hd) !ctxt;
-	 Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
-       ) () (from_to 0 count) in
-       let res = try NameMap.find result !ctxt with _ -> List [] in
-       match oldvarvalue with
-	 | None -> res
-	 | Some v -> ctxt := NameMap.add var v !ctxt; res
+
+       save_and_restore [var] ctxt (
+	 fun _ ->
+
+	   let _ = List.fold_left (fun acc hd -> 
+	     ctxt := NameMap.add var (Int hd) !ctxt;
+	     Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
+	   ) () (from_to 0 count) in
+	   try NameMap.find result !ctxt with _ -> List []
+       )
 end;;
 
 class plusone =
@@ -1203,6 +1216,72 @@ Markers are converted to integers."
 end;;
 
 
+let int2string (i: int) (size: int) : string =
+  let s = string_of_int i in
+  if String.length s > size then
+    raise (Failure "int2string: string rep. to long")
+  else
+    if String.length s < size then (
+      let prefix = String.make (size - String.length s) '0' in
+      String.concat "" [prefix; s]
+    ) else s
+;;
+
+open Unix;;
+
+class currenttimestring =
+object (self)
+  inherit [expr] eObj
+  method get_name = "current-time-string"
+  method get_doc = "simple version without args"
+  method apply args ctxt = 
+     if List.length args != 0 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let mtm = localtime (time ()) in
+       String (
+	 String.concat " " [
+	   (match mtm.tm_wday with
+	     | 0 -> "Sun"
+	     | 1 -> "Mon"
+	     | 2 -> "Tue"
+	     | 3 -> "Wed"
+	     | 4 -> "Thu"
+	     | 5 -> "Fri"
+	     | 6 -> "Sat"
+	   );
+	   (match mtm.tm_mon with
+	     | 0 -> "Jan"
+	     | 1 -> "Feb"
+	     | 2 -> "Mar"
+	     | 3 -> "Apr"
+	     | 4 -> "May"
+	     | 5 -> "Jun"
+	     | 6 -> "Jul"
+	     | 7 -> "Aug"
+	     | 8 -> "Sep"
+	     | 9 -> "Oct"
+	     | 10 -> "Nov"
+	     | 11 -> "Dec"
+	   );
+	   int2string mtm.tm_mday 2;
+	   String.concat ":" [int2string mtm.tm_hour 2; int2string mtm.tm_min 2; int2string mtm.tm_sec 2];
+	   int2string (mtm.tm_year + 1900) 4;
+	 ]
+       )
+
+end;;
+
+class elist =
+object (self)
+  inherit [expr] eObj
+  method get_name = "list"
+  method get_doc = "returns its args in a list"
+  method apply args ctxt = 
+    List (List.map (fun hd -> eval hd ctxt) args)
+end;;
+
+
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
@@ -1219,8 +1298,9 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message; new print;
-		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
+		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr; new elist;
 		  new length; new symbolname;
+		  new currenttimestring;
 		  new enot;
 		  new ewhile; new dolist; new dotimes;
 		 ];;
@@ -1278,7 +1358,7 @@ let interp_exprs expr =
   match parse_exprs stream with
     | Result.Ok (res, _) -> (
       (*
-      let _ = List.map (fun hd -> 
+       let _ = List.map (fun hd -> 
 	printf "pprint = "; 
 	printbox (token2box (expr2token hd) 400 2);
       ) res in
@@ -1445,6 +1525,7 @@ let _ = interp_exprs "
      (square-each '(1 2 3))
 ";;
 
+
 let _ = interp_exprs "
 (setq animals '(gazelle giraffe lion tiger))
      
@@ -1459,6 +1540,7 @@ let _ = interp_exprs "
      (print-elements-recursively animals)
 "
 ;;
+
 
 let _ = interp_exprs "
 (defun add-elements (numbers-list)
@@ -1506,3 +1588,18 @@ let _ = interp_exprs "
                                     number)))        ; number
 (triangle-initialization 2)
 ";;
+
+let _ = interp_exprs "
+(defun silly-loop (n)
+       \"Return time before and after N iterations of a loop.\"
+       (let ((t1 (current-time-string)))
+         (while (> (setq n (1- n))
+                   0))
+         (list t1 (current-time-string))))
+
+(silly-loop 1000)
+";;
+
+
+
+
