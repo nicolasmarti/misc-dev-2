@@ -219,6 +219,10 @@ let printbox (b: box) : unit =
   ) () b.data
 ;;
 
+let box2string (b: box) : string =
+  String.concat "\n" b.data
+;;
+
 let rec break_string (s: string) : string list =  
   if (String.length s = 0) then [] else
     try 
