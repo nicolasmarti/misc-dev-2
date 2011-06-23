@@ -160,25 +160,10 @@ end st
 
 let blank = ignore (one_of [' '; '\t'; '\n'; '\r'])
 
-let constant_int st = begin
-  (* [0-9]+ *)
-  (matched (?+ (tokenp (function '0'..'9' -> true | _ -> false) <?> "decimal")) >>= fun s -> 
-   return (int_of_string s))
-end st
-
-let constant_float st = begin
-  (* [0-9]+[.][0-9]+ *)
-  (matched (?+ (tokenp (function '0'..'9' -> true | _ -> false) <?> "float")) >>= fun s1 -> 
-   token '.' >>= fun _ ->
-   matched (?+ (tokenp (function '0'..'9' -> true | _ -> false) <?> "float")) >>= fun s2 -> 
-   return (float_of_string (String.concat "." [s1; s2])))
-end st
-
 let parse_name st = begin
   
-  tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | _ -> false) >>= fun c1 -> 
-  matched (?* (tokenp (function 'a'..'z' -> true | 'A'..'Z' -> true | '0' .. '9' -> true | '<' -> true | '=' -> true | '-' -> true | _ -> false) <?> "var")) >>= fun s2 -> 
-  return (String.concat "" [String.make 1 c1; s2])
+  matched (?+ (tokenp (function | '(' | ')' | '"' | ';' | ' ' | '\t' | '\n' | '\r' | '\'' -> false | _ -> true) <?> "var")) >>= fun s2 -> 
+  return s2
     
 end st
 
@@ -197,23 +182,13 @@ let parse_comment st = begin
   )    
 end st
 
-let parse_symbol st = begin
-    (matched (?+ (tokenp (fun x ->  
-      List.mem x ['+'; '-'; '*'; '<'; '>'; '=']
-     ) <?> "symbol"
-     )
-     ) >>= fun s -> 
-     return s
-    )    
-end st
-
 let rec parse_expr st = begin
   withPos (
-    try_ (constant_float >>= fun i -> return (Float i))
-    <|> try_ (constant_int >>= fun i -> return (Int i))
-    <|> try_ (parse_symbol >>= fun s -> return (Name s))
-    <|> try_ (parse_name >>= fun s -> 
-	      if s = "nil" then return (List []) else return (Name s)
+    try_ (parse_name >>= fun s -> 
+	      if s = "nil" then return (List []) else 
+		try return (Int (int_of_string s)) with
+		  | _ -> try return (Float (float_of_string s)) with
+		      | _ -> return (Name s)
     )
     <|> try_ (token '"' >>= fun _ -> parse_string >>= fun s -> token '"' >>= fun _ -> return (String s))
     <|> try_ (token '\'' >>= fun _ -> parse_expr >>= fun e -> return (Quoted e))
@@ -263,7 +238,7 @@ let rec eval (e: expr) (ctxt: env ref) : expr =
 	eval e ctxt
       with
 	| ExecException err -> raise (ExecException (AtPos (pos, err)))
-	| _ -> raise Pervasives.Exit
+	(*| _ -> raise Pervasives.Exit*)
     )    
     | Obj _ as o -> o
     | Int _ as i -> i
@@ -975,13 +950,99 @@ object (self)
        !res
 end;;
 
+class dolist =
+object (self)
+  inherit [expr] eObj
+  method get_name = "dolist"
+  method get_doc = "(dolist (VAR LIST [RESULT]) BODY...)\nLoop over a list.\nEvaluate BODY with VAR bound to each car from LIST, in turn.\nThen evaluate RESULT to get return value, default nil.\n"
+  method apply args ctxt = 
+     if List.length args < 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let param = List.hd args in
+       let body = List.tl args in
+       let [var; list; result] = extractList param in
+       let var = extractName var in
+       let list = extractList (eval list ctxt) in
+       let result = extractName result in
+       let oldvarvalue = try Some (NameMap.find var !ctxt) with _ -> None in
+       let _ = List.fold_left (fun acc hd -> 
+	 ctxt := NameMap.add var hd !ctxt;
+	 Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
+       ) () list in
+       let res = try NameMap.find result !ctxt with _ -> List [] in
+       match oldvarvalue with
+	 | None -> res
+	 | Some v -> ctxt := NameMap.add var v !ctxt; res
+end;;
+
+let rec from_to (from: int) (ito: int) : int list =
+  if from > ito then [] else from::(from_to (from+1) ito)
+;;
+
+class dotimes =
+object (self)
+  inherit [expr] eObj
+  method get_name = "dotimes"
+  method get_doc = "
+(dotimes (VAR COUNT [RESULT]) BODY...)
+
+Loop a certain number of times.
+Evaluate BODY with VAR bound to successive integers running from 0,
+inclusive, to COUNT, exclusive.  Then evaluate RESULT to get
+the return value (nil if RESULT is omitted)."
+  method apply args ctxt = 
+     if List.length args < 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let param = List.hd args in
+       let body = List.tl args in
+       let [var; count; result] = extractList param in
+       let var = extractName var in
+       let count = extractInt (eval count ctxt) in
+       let result = extractName result in
+       let oldvarvalue = try Some (NameMap.find var !ctxt) with _ -> None in
+       let _ = List.fold_left (fun acc hd -> 
+	 ctxt := NameMap.add var (Int hd) !ctxt;
+	 Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
+       ) () (from_to 0 count) in
+       let res = try NameMap.find result !ctxt with _ -> List [] in
+       match oldvarvalue with
+	 | None -> res
+	 | Some v -> ctxt := NameMap.add var v !ctxt; res
+end;;
+
+class plusone =
+object (self)
+  inherit [expr] eObj
+  method get_name = "1+"
+  method get_doc = "(1+ NUMBER)
+
+Return NUMBER plus one.  NUMBER may be a number or a marker.
+Markers are converted to integers."
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       try 
+	 let i = extractInt (eval (List.nth args 0) ctxt) in
+	 Int (i + 1)
+       with
+	 | _ -> 
+	   try 
+	     let f = extractFloat (eval (List.nth args 0) ctxt) in
+	     Float (f +. 1.)
+	   with
+	     | _ -> raise (ExecException (FreeError ("not a numerical", List.nth args 0)))
+
+end;;
 
 
 (******************************************************************************)
 
 let ctxt : env ref = ref NameMap.empty;;
 
-let primitives = [new plus;
+let primitives = [new plus; new plusone;
 		  new defun;
 		  new getdoc;
 		  new elet;
@@ -995,7 +1056,7 @@ let primitives = [new plus;
 		  new message;
 		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
 		  new enot;
-		  new ewhile; 
+		  new ewhile; new dolist; new dotimes;
 		 ];;
 
 let _ = 
@@ -1149,3 +1210,31 @@ let _ = interp_exprs "
 
 "
 ;;
+
+let _ = interp_exprs "
+(setq animals '(gazelle giraffe lion tiger))
+     
+(defun reverse-list-with-dolist (list)
+    \"Using dolist, reverse the order of LIST.\"
+    (let (value)  ; make sure list starts empty
+      (dolist (element list value)
+      (setq value (cons element value)))))
+     
+(reverse-list-with-dolist animals)
+";;
+
+let _ = interp_exprs "
+(let (value)      ; otherwise a value is a void variable
+       (dotimes (number 3 value)
+         (setq value (cons number value))))
+";;
+
+let _ = interp_exprs "
+(defun triangle-using-dotimes (number-of-rows)
+   \"Using dotimes, add up the number of pebbles in a triangle.\"
+     (let ((total 0))
+       (dotimes (number number-of-rows total)
+         (setq total (+ total (1+ number))))))
+     
+     (triangle-using-dotimes 4)
+";;
