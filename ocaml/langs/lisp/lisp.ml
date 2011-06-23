@@ -210,7 +210,9 @@ let rec parse_expr st = begin
     try_ (constant_float >>= fun i -> return (Float i))
     <|> try_ (constant_int >>= fun i -> return (Int i))
     <|> try_ (parse_symbol >>= fun s -> return (Name s))
-    <|> try_ (parse_name >>= fun s -> return (Name s))
+    <|> try_ (parse_name >>= fun s -> 
+	      if s = "nil" then return (List []) else return (Name s)
+    )
     <|> try_ (token '"' >>= fun _ -> parse_string >>= fun s -> token '"' >>= fun _ -> return (String s))
     <|> try_ (token '\'' >>= fun _ -> parse_expr >>= fun e -> return (Quoted e))
     <|> try_ (token '(' >>= fun _ -> token ')' >>= fun _ -> return (List []))
