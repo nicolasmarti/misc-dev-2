@@ -1596,8 +1596,19 @@ let _ = interp_exprs "
          (while (> (setq n (1- n))
                    0))
          (list t1 (current-time-string))))
+"
+let _ = interp_exprs "
+ (silly-loop 500000) ; 0 sec in ocaml
+";;
 
-(silly-loop 1000)
+let _ = interp_exprs "
+()
+; (silly-loop 5000000) ; 7~8 sec in ocaml
+";;
+
+let _ = interp_exprs "
+()
+; (silly-loop 50000000) ; 10 sec on my emacs ... 1 min 16 sec. in ocaml :((
 ";;
 
 
