@@ -565,6 +565,45 @@ value of last one, or nil if there are none.
       else (List [])
 end;;
 
+let rec fold_left_stop (f: 'b -> 'a option) (l: 'a list) : 'b option =
+  match l with
+    | [] -> None
+    | hd::tl -> 
+      match f hd with
+	| None -> fold_left_stop f tl
+	| res -> res
+;;
+
+class cond =
+object (self)
+  inherit [expr] eObj
+  method get_name = "cond"
+  method get_doc = "(cond CLAUSES...)
+
+Try each clause until one succeeds.
+Each clause looks like (CONDITION BODY...).  CONDITION is evaluated
+and, if the value is non-nil, this clause succeeds:
+then the expressions in BODY are evaluated and the last one's
+value is the value of the cond-form.
+If no clause succeeds, cond returns nil.
+If a clause has one element, as in (CONDITION),
+CONDITION's value if non-nil is returned from the cond-form.
+"
+  method apply args ctxt =     
+    let res =
+      fold_left_stop (fun hd -> 
+	let l = extractList hd in
+	match l with
+	  | [] -> None
+	  | hd::tl ->
+	    if extractBool (eval hd ctxt) then
+	      Some (List.fold_left (fun acc hd -> eval hd ctxt) (List []) tl)
+	    else None
+      ) args in
+    match res with
+      | None -> List []
+      | Some res -> res
+end;;
 
 class eTrue =
 object (self)
@@ -982,6 +1021,44 @@ object (self)
 
 end;;
 
+class length =
+object (self)
+  inherit [expr] eObj
+  method get_name = "length"
+  method get_doc = "(length SEQUENCE)
+
+Return the length of vector, list or string SEQUENCE.
+A byte-code function object is also allowed.
+If the string contains multibyte characters, this is not necessarily
+the number of bytes in the string; it is the number of characters.
+To get the number of bytes, use `string-bytes'.
+"
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let e = eval (List.hd args) ctxt in
+       Int (
+	 try List.length (extractList e) with
+	   | _ -> String.length (extractString e)
+       )
+end;;
+
+class symbolname =
+object (self)
+  inherit [expr] eObj
+  method get_name = "symbol-name"
+  method get_doc = "(symbol-name SYMBOL)
+
+Return SYMBOL's name, a string.
+"
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       String (extractName (eval (List.hd args) ctxt))
+end;;
+
 
 class enot =
 object (self)
@@ -1136,13 +1213,14 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 		  new elet;
 		  new set;
 		  new setq;
-		  new ifte; new ewhen;
+		  new ifte; new ewhen; new cond;
 		  new eTrue;
 		  new eEq; new eLt; new eLe; new eGt; new eGe;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message; new print;
 		  new econs; new ecar; new ecdr; new enthcdr; new enth; new setcar; new setcdr;
+		  new length; new symbolname;
 		  new enot;
 		  new ewhile; new dolist; new dotimes;
 		 ];;
@@ -1365,4 +1443,48 @@ let _ = interp_exprs "
           (square-each (cdr numbers-list))))) ; next-step-expression
      
      (square-each '(1 2 3))
+";;
+
+let _ = interp_exprs "
+(setq animals '(gazelle giraffe lion tiger))
+     
+     (defun print-elements-recursively (list)
+       \"Print each element of LIST on a line of its own.
+     Uses recursion.\"
+       (when list                            ; do-again-test
+             (print (car list))              ; body
+             (print-elements-recursively     ; recursive call
+              (cdr list))))                  ; next-step-expression
+     
+     (print-elements-recursively animals)
+"
+;;
+
+let _ = interp_exprs "
+(defun add-elements (numbers-list)
+       \"Add the elements of NUMBERS-LIST together.\"
+       (if (not numbers-list)
+           0
+         (+ (car numbers-list) (add-elements (cdr numbers-list)))))
+     
+     (add-elements '(1 2 3 4))
+";;
+
+let _ = interp_exprs "
+(defun keep-three-letter-words (word-list)
+       \"Keep three letter words in WORD-LIST.\"
+       (cond
+        ;; First do-again-test: stop-condition
+        ((not word-list) nil)
+     
+        ;; Second do-again-test: when to act
+        ((eq 3 (length (symbol-name (car word-list))))
+         ;; combine acted-on element with recursive call on shorter list
+         (cons (car word-list) (keep-three-letter-words (cdr word-list))))
+     
+        ;; Third do-again-test: when to skip element;
+        ;;   recursively call shorter list with next-step expression
+        (t (keep-three-letter-words (cdr word-list)))))
+     
+     (keep-three-letter-words '(one two three four five six))
 ";;
