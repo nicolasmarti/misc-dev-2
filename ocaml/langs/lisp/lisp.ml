@@ -19,7 +19,7 @@ class virtual ['a] eObj =
 object
   method virtual get_name: string
   method virtual get_doc: string
-  method virtual apply: 'a list -> ('a NameMap.t) ref -> 'a
+  method virtual apply: 'a list -> (name, 'a) Hashtbl.t -> 'a
 end;;
 
 open Planck;;
@@ -232,7 +232,7 @@ end st
 
 (******************************************************************************)
 
-type env = expr NameMap.t
+type env = (name, expr) Hashtbl.t
 ;;
 
 type lisp_error = AtPos of position * lisp_error
@@ -243,7 +243,8 @@ type lisp_error = AtPos of position * lisp_error
 exception ExecException of lisp_error
 ;;
 
-let rec eval (e: expr) (ctxt: env ref) : expr =
+let rec eval (e: expr) (ctxt: env) : expr =
+  (*printf "%s\n" (expr2string e);*)
   match e with
     | SrcInfo (e, pos) -> (
       try
@@ -259,7 +260,7 @@ let rec eval (e: expr) (ctxt: env ref) : expr =
     | Quoted e -> e
     | Name n -> (
       try 
-	NameMap.find n !ctxt
+	Hashtbl.find ctxt n
       with
 	| Not_found -> raise (ExecException (FreeError ("unknown name", e)))
     )
@@ -281,26 +282,26 @@ let rec drop (l: 'a list) (n: int) : 'a list =
     | _ -> drop (List.tl l) (n-1)
 ;;
 
-let savevals (l: name list) (ctxt: env ref) : (name * expr option) list =
+let savevals (l: name list) (ctxt: env) : (name * expr option) list =
   List.fold_left (fun acc n ->
     try 
-      (n, Some (NameMap.find n !ctxt))::acc
+      (n, Some (Hashtbl.find ctxt n))::acc
     with
       | _ -> (n, None)::acc
   ) [] l
 ;;
 
-let restorevals (l: (name * expr option) list) (ctxt: env ref) : unit =
+let restorevals (l: (name * expr option) list) (ctxt: env) : unit =
   Pervasives.ignore (
     List.map (fun hd -> 
       match hd with
-	| (n, None) -> ctxt := NameMap.remove n !ctxt
-	| (n, Some e) -> ctxt := NameMap.add n e !ctxt
+	| (n, None) -> Hashtbl.remove ctxt n
+	| (n, Some e) -> Hashtbl.add ctxt n e 
     ) l
   )
 ;;
 
-let save_and_restore (l: name list) (ctxt: env ref) (f: unit -> 'a) : 'a =
+let save_and_restore (l: name list) (ctxt: env) (f: unit -> 'a) : 'a =
   let l = savevals l ctxt in
   try 
     let res = f () in
@@ -329,7 +330,7 @@ object (self)
 	let args' = List.map (fun e -> eval e ctxt) args in
     
 	let _ = List.map (fun ((n, _), v) -> 
-	  ctxt := NameMap.add n v !ctxt
+	  Hashtbl.add ctxt n v 
 	) (List.combine listargs args') in
     
 	List.fold_left (fun acc expr -> eval expr ctxt) (List []) body
@@ -395,7 +396,7 @@ object (self)
       let name = extractName (List.hd args) in
       let doc = extractString (List.nth args 2) in
       let o = Obj (new lambda name doc listargs body) in
-      ctxt := NameMap.add name o !ctxt;
+      Hashtbl.add ctxt name o;
       o
 
 end;;
@@ -460,7 +461,7 @@ object (self)
       raise (ExecException (StringError "wrong number of arguments"))
     else
       let n = extractName (List.nth args 0) in
-      let value = try NameMap.find n !ctxt with | Not_found -> raise (ExecException (FreeError ("unknown name", (List.nth args 0)))) in
+      let value = try Hashtbl.find ctxt n with | Not_found -> raise (ExecException (FreeError ("unknown name", (List.nth args 0)))) in
       let o = extractObj value in
       String o#get_doc
 end;;
@@ -496,7 +497,7 @@ object (self)
 	fun _ -> 
     
 	  let _ = List.map (fun (n, value) -> 
-	    ctxt := NameMap.add n (eval value ctxt) !ctxt
+	    Hashtbl.add ctxt n (eval value ctxt)
 	  ) vars in    
 	  
 	  let body = drop args 1 in
@@ -516,7 +517,7 @@ object (self)
     else
       let [var; value] = List.map (fun hd -> eval hd ctxt) args in
       let n = extractName var in
-      ctxt := NameMap.add n value !ctxt;
+      Hashtbl.add ctxt n value;
       value      
 end;;
 
@@ -532,7 +533,7 @@ object (self)
       let [var; value] = args in
       let value = eval value ctxt in
       let n = extractName var in
-      ctxt := NameMap.add n value !ctxt;
+      Hashtbl.add ctxt n value;
       value      
 end;;
 
@@ -993,7 +994,7 @@ object (self)
        let n = extractName (List.nth args 0) in
        let nvalue = 
 	 try 
-	   NameMap.find n !ctxt
+	   Hashtbl.find ctxt n
 	 with
 	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
        in 
@@ -1001,7 +1002,7 @@ object (self)
        match nl with
 	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (value::tl) in
-		     ctxt := NameMap.add n nvalue !ctxt;
+		     Hashtbl.add ctxt n nvalue;
 		     value
 
 end;;
@@ -1019,7 +1020,7 @@ object (self)
        let n = extractName (List.nth args 0) in
        let nvalue = 
 	 try 
-	   NameMap.find n !ctxt
+	   Hashtbl.find ctxt n 
 	 with
 	   | Not_found -> raise (ExecException (FreeError ("unknown name", Name n)))
        in 
@@ -1027,7 +1028,7 @@ object (self)
        match nl with
 	 | [] -> raise (ExecException (StringError ("the variable has for value nil")))
 	 | hd::tl -> let nvalue = List (hd::value) in
-		     ctxt := NameMap.add n nvalue !ctxt;
+		     Hashtbl.add ctxt n nvalue;
 		     List value
 
 end;;
@@ -1121,10 +1122,10 @@ object (self)
 	 fun _ -> 
 
 	   let _ = List.fold_left (fun acc hd -> 
-	     ctxt := NameMap.add var hd !ctxt;
+	     Hashtbl.add  ctxt var hd;
 	     Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
 	   ) () list in
-	   try NameMap.find result !ctxt with _ -> List []
+	   try Hashtbl.find ctxt result with _ -> List []
        )
 end;;
 
@@ -1158,10 +1159,10 @@ the return value (nil if RESULT is omitted)."
 	 fun _ ->
 
 	   let _ = List.fold_left (fun acc hd -> 
-	     ctxt := NameMap.add var (Int hd) !ctxt;
+	     Hashtbl.add ctxt var (Int hd);
 	     Pervasives.ignore(List.fold_left (fun acc hd -> Pervasives.ignore(eval hd ctxt)) () body)
 	   ) () (from_to 0 count) in
-	   try NameMap.find result !ctxt with _ -> List []
+	   try Hashtbl.find ctxt result with _ -> List []
        )
 end;;
 
@@ -1284,7 +1285,7 @@ end;;
 
 (******************************************************************************)
 
-let ctxt : env ref = ref NameMap.empty;;
+let ctxt : env = Hashtbl.create 100;;
 
 let primitives = [new plus; new mult; new plusone; new minusone;
 		  new defun;
@@ -1307,7 +1308,7 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 
 let _ = 
   List.fold_left (fun acc o -> 
-    ctxt := NameMap.add o#get_name (Obj o) !ctxt
+    Hashtbl.add ctxt o#get_name (Obj o)
   ) () primitives
 
 
