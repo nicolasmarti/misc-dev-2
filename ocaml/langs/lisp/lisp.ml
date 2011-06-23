@@ -850,6 +850,37 @@ object (self)
 	 | hd::tl -> List tl
 end;;
 
+class enthcdr =
+object (self)
+  inherit [expr] eObj
+  method get_name = "nthcdr"
+  method get_doc = "correspond to nth call to cdr"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
+       let l = extractList e2 in
+       let n = extractInt e1 in
+       if List.length l <= n then List [] else List (drop l n)
+end;;
+
+class enth =
+object (self)
+  inherit [expr] eObj
+  method get_name = "nth"
+  method get_doc = "returns the nth element of a list"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
+       let l = extractList e2 in
+       let n = extractInt e1 in
+       if List.length l <= n then List [] else List.nth l n
+end;;
+
+
 
 (******************************************************************************)
 
@@ -867,7 +898,7 @@ let primitives = [new plus;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message;
-		  new econs; new ecar; new ecdr;		  
+		  new econs; new ecar; new ecdr; new nthcdr;		  
 		 ];;
 
 let _ = 
