@@ -804,6 +804,51 @@ object (self)
 
 end;;
 
+class econs =
+object (self)
+  inherit [expr] eObj
+  method get_name = "cons"
+  method get_doc = "constructor"
+  method apply args ctxt = 
+     if List.length args != 2 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e1; e2] = List.map (fun hd -> eval hd ctxt) args in
+       let l = extractList e2 in
+       List (e1::l)
+end;;
+
+class ecar =
+object (self)
+  inherit [expr] eObj
+  method get_name = "car"
+  method get_doc = "extract head of list"
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e] = List.map (fun hd -> eval hd ctxt) args in
+       let l = extractList e in
+       match l with
+	 | [] -> raise (ExecException (StringError "argument is the empty list"))
+	 | hd::tl -> hd
+end;;
+
+class ecdr =
+object (self)
+  inherit [expr] eObj
+  method get_name = "cdr"
+  method get_doc = "extract tail of list"
+  method apply args ctxt = 
+     if List.length args != 1 then
+      raise (ExecException (StringError "wrong number of arguments"))
+     else
+       let [e] = List.map (fun hd -> eval hd ctxt) args in
+       let l = extractList e in
+       match l with
+	 | [] -> raise (ExecException (StringError "argument is the empty list"))
+	 | hd::tl -> List tl
+end;;
 
 
 (******************************************************************************)
@@ -822,6 +867,7 @@ let primitives = [new plus;
 		  new eeq; new eequal;
 		  new estringlt; new estringlessp; new estringeq; new estringequal;
 		  new message;
+		  new econs; new ecar; new ecdr;		  
 		 ];;
 
 let _ = 
@@ -938,6 +984,12 @@ let _ = interp_expr "(string= \"aa\" \"aa\")"
 let _ = interp_expr "(string< \"aa\" \"aa\")"
 
 let _ = interp_expr "(message \"salut doudou %s %d times !!!!!!\" 'nicolas 3.23)"
+
+let _ = interp_expr "(cons 'doudou '(rou))"
+
+let _ = interp_expr "(car '(doudou rou)))"
+
+let _ = interp_expr "(cdr '(doudou rou)))"
 
 let _ = interp_exprs "
 (setq counter 0)                ; Let's call this the initializer.
