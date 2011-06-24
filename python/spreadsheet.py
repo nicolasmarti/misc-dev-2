@@ -15,9 +15,6 @@ class SpreadSheet:
   # stack of currently evaluating cells
   _dep_stack = []
 
-  # the globals for eval
-  tools = {}
-
   # we are setting a value
   def __setitem__(self, key, formula):
 
@@ -36,7 +33,7 @@ class SpreadSheet:
     # here we change the formula of the cell
     # and thus recompute it
     if isinstance(formula, str) and formula[0] == '=':
-        formula = (formula[1:], eval(formula[1:], SpreadSheet.tools, self))
+        formula = (formula[1:], eval(formula[1:], globals(), self))
     else:
         formula = (None, formula)
     self._cells[key] = formula
@@ -88,7 +85,6 @@ class SpreadSheet:
     return c[1]
 
 from math import sin, pi
-SpreadSheet.tools.update(sin=sin, pi=pi, len=len)
 ss = SpreadSheet()
 ss['a1'] = 5
 ss['a2'] = '=a1*6'
