@@ -103,9 +103,7 @@ gnm_py_interpreter_new (GOPlugin *plugin)
 	PySys_SetArgv (G_N_ELEMENTS (plugin_argv) - 1, plugin_argv);
 	py_initgnumeric (interpreter);
 
-	interpreter->py_thread_state = PyEval_SaveThread();
-
-	//PyEval_RestoreThread(interpreter->py_thread_state);
+	gnm_py_interpreter_save(interpreter);
 
 	return interpreter;
 }
@@ -114,13 +112,14 @@ void
 gnm_py_interpreter_destroy (GnmPyInterpreter *interpreter,
                             GnmPyInterpreter *new_interpreter)
 {
+	printf("gnm_py_interpreter_destroy(start, %p)\n", interpreter->py_thread_state);
 	g_return_if_fail (IS_GNM_PY_INTERPRETER (interpreter));
 
 	gnm_py_interpreter_switch_to (interpreter);
 	Py_EndInterpreter (interpreter->py_thread_state);
-	(void) PyEval_RestoreThread (new_interpreter->py_thread_state);
 	interpreter->py_thread_state = NULL;
 	g_object_unref (interpreter);
+	printf("gnm_py_interpreter_destroy(stop)\n");
 }
 
 void
@@ -128,17 +127,21 @@ gnm_py_interpreter_switch_to (GnmPyInterpreter *interpreter)
 {
 	g_return_if_fail (IS_GNM_PY_INTERPRETER (interpreter));
 
-	//if (PyThreadState_Get ()->interp != interpreter->py_thread_state->interp) {
-		(void) PyEval_RestoreThread (interpreter->py_thread_state);
-		g_signal_emit (
-			interpreter, signals[SET_CURRENT_SIGNAL], 0);
-		//}
+	printf("gnm_py_interpreter_switch_to(start, %p)\n", interpreter->py_thread_state);
+
+	g_signal_emit (
+		       interpreter, signals[SET_CURRENT_SIGNAL], 0);
+
+	printf("gnm_py_interpreter_switch_to(end)\n");
 }
 
 static void
 run_print_string (const char *cmd, PyObject *stdout_obj)
 {
 	PyObject *m, *d, *v;
+
+	printf("run_print_string(start)\n");
+
 	m = PyImport_AddModule ((char *) "__main__");
 	if (m == NULL)
 		return;
@@ -166,9 +169,12 @@ gnm_py_interpreter_run_string (GnmPyInterpreter *interpreter, const char *cmd,
 	         *saved_stderr_obj = NULL, *stderr_obj = NULL;
 	PyObject *py_str;
 
+	printf("gnm_py_interpreter_run_string(%p, %s)\n", interpreter, cmd);
+
 	g_return_if_fail (IS_GNM_PY_INTERPRETER (interpreter));
 
 	gnm_py_interpreter_switch_to (interpreter);
+	gnm_py_interpreter_load(interpreter);
 
 	sys_module = PyImport_AddModule ((char *) "sys");
 	if (sys_module == NULL)
@@ -246,7 +252,9 @@ gnm_py_interpreter_run_string (GnmPyInterpreter *interpreter, const char *cmd,
 			PyErr_Print ();
 		Py_DECREF (stderr_obj);
 	}
-	interpreter->py_thread_state = PyEval_SaveThread();
+	gnm_py_interpreter_save(interpreter);
+	printf("gnm_py_interpreter_run_string(end)\n");
+
 }
 
 const char *
@@ -284,6 +292,18 @@ gnm_py_interpreter_compare (gconstpointer a, gconstpointer b)
 		return g_utf8_collate (go_plugin_get_name (int_a->plugin),
 				       go_plugin_get_name (int_b->plugin));
 	}
+}
+
+void gnm_py_interpreter_save (GnmPyInterpreter *interpreter)
+{
+	interpreter->py_thread_state = PyEval_SaveThread();
+	printf("save(%p)\n", interpreter->py_thread_state);
+}
+
+void gnm_py_interpreter_load (GnmPyInterpreter *interpreter)
+{	
+	(void) PyEval_RestoreThread (interpreter->py_thread_state);
+	printf("restore(%p)\n", interpreter->py_thread_state);
 }
 
 GSF_DYNAMIC_CLASS (GnmPyInterpreter, gnm_py_interpreter,
