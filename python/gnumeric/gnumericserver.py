@@ -20,6 +20,7 @@ class GnumericServer(Pyro.core.ObjBase):
         s = wb.sheets()[sheet]
         c = s[cellcoo[0], cellcoo[1]]
         c.set_text(txt)
+        return c.get_value()
 
     def __del__(self):
         self.daemon.disconnect(self)
