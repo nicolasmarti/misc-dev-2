@@ -1367,6 +1367,90 @@ let interp_exprs expr =
 
 (******************************************************************************)
 
+open Lang_intf;;
+
+(*
+
+  we implement a module of signature Lang for lisp
+  
+*)
+
+module LispLang : Lang =
+struct
+  type value = expr      
+  type ltype = string
+  type session = env
+
+  let name = "Lisp";;
+
+  let empty_session () = 
+    let ctxt = Hashtbl.create 100 in
+    List.fold_left (fun acc o -> 
+      Hashtbl.replace ctxt o#get_name (Obj o)
+    ) () primitives;
+    ctxt
+  ;;
+
+  let proceed session exprs = 
+    let stream = Stream.from_string ~filename:"stdin" exprs in
+    match parse_exprs stream with
+      | Result.Ok (res, _) -> (
+      (*
+	let _ = List.map (fun hd -> 
+	printf "pprint = "; 
+	printbox (token2box (expr2token hd) 400 2);
+	) res in
+      *)
+	try (
+	  let res' = List.fold_left (fun acc hd -> eval hd session) (List []) res in
+	  printbox (token2box (expr2token res') 400 2);
+	  res'
+	)
+	with
+	  | LispException e -> printbox (token2box (execException2box e) 400 2); List []
+      )
+      | Result.Error (pos, s) ->
+	Format.eprintf "%s\n%a: syntax error: %s@." exprs Position.File.format pos s;      
+	raise Pervasives.Exit
+  ;;
+
+  let print session value = 
+    box2string (token2box (expr2token value) 400 2);
+  ;;
+
+  (* return the type of a value *)
+  let get_type session value = 
+    exprtype value
+  ;;
+
+  (* retrieve a value by name *) 
+  let lookup session n =
+    try 
+      Hashtbl.find session n
+    with
+      | Not_found -> raise (LispException (FreeError ("unknown name", Name n)))
+  ;;
+
+  (* fold : ('a -> 'b -> 'c -> 'c) -> ('a, 'b) t -> 'c -> 'c *)
+  (* returns the set of defined names in a session *)
+  let get_defs session =
+    Hashtbl.fold (fun k value acc -> 
+      (k, exprtype value)::acc
+    ) session []
+  ;;
+
+  (* the main features of language: application *)
+  let apply session fct args = 
+    let e = List (fct::args) in
+    eval e session
+  ;;
+
+end;;
+
+
+
+(******************************************************************************)
+
 
 let _ = interp_expr "(+ 2.3 5 6 2.1)";;
 

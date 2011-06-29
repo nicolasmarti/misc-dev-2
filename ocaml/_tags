@@ -1,4 +1,6 @@
-<lib> or <llvm> or <ibtws> or <langs/trep>: include
+<lib> or <llvm> or <ibtws> or <langs>: include
+<langs/trep>: include
+<langs/lisp>: include
 
 <tests/testparser.{byte,native}>: pkg_str
 
