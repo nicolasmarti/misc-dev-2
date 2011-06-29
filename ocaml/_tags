@@ -1,19 +1,24 @@
-<lib> or <llvm> or <ibtws> or <langs>: include
+<lib> or <finance> or <langs>: include
+
 <langs/trep>: include
-<langs/lisp>: include
-
-<tests/testparser.{byte,native}>: pkg_str
-
-<tests/testmllvm.{byte,native}>: g++, use_llvm, use_llvm_analysis, pkg_str
-<tests/testmllvm.{byte,native}>: use_llvm_executionengine, use_llvm_target
-<tests/testmllvm.{byte,native}>:  use_llvm_scalar_opts, use_bindings, use_llvm_bitwriter
-
-<ibtws/date.ml>: pkg_spotlib, pkg_planck
-<tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads, pkg_spotlib, pkg_planck
-
 <langs/trep/trep.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepparser.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepprinter.ml>: pkg_spotlib, pkg_planck
 <tests/testtrep.{ml,byte,native}>: pkg_spotlib, pkg_planck
 
+<langs/llvm>: include
+<tests/testmllvm.{byte,native}>: g++, use_llvm, use_llvm_analysis, pkg_str
+<tests/testmllvm.{byte,native}>: use_llvm_executionengine, use_llvm_target
+<tests/testmllvm.{byte,native}>:  use_llvm_scalar_opts, use_bindings, use_llvm_bitwriter
+
+<langs/lisp>: include
 <langs/lisp/lisp.{ml,byte,native}>: pkg_spotlib, pkg_planck
+
+<finance/ibtws>: include
+<finance/ibtws/date.ml>: pkg_spotlib, pkg_planck
+<tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads, pkg_spotlib, pkg_planck
+
+<tests/testparser.{byte,native}>: pkg_str
+
+
+
