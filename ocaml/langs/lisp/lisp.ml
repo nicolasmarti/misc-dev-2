@@ -1381,6 +1381,12 @@ struct
   type ltype = string
   type session = env
 
+  type error = lisp_error
+
+  exception Exception = LispException
+
+  let error2string err = box2string (token2box (execException2box err) 400 2);;
+
   let name = "Lisp";;
 
   let empty_session () = 

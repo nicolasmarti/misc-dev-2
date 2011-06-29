@@ -10,6 +10,12 @@ module type Lang = sig
   type ltype
   type session    
 
+  (* error and exception possibly arising + pretty printing *) 
+  type error
+  exception Exception of error
+      
+  val error2string: error -> string
+
   (* identifier of the language, should be unique *)
   val name: string
 
