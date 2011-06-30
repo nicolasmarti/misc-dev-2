@@ -135,7 +135,14 @@ struct
   let cancelOrder t oid = ();;
   let closeOrder t (index, o) = (t.index, -o);;
   let orderValue t (index, o) = (List.nth t.close index) *. float o;;
-  let orderPnL t (index, o) = (List.nth t.close t.index -. List.nth t.close index) *. float o;;
-
+  let orderPnL t (index, o) = (
+    (try 
+       List.nth t.close t.index 
+     with
+       | _ -> List.nth t.close (List.length t.close - 1))
+    -. 
+      List.nth t.close index
+  ) *. float o;;
+  
 end;;
 
