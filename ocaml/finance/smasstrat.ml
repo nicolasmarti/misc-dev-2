@@ -51,11 +51,13 @@ module SMAStrat =
 	Some (List.fold_left (+.) 0.0 (take l n) /. float n)
     ;;
 
+    (*
     let ema l n =
       if List.length l < n then None else
 	let alpha = 2. /. (1. +. float n) in
 	Some (List.fold_right (fun hd acc -> hd *. alpha +. (acc *. (1. -. alpha))) (take l n) 0.0)
     ;;
+    *)
 
     let rec increasing l =
       match l with
@@ -89,10 +91,10 @@ module SMAStrat =
 	| Some l ->
 	  (*printf "[%s]\n" (String.concat ", " (List.map string_of_float l));*)
 	  match self.st with
-	    | LONG when not (increasing l) -> printf "[%s] " (String.concat ", " (List.map string_of_float l)); CLOSE
-	    | SHORT when not (decreasing l) -> printf "[%s] " (String.concat ", " (List.map string_of_float l)); CLOSE
-	    | CLOSED when increasing l -> printf "[%s] " (String.concat ", " (List.map string_of_float l)); GOLONG 1
-	    | CLOSED when decreasing l -> printf "[%s] " (String.concat ", " (List.map string_of_float l)); GOSHORT (-1)
+	    | LONG when not (increasing l) -> (*printf "[%s] " (String.concat ", " (List.map string_of_float l));*) CLOSE
+	    | SHORT when not (decreasing l) -> (*printf "[%s] " (String.concat ", " (List.map string_of_float l));*) CLOSE
+	    | CLOSED when increasing l -> (*printf "[%s] " (String.concat ", " (List.map string_of_float l));*) GOLONG 1
+	    | CLOSED when decreasing l -> (*printf "[%s] " (String.concat ", " (List.map string_of_float l));*) GOSHORT (-1)
 	    | _ -> STAY
     ;;
 

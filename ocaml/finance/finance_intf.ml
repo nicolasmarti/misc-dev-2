@@ -104,14 +104,16 @@ struct
     broker: B.t;
     mutable st: status;
     mutable pnl: float;
+    mutable maxpos: float;
+    mutable opendays: int;
   };;
 
-  let step self =
-    if self.st == STOPPED then printf "is STOPPED\n" else      
-      if B.getstatus self.broker == B.STOPPED then (self.st <- STOPPED; printf "? -> STOPPED\n") else
+  let step self debug =
+    if self.st == STOPPED then (if debug then printf "is STOPPED\n") else      
+      if B.getstatus self.broker == B.STOPPED then (self.st <- STOPPED; (if debug then printf "? -> STOPPED\n")) else
 	match self.st with
 	  | CLOSED -> (
-	    (*printf "CLOSED\n";*)
+	    if debug then printf "CLOSED\n";
 	    let d = B.getdata self.broker in
 	    let s = S.proceedData self.strat d in
 	    match s with
@@ -120,10 +122,10 @@ struct
 		let oid = B.proceedOrder self.broker o in
 		let dt = now () in
 		self.st <- OPENING (oid, dt, match s with | S.GOLONG _ -> `LONG | S.GOSHORT _ -> `SHORT);
-		printf "CLOSED -> OPENING(%s)\n" (match s with | S.GOLONG _ -> "LONG" | S.GOSHORT _ -> "SHORT")
+		if debug then printf "CLOSED -> OPENING(%s)\n" (match s with | S.GOLONG _ -> "LONG" | S.GOSHORT _ -> "SHORT")
 	  )
 	  | OPENING (o, dt, dir) -> (
-	    (*printf "OPENING\n";*)
+	    if debug then printf "OPENING\n";
 	    let n = now () in
 	    let delta = diff_datetime n dt in	    
 	    match B.orderStatus self.broker o with
@@ -136,12 +138,15 @@ struct
 	      | B.Filled -> 
 		self.st <- OPENED o; 
 		S.setstatus self.strat (match dir with | `LONG -> S.LONG | `SHORT -> S.SHORT);
-		printf "OPENING -> OPENED(%s)\n" (match dir with | `LONG -> "LONG" | `SHORT -> "SHORT")
+		if debug then printf "OPENING -> OPENED(%s)\n" (match dir with | `LONG -> "LONG" | `SHORT -> "SHORT");
+		let value = B.orderValue self.broker o in
+		if self.maxpos < value then self.maxpos <- value
 	  )
 	  | OPENED o -> (
-	    (*printf "OPENED\n";*)
+	    if debug then printf "OPENED\n";
 	    let d = B.getdata self.broker in
 	    let s = S.proceedData self.strat d in
+	    self.opendays <- self.opendays + 1;
 	    match s with
 	      | S.STAY -> ()
 	      | S.GOLONG o | S.GOSHORT o -> raise (Failure "???")
@@ -149,16 +154,16 @@ struct
 		    let oid = B.closeOrder self.broker o in
 		    let dt = now () in
 		    self.st <- CLOSING (o, oid, dt);
-		    printf "OPENED -> CLOSING\n"
+		    if debug then printf "OPENED -> CLOSING\n"
 	  )
 	  | CLOSING (o1 , o2, dt) -> (
-	    (*printf "CLOSING\n";*)
+	    if debug then printf "CLOSING\n";
 	    match B.orderStatus self.broker o2 with
 	      | B.Filled -> 
 		self.st <- CLOSED; 
 		S.setstatus self.strat S.CLOSED; 
 		let pnl = B.orderPnL self.broker o1 in
-		printf "CLOSING -> CLOSED (PnL = %f)\n" pnl;
+		if debug then printf "CLOSING -> CLOSED (PnL = %f)\n" pnl;
 		self.pnl <- self.pnl +. pnl
 	      | B.Pending -> ()
 	      | B.Cancelled -> raise (Failure "???")
@@ -177,6 +182,8 @@ struct
       broker = B.init (S.getinfo strat);
       st = STOPPED;
       pnl = 0.0;
+      maxpos = 0.0;
+      opendays = 0;
     }
 
   let start self =
@@ -184,6 +191,10 @@ struct
     self.st <- CLOSED;;
 
   let getpnl self = self.pnl;;
+
+  let getmaxpos self = self.maxpos;;
+
+  let getopendays self = self.opendays;;
 
 end;; 
 
