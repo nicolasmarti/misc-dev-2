@@ -1,5 +1,7 @@
 (*
-  a broker
+  a broker:
+  - ibtws
+  - yahoo/google
 *)
 module type Broker = sig
 
@@ -18,10 +20,12 @@ module type Broker = sig
   type status = RUNNING
 		| STOPPED
 
-  val getdata: t -> data
-  val start: info -> t
+    
+  val init: info -> t    
+  val start: t -> unit
   val stop: t -> unit
   val getstatus: t -> status
+  val getdata: t -> data
 
   (* the data for the order *)
   type order
@@ -41,7 +45,8 @@ module type Broker = sig
 end;;
 
 (*
-  a strategy 
+  a strategy:
+  - ideally should be derived from a dsl
 *)
 module type Strat = sig
 
@@ -59,7 +64,7 @@ module type Strat = sig
 		| CLOSE
 		| STAY
 
-  val init: t -> info
+  val getinfo: t -> info
   val proceedData: t -> data -> signal
     
 end;;
@@ -68,11 +73,11 @@ end;;
 (*
   an automata 
 *)
-open Data;;
+open Date;;
 
-module type Automata = 
+module Automata =
   functor (B: Broker) ->
-    functor (S: Strat with type data = Broker.data and type state = Broker.state) ->
+    functor (S: Strat with type data = B.data and type info = B.info) ->
 struct
   
   type status = CLOSED
@@ -87,11 +92,35 @@ struct
     mutable st: status;
   };;
 
-  val step: t -> unit
+  let step self =
+    if self.st == STOPPED then () else
+      match self.st with
+	| CLOSED -> (
+	  	  raise (Failure "NYI")
+	)
+	| CLOSED -> (
+	  raise (Failure "NYI")
+	)
+	| CLOSED -> (
+	  raise (Failure "NYI")
+	)
+	| CLOSED -> (
+	  raise (Failure "NYI")
+	)
+	| STOPPED -> (
+	  raise (Failure "Impossible state at this stage")
+	)
 
-  val get_status: t -> status
+  let get_status (self: t) : status =
+    self.st;;
 
-  val init: S.t -> B.t -> t
+  let init (strat: S.t) = 
+    {
+      strat = strat;
+      broker = B.init (S.getinfo strat);
+      st = STOPPED;
+    }
 
-end;;
+end;; 
+
 

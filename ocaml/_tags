@@ -1,5 +1,6 @@
-<lib> or <finance> or <langs>: include
+<lib>: include
 
+<langs>: include
 <langs/trep>: include
 <langs/trep/trep.ml>: pkg_spotlib, pkg_planck
 <langs/trep/trepparser.ml>: pkg_spotlib, pkg_planck
@@ -13,10 +14,13 @@
 
 <langs/lisp>: include
 <langs/lisp/lisp.{ml,byte,native}>: pkg_spotlib, pkg_planck
+<tests/testlisp.{ml,byte,native}>: pkg_spotlib, pkg_planck
 
+<finance>: include
 <finance/ibtws>: include
 <finance/ibtws/date.ml>: pkg_spotlib, pkg_planck
 <tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads, pkg_spotlib, pkg_planck
+<tests/testauto.{ml,byte,native}>: pkg_spotlib, pkg_planck
 
 <tests/testparser.{byte,native}>: pkg_str
 

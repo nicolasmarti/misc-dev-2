@@ -1273,8 +1273,6 @@ end;;
 
 (******************************************************************************)
 
-let ctxt : env = Hashtbl.create 100;;
-
 let primitives = [new plus; new mult; new plusone; new minusone;
 		  new defun;
 		  new getdoc;
@@ -1294,11 +1292,12 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 		  new ewhile; new dolist; new dotimes;
 		 ];;
 
-let _ = 
+let init_ctxt () = 
+  let ctxt = Hashtbl.create 100 in
   List.fold_left (fun acc o -> 
     Hashtbl.replace ctxt o#get_name (Obj o)
-  ) () primitives
-
+  ) () primitives;
+  ctxt;;
 
 let rec execException2box (e: lisp_error) : token =
   match e with
@@ -1319,7 +1318,7 @@ let rec execException2box (e: lisp_error) : token =
 				       ]
 ;;
 
-let interp_expr expr = 
+let interp_expr ctxt expr = 
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_expr stream with
@@ -1341,7 +1340,7 @@ let interp_expr expr =
       raise Pervasives.Exit
 ;;
 
-let interp_exprs expr = 
+let interp_exprs ctxt expr = 
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_exprs stream with
@@ -1389,36 +1388,10 @@ struct
 
   let name = "Lisp";;
 
-  let empty_session () = 
-    let ctxt = Hashtbl.create 100 in
-    List.fold_left (fun acc o -> 
-      Hashtbl.replace ctxt o#get_name (Obj o)
-    ) () primitives;
-    ctxt
-  ;;
+  let empty_session () =  init_ctxt () ;;
 
   let proceed session exprs = 
-    let stream = Stream.from_string ~filename:"stdin" exprs in
-    match parse_exprs stream with
-      | Result.Ok (res, _) -> (
-      (*
-	let _ = List.map (fun hd -> 
-	printf "pprint = "; 
-	printbox (token2box (expr2token hd) 400 2);
-	) res in
-      *)
-	try (
-	  let res' = List.fold_left (fun acc hd -> eval hd session) (List []) res in
-	  printbox (token2box (expr2token res') 400 2);
-	  res'
-	)
-	with
-	  | LispException e -> printbox (token2box (execException2box e) 400 2); List []
-      )
-      | Result.Error (pos, s) ->
-	Format.eprintf "%s\n%a: syntax error: %s@." exprs Position.File.format pos s;      
-	raise Pervasives.Exit
-  ;;
+    interp_exprs session exprs 
 
   let print session value = 
     box2string (token2box (expr2token value) 400 2);
@@ -1456,240 +1429,5 @@ end;;
 
 
 (******************************************************************************)
-
-
-let _ = interp_expr "(+ 2.3 5 6 2.1)";;
-
-let _ = interp_expr "
-; this is a function
-(defun add1 ((a 0)) ; this is a comment
- \"la doc\"         
- (+ a 1)   
-)
-";;
-
-let _ = interp_expr "(add1 8)";;
-
-let _ = interp_expr "(add1)";;
-
-let _ = interp_expr "(getdoc add1)";;
-
-let _ = interp_expr "(setq x 0)";;
-
-let _ = interp_expr "(set 'y 0)";;
-
-let _ = interp_expr "(let ((x 2) (y 2)) (+ x y))";;
-
-let _ = interp_expr "x";;
-
-let _ = interp_expr "y";;
-
-let _ = interp_expr "(if () 'true 'false)"
-
-let _ = interp_expr "(if t 'true 'false)"
-
-let _ = interp_expr "(= 1 1.0)"
-
-let _ = interp_expr "(< 1 1.0)"
-
-let _ = interp_expr "(eq t t)"
-
-let _ = interp_expr "(string= \"aa\" \"aa\")"
-
-let _ = interp_expr "(string< \"aa\" \"aa\")"
-
-let _ = interp_expr "(message \"salut doudou %s %d times !!!!!!\" 'nicolas 3.23)"
-
-let _ = interp_expr "(cons 'doudou '(rou))"
-
-let _ = interp_expr "(car '(doudou rou)))"
-
-let _ = interp_expr "(cdr '(doudou rou)))"
-
-let _ = interp_expr "(nthcdr 3 '(asd asd asd asd asd ou rou)))"
-
-let _ = interp_expr "(nth 3 '(asd asd asd asd asd ou rou)))"
-
-let _ = interp_exprs "
-(setq x '(rou dou dou))
-
-(setcar x 'prout)
-
-x
-
-(setcdr x '(rpout prout))
-
-x
-"
-;;
-
-let _ = interp_exprs "
-(setq animals '(gazelle giraffe lion tiger))
-     
-(defun print-elements-of-list (list)
-       \"Print each element of LIST on a line of its own.\"
-       (while list
-         (message \"%s\n\" (car list))
-         (setq list (cdr list))))
-
-(print-elements-of-list animals)
-
-"
-;;
-
-let _ = interp_exprs "
-(setq animals '(gazelle giraffe lion tiger))
-     
-(defun reverse-list-with-dolist (list)
-    \"Using dolist, reverse the order of LIST.\"
-    (let (value)  ; make sure list starts empty
-      (dolist (element list value)
-      (setq value (cons element value)))))
-     
-(reverse-list-with-dolist animals)
-";;
-
-let _ = interp_exprs "
-(let (value)      ; otherwise a value is a void variable
-       (dotimes (number 3 value)
-         (setq value (cons number value))))
-";;
-
-let _ = interp_exprs "
-(defun triangle-using-dotimes (number-of-rows)
-   \"Using dotimes, add up the number of pebbles in a triangle.\"
-     (let ((total 0))
-       (dotimes (number number-of-rows total)
-         (setq total (+ total (1+ number))))))
-     
-     (triangle-using-dotimes 4)
-";;
-
-let _ = interp_exprs "
-(setq animals '(gazelle giraffe lion tiger))
-     
-     (defun print-elements-recursively (list)
-       \"Print each element of LIST on a line of its own.
-     Uses recursion.\"
-       (when list                            ; do-again-test
-             (print (car list))              ; body
-             (print-elements-recursively     ; recursive call
-              (cdr list))))                  ; next-step-expression
-     
-     (print-elements-recursively animals)
-";;
-
-let _ = interp_exprs "
-(defun triangle-recursively (number)
-       \"Return the sum of the numbers 1 through NUMBER inclusive.
-     Uses recursion.\"
-       (if (= number 1)                    ; do-again-test
-           1                               ; then-part
-         (+ number                         ; else-part
-            (triangle-recursively          ; recursive call
-             (1- number)))))               ; next-step-expression
-     
-     (triangle-recursively 7)
-";;
-
-let _ = interp_exprs "
-(defun square-each (numbers-list)
-       \"Square each of a NUMBERS LIST, recursively.\"
-       (if (not numbers-list)                ; do-again-test
-           nil
-         (cons
-          (* (car numbers-list) (car numbers-list))
-          (square-each (cdr numbers-list))))) ; next-step-expression
-     
-     (square-each '(1 2 3))
-";;
-
-
-let _ = interp_exprs "
-(setq animals '(gazelle giraffe lion tiger))
-     
-     (defun print-elements-recursively (list)
-       \"Print each element of LIST on a line of its own.
-     Uses recursion.\"
-       (when list                            ; do-again-test
-             (print (car list))              ; body
-             (print-elements-recursively     ; recursive call
-              (cdr list))))                  ; next-step-expression
-     
-     (print-elements-recursively animals)
-"
-;;
-
-
-let _ = interp_exprs "
-(defun add-elements (numbers-list)
-       \"Add the elements of NUMBERS-LIST together.\"
-       (if (not numbers-list)
-           0
-         (+ (car numbers-list) (add-elements (cdr numbers-list)))))
-     
-     (add-elements '(1 2 3 4))
-";;
-
-let _ = interp_exprs "
-(defun keep-three-letter-words (word-list)
-       \"Keep three letter words in WORD-LIST.\"
-       (cond
-        ;; First do-again-test: stop-condition
-        ((not word-list) nil)
-     
-        ;; Second do-again-test: when to act
-        ((eq 3 (length (symbol-name (car word-list))))
-         ;; combine acted-on element with recursive call on shorter list
-         (cons (car word-list) (keep-three-letter-words (cdr word-list))))
-     
-        ;; Third do-again-test: when to skip element;
-        ;;   recursively call shorter list with next-step expression
-        (t (keep-three-letter-words (cdr word-list)))))
-     
-     (keep-three-letter-words '(one two three four five six))
-";;
-
-let _ = interp_exprs "
-(defun triangle-initialization (number)
-       \"Return the sum of the numbers 1 through NUMBER inclusive.
-     This is the `initialization' component of a two function
-     duo that uses recursion.\"
-       (triangle-recursive-helper 0 0 number))
-     (defun triangle-recursive-helper (sum counter number)
-       \"Return SUM, using COUNTER, through NUMBER inclusive.
-     This is the `helper' component of a two function duo
-     that uses recursion.\"
-       (if (> counter number)
-           sum
-         (triangle-recursive-helper (+ sum counter)  ; sum
-                                    (1+ counter)     ; counter
-                                    number)))        ; number
-(triangle-initialization 2)
-";;
-
-let _ = interp_exprs "
-(defun silly-loop (n)
-       \"Return time before and after N iterations of a loop.\"
-       (let ((t1 (current-time-string)))
-         (while (> (setq n (1- n))
-                   0))
-         (list t1 (current-time-string))))
-"
-let _ = interp_exprs "
- (silly-loop 500000) ; 0 sec in ocaml
-";;
-
-let _ = interp_exprs "
-()
- (silly-loop 5000000) ; 7~8 sec in ocaml
-";;
-
-let _ = interp_exprs "
-()
-; (silly-loop 50000000) ; 10 sec on my emacs ... ~40 sec. in ocaml :((
-";;
-
-
 
 
