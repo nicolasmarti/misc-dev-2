@@ -182,7 +182,17 @@ let barSize2string (bs: barSize) : string =
 ;;
       
 let diff_datetime (d1: datetime) (d2: datetime): duration =
+  Second 0;;
+(*
   raise (Failure "NYI");;
+*)
 
-let now (): datetime =
-  raise (Failure "NYI");;
+let now (): datetime = {
+  year = 0;
+  mounth = 0;
+  day = 0;
+  hour = 0;
+  minute = 0;
+  second = 0;
+  tz = "";
+};;

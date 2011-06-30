@@ -18,6 +18,7 @@
 
 <finance>: include
 <finance/ibtws>: include
+<finance/csvbroker.ml>: pkg_spotlib, pkg_planck
 <finance/ibtws/date.ml>: pkg_spotlib, pkg_planck
 <tests/testibtws.{ml,byte,native}>: pkg_unix, pkg_threads, pkg_spotlib, pkg_planck
 <tests/testauto.{ml,byte,native}>: pkg_spotlib, pkg_planck

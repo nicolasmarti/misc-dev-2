@@ -8,7 +8,7 @@ module type Broker = sig
   (* describe the entity manipulated by the module *)
   type t
 
-  (* the data that Broker agregate (feeds, order states, ...) *)
+  (* the data that Broker provide (feeds, order states, ...) *)
   type data    
 
   (* the info contains:
@@ -85,6 +85,8 @@ end;;
   an automata 
 *)
 open Date;;
+open Printf;;
+
 
 module Automata =
   functor (B: Broker) ->
@@ -94,20 +96,22 @@ struct
   type status = CLOSED
 		| OPENING of B.orderId * datetime * [`LONG | `SHORT]
 		| OPENED of B.orderId 
-		| CLOSING of B.orderId * datetime
+		| CLOSING of B.orderId * B.orderId * datetime
 		| STOPPED
 
   type t = {
     strat: S.t;
     broker: B.t;
     mutable st: status;
+    mutable pnl: float;
   };;
 
   let step self =
-    if self.st == STOPPED then () else      
-      if B.getstatus self.broker == B.STOPPED then self.st <- STOPPED else
+    if self.st == STOPPED then printf "is STOPPED\n" else      
+      if B.getstatus self.broker == B.STOPPED then (self.st <- STOPPED; printf "? -> STOPPED\n") else
 	match self.st with
 	  | CLOSED -> (
+	    (*printf "CLOSED\n";*)
 	    let d = B.getdata self.broker in
 	    let s = S.proceedData self.strat d in
 	    match s with
@@ -115,21 +119,27 @@ struct
 	      | S.GOLONG o | S.GOSHORT o -> 
 		let oid = B.proceedOrder self.broker o in
 		let dt = now () in
-		self.st <- OPENING (oid, dt, match s with | S.GOLONG _ -> `LONG | S.GOSHORT _ -> `SHORT)		
+		self.st <- OPENING (oid, dt, match s with | S.GOLONG _ -> `LONG | S.GOSHORT _ -> `SHORT);
+		printf "CLOSED -> OPENING(%s)\n" (match s with | S.GOLONG _ -> "LONG" | S.GOSHORT _ -> "SHORT")
 	  )
 	  | OPENING (o, dt, dir) -> (
+	    (*printf "OPENING\n";*)
 	    let n = now () in
 	    let delta = diff_datetime n dt in	    
 	    match B.orderStatus self.broker o with
-	      | B.Filled -> self.st <- OPENED o
+	      | B.Cancelled -> self.st <- CLOSED
 	      | B.Pending -> if (match delta with
 		  | Second s -> s > 5
 		  | Day d -> d > 0
 		  | Week w -> w > 0
 	      ) then B.cancelOrder self.broker o else ()
-	      | B.Cancelled -> self.st <- OPENED o; S.setstatus self.strat (match dir with | `LONG -> S.LONG | `SHORT -> S.SHORT)
+	      | B.Filled -> 
+		self.st <- OPENED o; 
+		S.setstatus self.strat (match dir with | `LONG -> S.LONG | `SHORT -> S.SHORT);
+		printf "OPENING -> OPENED(%s)\n" (match dir with | `LONG -> "LONG" | `SHORT -> "SHORT")
 	  )
 	  | OPENED o -> (
+	    (*printf "OPENED\n";*)
 	    let d = B.getdata self.broker in
 	    let s = S.proceedData self.strat d in
 	    match s with
@@ -138,11 +148,18 @@ struct
 	      | S.CLOSE -> 	    
 		    let oid = B.closeOrder self.broker o in
 		    let dt = now () in
-		    self.st <- CLOSING (oid, dt)
+		    self.st <- CLOSING (o, oid, dt);
+		    printf "OPENED -> CLOSING\n"
 	  )
-	  | CLOSING (o, dt) -> (
-	    match B.orderStatus self.broker o with
-	      | B.Filled -> self.st <- CLOSED
+	  | CLOSING (o1 , o2, dt) -> (
+	    (*printf "CLOSING\n";*)
+	    match B.orderStatus self.broker o2 with
+	      | B.Filled -> 
+		self.st <- CLOSED; 
+		S.setstatus self.strat S.CLOSED; 
+		let pnl = B.orderPnL self.broker o1 in
+		printf "CLOSING -> CLOSED (PnL = %f)\n" pnl;
+		self.pnl <- self.pnl +. pnl
 	      | B.Pending -> ()
 	      | B.Cancelled -> raise (Failure "???")
 	  )
@@ -151,7 +168,7 @@ struct
 	  )
   ;;
 	    
-  let get_status (self: t) : status =
+  let getstatus (self: t) : status =
     self.st;;
 
   let init (strat: S.t) = 
@@ -159,7 +176,14 @@ struct
       strat = strat;
       broker = B.init (S.getinfo strat);
       st = STOPPED;
+      pnl = 0.0;
     }
+
+  let start self =
+    B.start self.broker;
+    self.st <- CLOSED;;
+
+  let getpnl self = self.pnl;;
 
 end;; 
 
