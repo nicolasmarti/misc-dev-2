@@ -42,6 +42,9 @@ module type Broker = sig
   val cancelOrder: t -> orderId -> unit
   val closeOrder: t -> orderId -> orderId
 
+  val orderValue: t -> orderId -> float
+  val orderPnL: t -> orderId -> float
+
 end;;
 
 (*
@@ -67,8 +70,13 @@ module type Strat = sig
 		| CLOSE
 		| STAY
 
+  type status = LONG
+		| SHORT
+		| CLOSED
+
   val getinfo: t -> info
   val proceedData: t -> data -> signal
+  val setstatus: t -> status -> unit
     
 end;;
 
@@ -84,7 +92,7 @@ module Automata =
 struct
   
   type status = CLOSED
-		| OPENING of B.orderId * datetime
+		| OPENING of B.orderId * datetime * [`LONG | `SHORT]
 		| OPENED of B.orderId 
 		| CLOSING of B.orderId * datetime
 		| STOPPED
@@ -107,9 +115,9 @@ struct
 	      | S.GOLONG o | S.GOSHORT o -> 
 		let oid = B.proceedOrder self.broker o in
 		let dt = now () in
-		self.st <- OPENING (oid, dt)		
+		self.st <- OPENING (oid, dt, match s with | S.GOLONG _ -> `LONG | S.GOSHORT _ -> `SHORT)		
 	  )
-	  | OPENING (o, dt) -> (
+	  | OPENING (o, dt, dir) -> (
 	    let n = now () in
 	    let delta = diff_datetime n dt in	    
 	    match B.orderStatus self.broker o with
@@ -119,7 +127,7 @@ struct
 		  | Day d -> d > 0
 		  | Week w -> w > 0
 	      ) then B.cancelOrder self.broker o else ()
-	      | B.Cancelled -> self.st <- OPENED o	      
+	      | B.Cancelled -> self.st <- OPENED o; S.setstatus self.strat (match dir with | `LONG -> S.LONG | `SHORT -> S.SHORT)
 	  )
 	  | OPENED o -> (
 	    let d = B.getdata self.broker in
@@ -130,7 +138,7 @@ struct
 	      | S.CLOSE -> 	    
 		    let oid = B.closeOrder self.broker o in
 		    let dt = now () in
-		    self.st <- OPENING (oid, dt)
+		    self.st <- CLOSING (oid, dt)
 	  )
 	  | CLOSING (o, dt) -> (
 	    match B.orderStatus self.broker o with
