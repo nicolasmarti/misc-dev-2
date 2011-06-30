@@ -13944,19 +13944,18 @@ module AutomataCVSAMS = AutomataCVS(SMAStrat);;
 
 let f l = 
   let strat = SMAStrat.mk l [1; 2; 4] in
-  let auto = AutomataCVSAMS.init strat in
+  let auto = AutomataCVSAMS.init strat 10000.0 in
   AutomataCVSAMS.start auto;
   while AutomataCVSAMS.getstatus auto != AutomataCVSAMS.STOPPED do
     AutomataCVSAMS.step auto false
   done;
   printf "Done.\n";
-  let pnl = AutomataCVSAMS.getpnl auto in
-  printf "pnl = %g\n" pnl;
-  let maxpos = AutomataCVSAMS.getmaxpos auto in
-  printf "maxpos = %g\n" maxpos;
+  let pose = AutomataCVSAMS.getpose auto in
+  printf "pose = %g\n" pose;
+  let pnl = ((pose -. 10000.0) /. 10000.0) *. 100.0 in
+  printf "pnl = %g%%\n" pnl;
   let opendays = AutomataCVSAMS.getopendays auto in
   printf "opendays = %d\n" opendays
-  (*printf "pnl = %g\n" (pnl /. maxpos *. 100.);;*)
 
 let _ = List.map f [quote1; quote2; quote3; quote4];;
 

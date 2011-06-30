@@ -42,6 +42,8 @@ module type Broker = sig
   val cancelOrder: t -> orderId -> unit
   val closeOrder: t -> orderId -> orderId
 
+  val mkOrder: t -> float -> order
+
   val orderValue: t -> orderId -> float
   val orderPnL: t -> orderId -> float
 
@@ -65,8 +67,8 @@ module type Strat = sig
   (* the start parameters (code, ...) *)
   type t
 
-  type signal = GOLONG of order
-		| GOSHORT of order
+  type signal = GOLONG of float
+		| GOSHORT of float
 		| CLOSE
 		| STAY
 
@@ -103,14 +105,15 @@ struct
     strat: S.t;
     broker: B.t;
     mutable st: status;
-    mutable pnl: float;
-    mutable maxpos: float;
+    mutable pose: float;
+    mutable portfolio: B.orderId option;
     mutable opendays: int;
   };;
 
   let step self debug =
     if self.st == STOPPED then (if debug then printf "is STOPPED\n") else      
       if B.getstatus self.broker == B.STOPPED then (self.st <- STOPPED; (if debug then printf "? -> STOPPED\n")) else
+	(if debug then printf "self.pose = %g\n" self.pose;
 	match self.st with
 	  | CLOSED -> (
 	    if debug then printf "CLOSED\n";
@@ -118,7 +121,8 @@ struct
 	    let s = S.proceedData self.strat d in
 	    match s with
 	      | S.STAY | S.CLOSE -> ()
-	      | S.GOLONG o | S.GOSHORT o -> 
+	      | S.GOLONG f | S.GOSHORT f -> 
+		let o = B.mkOrder self.broker (f *. self.pose) in
 		let oid = B.proceedOrder self.broker o in
 		let dt = now () in
 		self.st <- OPENING (oid, dt, match s with | S.GOLONG _ -> `LONG | S.GOSHORT _ -> `SHORT);
@@ -140,7 +144,8 @@ struct
 		S.setstatus self.strat (match dir with | `LONG -> S.LONG | `SHORT -> S.SHORT);
 		if debug then printf "OPENING -> OPENED(%s)\n" (match dir with | `LONG -> "LONG" | `SHORT -> "SHORT");
 		let value = B.orderValue self.broker o in
-		if self.maxpos < value then self.maxpos <- value
+		if debug then printf "value := %g\n" value;
+		self.pose <- self.pose -. value
 	  )
 	  | OPENED o -> (
 	    if debug then printf "OPENED\n";
@@ -163,26 +168,29 @@ struct
 		self.st <- CLOSED; 
 		S.setstatus self.strat S.CLOSED; 
 		let pnl = B.orderPnL self.broker o1 in
-		if debug then printf "CLOSING -> CLOSED (PnL = %f)\n" pnl;
-		self.pnl <- self.pnl +. pnl
+		let value = B.orderValue self.broker o2 in
+		if debug then printf "value := %g\n" value;
+		self.pose <- self.pose -. value;
+		if debug then printf "CLOSING -> CLOSED (PnL = %f)\n" pnl
 	      | B.Pending -> ()
 	      | B.Cancelled -> raise (Failure "???")
 	  )
 	  | STOPPED -> (
 	    raise (Failure "Impossible state at this stage")
 	  )
+	)
   ;;
 	    
   let getstatus (self: t) : status =
     self.st;;
 
-  let init (strat: S.t) = 
+  let init (strat: S.t) (pose: float) = 
     {
       strat = strat;
       broker = B.init (S.getinfo strat);
       st = STOPPED;
-      pnl = 0.0;
-      maxpos = 0.0;
+      pose = pose;
+      portfolio = None;
       opendays = 0;
     }
 
@@ -190,9 +198,7 @@ struct
     B.start self.broker;
     self.st <- CLOSED;;
 
-  let getpnl self = self.pnl;;
-
-  let getmaxpos self = self.maxpos;;
+  let getpose self = self.pose;;
 
   let getopendays self = self.opendays;;
 
