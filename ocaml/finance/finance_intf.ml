@@ -34,13 +34,13 @@ module type Broker = sig
   type orderId
 
   type orderRes = Filled
-		  | NotFilled
 		  | Cancelled
 		  | Pending
 
   val proceedOrder: t -> order -> orderId
   val orderStatus: t -> orderId -> orderRes
-  val cancelOrder: t -> orderId -> orderRes
+  val cancelOrder: t -> orderId -> unit
+  val closeOrder: t -> orderId -> orderId
 
 end;;
 
@@ -57,10 +57,13 @@ module type Strat = sig
   type data
 
   (* the start parameters (code, ...) *)
+  type order
+
+  (* the start parameters (code, ...) *)
   type t
 
-  type signal = GOLONG
-		| GOSHORT
+  type signal = GOLONG of order
+		| GOSHORT of order
 		| CLOSE
 		| STAY
 
@@ -77,12 +80,12 @@ open Date;;
 
 module Automata =
   functor (B: Broker) ->
-    functor (S: Strat with type data = B.data and type info = B.info) ->
+    functor (S: Strat with type data = B.data and type info = B.info and type order = B.order) ->
 struct
   
   type status = CLOSED
 		| OPENING of B.orderId * datetime
-		| OPENED of B.orderId
+		| OPENED of B.orderId 
 		| CLOSING of B.orderId * datetime
 		| STOPPED
 
@@ -93,24 +96,53 @@ struct
   };;
 
   let step self =
-    if self.st == STOPPED then () else
-      match self.st with
-	| CLOSED -> (
-	  	  raise (Failure "NYI")
-	)
-	| CLOSED -> (
-	  raise (Failure "NYI")
-	)
-	| CLOSED -> (
-	  raise (Failure "NYI")
-	)
-	| CLOSED -> (
-	  raise (Failure "NYI")
-	)
-	| STOPPED -> (
-	  raise (Failure "Impossible state at this stage")
-	)
-
+    if self.st == STOPPED then () else      
+      if B.getstatus self.broker == B.STOPPED then self.st <- STOPPED else
+	match self.st with
+	  | CLOSED -> (
+	    let d = B.getdata self.broker in
+	    let s = S.proceedData self.strat d in
+	    match s with
+	      | S.STAY | S.CLOSE -> ()
+	      | S.GOLONG o | S.GOSHORT o -> 
+		let oid = B.proceedOrder self.broker o in
+		let dt = now () in
+		self.st <- OPENING (oid, dt)		
+	  )
+	  | OPENING (o, dt) -> (
+	    let n = now () in
+	    let delta = diff_datetime n dt in	    
+	    match B.orderStatus self.broker o with
+	      | B.Filled -> self.st <- OPENED o
+	      | B.Pending -> if (match delta with
+		  | Second s -> s > 5
+		  | Day d -> d > 0
+		  | Week w -> w > 0
+	      ) then B.cancelOrder self.broker o else ()
+	      | B.Cancelled -> self.st <- OPENED o	      
+	  )
+	  | OPENED o -> (
+	    let d = B.getdata self.broker in
+	    let s = S.proceedData self.strat d in
+	    match s with
+	      | S.STAY -> ()
+	      | S.GOLONG o | S.GOSHORT o -> raise (Failure "???")
+	      | S.CLOSE -> 	    
+		    let oid = B.closeOrder self.broker o in
+		    let dt = now () in
+		    self.st <- OPENING (oid, dt)
+	  )
+	  | CLOSING (o, dt) -> (
+	    match B.orderStatus self.broker o with
+	      | B.Filled -> self.st <- CLOSED
+	      | B.Pending -> ()
+	      | B.Cancelled -> raise (Failure "???")
+	  )
+	  | STOPPED -> (
+	    raise (Failure "Impossible state at this stage")
+	  )
+  ;;
+	    
   let get_status (self: t) : status =
     self.st;;
 

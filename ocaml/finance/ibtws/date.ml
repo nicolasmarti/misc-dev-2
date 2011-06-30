@@ -181,7 +181,7 @@ let barSize2string (bs: barSize) : string =
     | DAY1 -> "1 day"
 ;;
       
-let diff_datetime (d1: datetime) (d2: datetime): datetime =
+let diff_datetime (d1: datetime) (d2: datetime): duration =
   raise (Failure "NYI");;
 
 let now (): datetime =
