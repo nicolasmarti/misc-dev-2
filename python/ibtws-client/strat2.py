@@ -25,8 +25,6 @@ class Strat2(Thread):
             params["minvol"] = 0.01
             params["kdown"] = -2.0
             params["kup"] = 2.0
-            
-            
 
         self.c = Stock(params["ticker"])
         self.state = "CLOSED"
@@ -73,6 +71,9 @@ class Strat2(Thread):
         while self.opened:
 
             try:
+
+                self.c.updatebars()
+
                 bars = self.c.bars
 
                 if len(bars) < self.params["N"]:

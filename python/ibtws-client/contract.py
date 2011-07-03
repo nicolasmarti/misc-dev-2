@@ -80,7 +80,7 @@ class IBContract(Thread):
         self.loop = True
         self.lock = Lock()
         
-        self.start()
+        #self.start()
 
     def __del__(self):
         
@@ -116,7 +116,21 @@ class IBContract(Thread):
                 self.bars[0]["low"] = self.bars[0]["close"]
 
             self.lock.release()
-            
+        
+    def updatebars(self):
+
+        self.lock.acquire()
+
+        self.bars[0]["close"] = self["mktdata"]["LAST PRICE"]
+        if self.bars[0]["close"] > self.bars[0]["high"]:
+            self.bars[0]["high"] = self.bars[0]["close"]
+
+        if self.bars[0]["close"] < self.bars[0]["low"]:
+            self.bars[0]["low"] = self.bars[0]["close"]
+
+        self.lock.release()
+
+    
     def newbar(self):
 
         self.lock.acquire()
