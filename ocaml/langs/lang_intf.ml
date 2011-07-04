@@ -23,7 +23,8 @@ module type Lang = sig
   val empty_session: unit -> session
 
   (* parse/typecheck/compile/... an expression, and register it in the session *)
-  val proceed: session -> string -> value
+  (* together with the value, it returns the number of chars consume *)
+  val proceed: session -> string -> (int * value)
     
   (* pretty printing of values *)
   val print: session -> value -> string
@@ -47,7 +48,7 @@ end;;
 
   might allow:
   * to compile a language to llvm
-  * interface a language with python
+  * to interface a language with python
   
 *)
 module type Compiler = 

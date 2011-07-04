@@ -315,7 +315,9 @@ let parse_exprs st = begin
   (list_with_sep 
      ~sep:(?* blank <|> parse_comment <|> eos)
      parse_expr
-  )
+  ) >>= fun exprs ->
+  position >>= fun pos ->
+  return (pos.Pos.byte, exprs)
 end st
 ;;
 
@@ -1344,24 +1346,20 @@ let interp_exprs ctxt expr =
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_exprs stream with
-    | Result.Ok (res, _) -> (
+    | Result.Ok ((consume, res), _) -> (
       (*
        let _ = List.map (fun hd -> 
 	printf "pprint = "; 
 	printbox (token2box (expr2token hd) 400 2);
       ) res in
       *)
-      try (
-	let res' = List.fold_left (fun acc hd -> eval hd ctxt) (List []) res in
-	printbox (token2box (expr2token res') 400 2);
-	res'
-      )
-      with
-	| LispException e -> printbox (token2box (execException2box e) 400 2); List []
+      let res' = List.fold_left (fun acc hd -> eval hd ctxt) (List []) res in
+      printbox (token2box (expr2token res') 400 2);
+      (consume, res')
     )
     | Result.Error (pos, s) ->
       Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
-      raise Pervasives.Exit
+      raise (LispException (StringError (String.concat "\n" ["Parsing error:"; s])))
 ;;
 
 (******************************************************************************)
