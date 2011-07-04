@@ -624,6 +624,21 @@ let unify (ctxt: env ref) (te1: term) (pos1: position) (te2: term) (pos2: positi
       ctxt := subst_env (!ctxt) s;
       te1
 
+    (* constante stuff ... can be a bit tricky ... *)
+    | Cste c1, Cste c2 when c1 = c2 -> Cste c1
+
+
+    (* in the folowwing two cases, only definition unambiguously unfoldable to a term should be
+       considered as unifyable:
+       - constante refering to an Inductive, to a RecordDecl, or a unique equation (which might need to be rewrite as a lambda abstraction 
+    *) 
+    | Cste c1, _ ->
+      raise (Failure "NYI")
+
+    | _, Cste c2 ->
+      raise (Failure "NYI")
+
+
     | _ -> raise (Failure "NYI")
 ;;
 
