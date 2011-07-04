@@ -77,7 +77,6 @@ class IBContract(Thread):
 
         self.daemon = True
 
-        self.loop = True
         self.lock = Lock()
         
         #self.start()
@@ -88,35 +87,9 @@ class IBContract(Thread):
         self.con.cancelMktDepth(self.MktDepthId)
         self.con.cancelRTData(self.mktRTBarId)
 
-        self.loop = False
-
-    def stop(self):
-        self.loop = False
-        self.closepending()
-        self.close()
-
     def restart(self):
-        self.loop = True
-        sleep(1)
-        self.bars = []
-        self.start()
+        pass
 
-    def run(self):
-        
-        while self.loop:
-            sleep(1)
-            
-            self.lock.acquire()
-
-            self.bars[0]["close"] = self["mktdata"]["LAST PRICE"]
-            if self.bars[0]["close"] > self.bars[0]["high"]:
-                self.bars[0]["high"] = self.bars[0]["close"]
-
-            if self.bars[0]["close"] < self.bars[0]["low"]:
-                self.bars[0]["low"] = self.bars[0]["close"]
-
-            self.lock.release()
-        
     def updatebars(self):
 
         self.lock.acquire()
