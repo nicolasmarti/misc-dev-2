@@ -529,6 +529,33 @@ let subst_env (e: env) (s: substitution) : env =
   } 
 ;;
 
+(* the environment is itself reminiscent of a substitution: 
+   it should be applied only to a term that typecheck in the environment
+*)
+let fvs_substitution (l: (term * term option) list) (startindex: int): (int * substitution) = 
+  List.fold_right (fun (ty, s) (i, acc) ->
+    match s with
+      | None -> (i - 1, acc)
+      | Some s -> (i - 1, IndexMap.add i s acc)
+  ) l (startindex, IndexMap.empty)
+;;
+
+let env_substitution (e: env) : substitution =
+  let (_, s) = List.fold_right (fun hd (i, acc) ->
+    let (_, fvs, _, _, _, _, _) = hd in
+    let (i', s') = fvs_substitution fvs i in
+    (i', IndexMap.merge (fun k valacc vals ->
+      match valacc, vals with
+	| None, None -> raise (Failure "Catastrophic: in env_substitution, both substitution have no data for a given key")
+	| Some v1, Some v2 ->  raise (Failure "Catastrophic: in env_substitution, both substitution have a data for a given key")
+	| Some v1, None -> Some v1
+	| None, Some v2 -> Some v2
+     ) acc s')
+    
+  ) e.quantified (fvs_substitution e.fvs (-1)) in
+  s
+;; 
+
 (* result of unification *)
 type unification_result = Unified
 			  | CannotUnified of (position * term) * (position * term) * string
@@ -540,12 +567,62 @@ type unification_result = Unified
    the two position correspond to the terms unified
    we use (Pos.none, Pos.none) when there is no position
 *)
+
+(*
+  grab the freevariables of a term
+  no needs for order, so we use a set
+*)
+module IndexSet = Set.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+let fv_term (te: term) : IndexSet.t =
+  raise (Failure "NYI")
+;;
+
+
+(*
+  NB: both term should not have free variables for which a subtitution exists
+  (TODO: had a test + rewriting in case ???, should be better to be explicitely done on recursive calls ...)
+*)
 let unify (ctxt: env ref) (te1: term) (pos1: position) (te2: term) (pos2: position) : term =
   match te1, te2 with
     (* THIS IS FALSE DUE TO THE UNIVERSE *)
     | Type _, Type _ -> Type None
 
+    (* the basic rule about variables *)
     | Var (Right i), Var (Right i') when i = i' -> Var (Right i)
+
+    (* all the rules where a free variable can be unified with a term 
+       the cases span over AVar and Var
+    *)
+    | Var (Right i), _ when not (IndexSet.mem i (fv_term te2)) ->
+      let s = IndexMap.singleton i te2 in
+      ctxt := subst_env (!ctxt) s;
+      (* should we rewrite subst in s2 ? a priori no:
+	 1- i not in te2
+	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
+	    and that we did not comply with the N.B. above
+      *)
+      te2      
+
+    | _, Var (Right i) when not (IndexSet.mem i (fv_term te1)) ->
+      let s = IndexMap.singleton i te1 in
+      ctxt := subst_env (!ctxt) s;
+      te1
+
+    | AVar (Some i), _ when not (IndexSet.mem i (fv_term te2)) ->
+      let s = IndexMap.singleton i te2 in
+      ctxt := subst_env (!ctxt) s;
+      te1
+
+    | _, AVar (Some i) when not (IndexSet.mem i (fv_term te1)) ->
+      let s = IndexMap.singleton i te1 in
+      ctxt := subst_env (!ctxt) s;
+      te1
 
     | _ -> raise (Failure "NYI")
 ;;
@@ -598,21 +675,6 @@ let typecheck (ctxt: env ref) (te: term) (ty: term) : bool =
 ;;
 
 let infer (ctxt: env ref) (te: term) : term option =
-  raise (Failure "NYI")
-;;
-
-(*
-  grab the freevariables of a term
-  no needs for order, so we use a set
-*)
-module IndexSet = Set.Make(
-  struct
-    type t = int
-    let compare x y = compare x y
-  end
-);;
-
-let fv_term (te: term) : IndexSet.t =
   raise (Failure "NYI")
 ;;
 
