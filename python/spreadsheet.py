@@ -1,5 +1,10 @@
 from sets import *
 
+# for a (god known) reason, the functions/module to be used in cells need to be import from here 
+from math import sin, pi
+import matplotlib.pyplot as plt
+
+
 class SpreadSheet:
 
   # contains 
@@ -14,6 +19,9 @@ class SpreadSheet:
 
   # stack of currently evaluating cells
   _dep_stack = []
+
+  def __str__(self):
+    return str(self._cells) + "\n" + str(self._dep)
 
   # we are setting a value
   def __setitem__(self, key, formula):
@@ -33,10 +41,13 @@ class SpreadSheet:
     # here we change the formula of the cell
     # and thus recompute it
     if isinstance(formula, str) and formula[0] == '=':
-        formula = (formula[1:], eval(formula[1:], globals(), self))
+      try:
+        self._cells[key] = (formula[1:], eval(formula[1:], globals(), self))
+      except Exception as e:
+        self._cells[key] = (formula[1:], str(e))
     else:
-        formula = (None, formula)
-    self._cells[key] = formula
+      self._cells[key] = (None, formula)
+
 
     # we pop the key in the dependency stack
     self._dep_stack.pop()
@@ -83,19 +94,3 @@ class SpreadSheet:
 
     # and just return the second projection
     return c[1]
-
-from math import sin, pi
-ss = SpreadSheet()
-ss['a1'] = 5
-ss['a2'] = '=a1*6'
-ss['a4'] = '=a1*6'
-ss['a3'] = '=a2*7'
-assert ss['a3'] == 210
-ss['b1'] = '=sin(pi/4)'
-assert ss['b1'] == 0.70710678118654746
-assert ss.getformula('b1') == '=sin(pi/4)'
-print str(ss._cells)
-print str(ss._dep)
-ss['a1'] = 12
-print str(ss._cells)
-print str(ss._dep)
