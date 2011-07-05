@@ -24,7 +24,10 @@ module type Lang = sig
 
   (* parse/typecheck/compile/... an expression, and register it in the session *)
   (* together with the value, it returns the number of chars consume *)
+  (* proceed only take one unit of code *)
+  (* while proceeds take as much as possible *)
   val proceed: session -> string -> (int * value)
+  val proceeds: session -> string -> (int * value list)
     
   (* pretty printing of values *)
   val print: session -> value -> string

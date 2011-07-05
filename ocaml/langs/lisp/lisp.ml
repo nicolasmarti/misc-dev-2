@@ -304,12 +304,18 @@ let rec parse_expr st = begin
     )	   
     <|> try_ (surrounded (?+ blank) (?* blank) parse_expr)
     <|> try_ (parse_comment >>= fun _ -> parse_expr)
-  ) >>= fun (e, startp, endp) ->
+  ) >>= fun (e, startp, endp) ->  
   return (SrcInfo (e, (startp, endp)))
 
 end st
 ;; 
 
+let parse_oneexpr st = begin
+  parse_expr >>= fun expr ->
+  position >>= fun pos ->
+  return (pos.Pos.byte, expr)
+end st
+;;
 
 let parse_exprs st = begin
   (list_with_sep 
@@ -1323,23 +1329,15 @@ let rec execException2box (e: lisp_error) : token =
 let interp_expr ctxt expr = 
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
-  match parse_expr stream with
-    | Result.Ok (res, _) -> (
-      (*
-      printf "pprint = "; 
-      printbox (token2box (expr2token res) 400 2);
-      *)
-      try (
-	let res' = eval res ctxt in
-	printbox (token2box (expr2token res') 400 2);
-	res'
-      )
-      with
-	| LispException e -> printbox (token2box (execException2box e) 400 2); List []
+  match parse_oneexpr stream with
+    | Result.Ok ((consume, res), _) -> (
+      let res' = eval res ctxt in
+      printbox (token2box (expr2token res') 400 2);
+      (consume, res')
     )
     | Result.Error (pos, s) ->
       Format.eprintf "%s\n%a: syntax error: %s@." expr Position.File.format pos s;      
-      raise Pervasives.Exit
+      raise (LispException (StringError (String.concat "\n" ["Parsing error:"; s])))
 ;;
 
 let interp_exprs ctxt expr = 
@@ -1347,14 +1345,7 @@ let interp_exprs ctxt expr =
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_exprs stream with
     | Result.Ok ((consume, res), _) -> (
-      (*
-       let _ = List.map (fun hd -> 
-	printf "pprint = "; 
-	printbox (token2box (expr2token hd) 400 2);
-      ) res in
-      *)
-      let res' = List.fold_left (fun acc hd -> eval hd ctxt) (List []) res in
-      printbox (token2box (expr2token res') 400 2);
+      let res' = List.map (fun hd -> eval hd ctxt) res in
       (consume, res')
     )
     | Result.Error (pos, s) ->
@@ -1389,7 +1380,12 @@ struct
   let empty_session () =  init_ctxt () ;;
 
   let proceed session exprs = 
-    interp_exprs session exprs 
+    interp_expr session exprs 
+  ;;
+
+  let proceeds session exprs = 
+    interp_exprs session exprs
+  ;;
 
   let print session value = 
     box2string (token2box (expr2token value) 400 2);
