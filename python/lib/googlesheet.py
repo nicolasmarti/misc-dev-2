@@ -76,11 +76,13 @@ class GoogleSheet():
             curr_wksht_id = self.sheets[sheet_name]["workingsheet"][worksheetname]
             list_feed = self.gd_client.GetCellsFeed(curr_key, curr_wksht_id)
             for i, entry in enumerate(list_feed.entry):
-                if isinstance(cell, str) and entry.title.text == cell:
-                    return entry.content.text
-                else:
-                    if str(cell[0]) == entry.cell.col and str(cell[1]) == entry.cell.row:
-                        return entry.content.text
+              if isinstance(cell, str) and entry.title.text == cell:
+                print entry.content
+                return (entry.content.text, entry.cell.inputValue)
+              else:
+                if str(cell[0]) == entry.cell.col and str(cell[1]) == entry.cell.row:
+                  print entry.content
+                  return (entry.content.text, entry.cell.inputValue)
 
         except Exception as e: 
             print e
@@ -93,7 +95,7 @@ class GoogleSheet():
             curr_wksht_id = self.sheets[sheet_name]["workingsheet"][worksheetname]
             list_feed = self.gd_client.GetCellsFeed(curr_key, curr_wksht_id)
             for i, entry in enumerate(list_feed.entry):
-                res.append((entry.title.text, (int(entry.cell.col), int(entry.cell.row)), entry.content.text))
+                res.append((entry.title.text, (int(entry.cell.col), int(entry.cell.row)), (entry.content.text, entry.cell.inputValue)))
 
             return res
 
@@ -130,9 +132,10 @@ if __name__ == '__main__':
   
   gs = GoogleSheet(username, password)
   gs.getSheetNames()
-  print gs.sheets
-  print gs.getCells("cppi","Feuille5")
-  print gs.getData("cppi","Feuille5", "B6")
-  print gs.getData("cppi","Feuille5", (2, 6))
-
-  print gs.setData("cppi","Feuille5", 2, 6, "5%")
+  #print gs.sheets
+  #print gs.getCells("cppi","Feuille5")
+  #print gs.getData("cppi","Feuille5", "B6")
+  #print gs.getData("cppi","Feuille5", (2, 6))
+  #print gs.setData("cppi","Feuille5", 2, 6, "5%")
+  print gs.getData("progsheet", "Sheet1", "G4")
+  print gs.setData("progsheet", "Sheet1", 7, 4, "=1+8")
