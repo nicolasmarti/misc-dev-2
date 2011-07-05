@@ -10,13 +10,16 @@ XDone
 Remove notebook, strat1, test, teststrat1, teststrat2
 XDone
 
+Redo Stratcommander
+XDONE
+
+Generalize strat2
+XDONE
+
 Extend indicator
 
 Update contract (to work with hist + matplotlib)
 
-Generalize strat2
-
-Redo Stratcommander
 
 
 
