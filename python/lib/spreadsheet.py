@@ -46,10 +46,16 @@ class SpreadSheet:
 
   # this is a frontend version for __setitem__
   # this one is locked. All thread changing a cell value should use this function
-  def setformula(self, key, formula):
+  # block = False means that if the lock is taken we are getting out directly
+  def setformula(self, key, formula, blocking = True):
+    
+    if not blocking and self.glock.locked():
+      return None    
+    
     self.glock.acquire()
     self[key] = formula
     self.glock.release()    
+    return self[key]
 
   # we are setting a value
   def __setitem__(self, key, formula):
