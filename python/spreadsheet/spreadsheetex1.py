@@ -1,6 +1,11 @@
+from math import sin, pi
+
 from spreadsheet import *
 
 ss = SpreadSheet()
+
+ss._globals = globals()
+
 ss['a1'] = 5
 ss['a2'] = '=a1*6'
 ss['a4'] = '=a1*6'

@@ -1,10 +1,5 @@
 from sets import *
 
-# for a (god known) reason, the functions/module to be used in cells need to be import from here 
-from math import sin, pi
-import matplotlib.pyplot as plt
-
-
 class SpreadSheet:
 
   # contains 
@@ -19,6 +14,14 @@ class SpreadSheet:
 
   # stack of currently evaluating cells
   _dep_stack = []
+
+  def __init__(self, _globals = None):
+    if globals == None:
+      self._globals = globals()
+    else:
+      self._globals = _globals
+    pass
+
 
   def __str__(self):
     return str(self._cells) + "\n" + str(self._dep)
@@ -42,7 +45,7 @@ class SpreadSheet:
     # and thus recompute it
     if isinstance(formula, str) and formula[0] == '=':
       try:
-        self._cells[key] = (formula[1:], eval(formula[1:], globals(), self))
+        self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
       except Exception as e:
         self._cells[key] = (formula[1:], str(e))
     else:
