@@ -1,5 +1,7 @@
 from sets import *
 
+from threading import *
+
 class SpreadSheet:
 
   # contains 
@@ -22,6 +24,9 @@ class SpreadSheet:
       self._globals = _globals
 
     self._debug = False
+
+    self.glock = Lock()
+
     pass
 
 
@@ -39,7 +44,12 @@ class SpreadSheet:
 
     return res
 
-  
+  # this is a frontend version for __setitem__
+  # this one is locked. All thread changing a cell value should use this function
+  def setformula(self, key, formula):
+    self.glock.acquire()
+    self[key] = formula
+    self.glock.release()    
 
   # we are setting a value
   def __setitem__(self, key, formula):
@@ -103,7 +113,7 @@ class SpreadSheet:
       l = self._dep_stack
       self._dep_stack = []
       # reset our formula
-      self.__setitem__(key, f)
+      self[key] = f
 
       # restore the dependency stack
       self._dep_stack = l
