@@ -2,26 +2,53 @@ from spreadsheet import *
 
 ss = SpreadSheet()
 
-def sma(tser, period):
-    try: 
-        sum = 0.0
-        for i in tser[0:(period-1)]:
-            sum += i
-        sum /= float(period)
-        return sum
-    except:
-        return None
+# we try something
+# a1 contains a value
+# a2 compute a value with a1
+# a3 compute also a value with a1
+# a4 compute a value with a2 and a3
 
-ss["sma"] = sma
+# test if a4 if really only updated once when updating a1
 
-ss["arg1"] = "=None"
+ss['a1'] = 12
+ss["a2"] = "=a1+1"
+ss["a3"] = "=a1+2"
+ss["a4"] = "=a2+a3"
 
-ss["arg2"] = "=10"
+#print ss
 
-ss["application"] = "=sma(arg1, arg2)"
+ss._debug = True
 
-print str(ss)
+ss["a1"] = 0
 
-ss["arg1"] = "=range(0, 100)"
+# seems that a4 is recomputed twice ... 
 
-print str(ss)
+# another test, what in case of if ?
+# if is a statement, not evaluable by eval ... so clear out the issue
+
+ss2 = SpreadSheet()
+
+ss2._debug = True
+
+ss2["b"] = True
+
+ss2["a"] = 1
+ss2["c"] = 2
+
+def ifte(test, true, false):
+    if test:
+        return true
+    else:
+        return false
+
+def ift(test, true):
+    if test:
+        return true
+
+ss2._globals.update(locals())
+
+ss2["test"] = "=ift(b, a)"
+
+ss2["d"] = "=test + 2"
+
+print ss2
