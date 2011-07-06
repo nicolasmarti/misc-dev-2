@@ -137,6 +137,16 @@ type env =
  
 }
 
+(* push a list of quantifiers in an environment *)
+let env_push_quantifiers (ctxt: env) (q: quantifier list) : env =
+  raise (Failure "NYI")
+;;
+
+(* pop a number of quantifiers from an environment: result also contains the resulting environment *)
+let env_pop_quantifiers (ctxt: env) (n: int) : quantifier list * env =
+  raise (Failure "NYI")
+;;
+
 module IndexMap = Map.Make(
   struct
     type t = int
@@ -503,7 +513,7 @@ let subst_env (e: env) (s: substitution) : env =
   let (q', s') = List.fold_left (fun (q, s) (qv, fv, decl, tstack, eqstack, tystack, qstack) ->
     let fv' = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
 					  match hd2 with
-					    | None -> None 
+					    | None -> raise (Failure "TODO: look for the freevariable i in the environment and if present replace by Some s(i)")
 					    | Some hd2 -> Some (term_substitution s hd2)
     )
     ) fv in
@@ -519,7 +529,7 @@ let subst_env (e: env) (s: substitution) : env =
   ) ([], s) e.quantified in
   let fvs' = List.map (fun (hd1, hd2) -> (term_substitution s' hd1,
 					  match hd2 with
-					    | None -> None 
+					    | None -> raise (Failure "TODO: look for the freevariable i in the environment and if present replace by Some s(i)")
 					    | Some hd2 -> Some (term_substitution s' hd2)
   )
   ) e.fvs in
@@ -635,58 +645,97 @@ and fv_equation (eq: equation) : IndexSet.t =
   NB: both term should not have free variables for which a subtitution exists
   (TODO: had a test + rewriting in case ???, should be better to be explicitely done on recursive calls ...)
 *)
-let unify (ctxt: env ref) (te1: term) (pos1: position) (te2: term) (pos2: position) : term =
-  match te1, te2 with
-    (* THIS IS FALSE DUE TO THE UNIVERSE *)
-    | Type _, Type _ -> Type None
 
+(* this exception is just for rising on defualt case *)
+exception UnificationFail;;
+
+let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term = 
+  try (
+    match te1, te2 with
+      (* THIS IS FALSE DUE TO THE UNIVERSE *)
+      | Type _, Type _ -> Type None
+	
     (* the basic rule about variables *)
-    | Var (Right i), Var (Right i') when i = i' -> Var (Right i)
+      | Var (Right i), Var (Right i') when i = i' -> Var (Right i)
 
     (* all the rules where a free variable can be unified with a term 
        the cases span over AVar and Var
     *)
-    | Var (Right i), _ when not (IndexSet.mem i (fv_term te2)) ->
-      let s = IndexMap.singleton i te2 in
-      ctxt := subst_env (!ctxt) s;
-      (* should we rewrite subst in s2 ? a priori no:
+      | Var (Right i), _ when not (IndexSet.mem i (fv_term te2)) ->
+	let s = IndexMap.singleton i te2 in
+	ctxt := subst_env (!ctxt) s;
+      (* should we rewrite subst in te2 ? a priori no:
 	 1- i not in te2
 	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
-	    and that we did not comply with the N.B. above
+	 and that we did not comply with the N.B. above
       *)
-      te2      
+	te2      
 
-    | _, Var (Right i) when not (IndexSet.mem i (fv_term te1)) ->
-      let s = IndexMap.singleton i te1 in
-      ctxt := subst_env (!ctxt) s;
-      te1
+      | _, Var (Right i) when not (IndexSet.mem i (fv_term te1)) ->
+	let s = IndexMap.singleton i te1 in
+	ctxt := subst_env (!ctxt) s;
+	te1
 
-    | AVar (Some i), _ when not (IndexSet.mem i (fv_term te2)) ->
-      let s = IndexMap.singleton i te2 in
-      ctxt := subst_env (!ctxt) s;
-      te1
+      | AVar (Some i), _ when not (IndexSet.mem i (fv_term te2)) ->
+	let s = IndexMap.singleton i te2 in
+	ctxt := subst_env (!ctxt) s;
+	te1
 
-    | _, AVar (Some i) when not (IndexSet.mem i (fv_term te1)) ->
-      let s = IndexMap.singleton i te1 in
-      ctxt := subst_env (!ctxt) s;
-      te1
+      | _, AVar (Some i) when not (IndexSet.mem i (fv_term te1)) ->
+	let s = IndexMap.singleton i te1 in
+	ctxt := subst_env (!ctxt) s;
+	te1
 
     (* constante stuff ... can be a bit tricky ... *)
-    | Cste c1, Cste c2 when c1 = c2 -> Cste c1
+      | Cste c1, Cste c2 when c1 = c2 -> Cste c1
 
 
     (* in the folowwing two cases, only definition unambiguously unfoldable to a term should be
        considered as unifyable:
-       - constante refering to an Inductive, to a RecordDecl, or a unique equation (which might need to be rewrite as a lambda abstraction 
+       - constante refering to an Inductive, to a RecordDecl, or a unique equation 
+          which might need to be rewrite as a lambda abstraction 
+       N.B.: we should returns the Cste c1, or c2, as after unification their definition would have been applied to the proper substitution
     *) 
-    | Cste c1, _ ->
-      raise (Failure "NYI")
+      | Cste c1, _ ->
+	raise (Failure "NYI")
 
-    | _, Cste c2 ->
-      raise (Failure "NYI")
+      | _, Cste c2 ->
+	raise (Failure "NYI")
 
+    (* for now we only support unification on equal object,
+       here equality is strict (same object in memory)
+       there are other possibility:
+       - add a method to object
+       - compare generated string representation
+    *)
 
-    | _ -> raise (Failure "NYI")
+      | Obj o1, Obj o2 when o1 = o2 -> Obj o1
+
+      | Impl (q1, te1), Impl (q2, te2) ->
+      (* first we unify the quantifiers *)
+	let q = unify_quantifier_quantifier ctxt q1 q2 in
+      (* then we push q *)
+	ctxt := env_push_quantifiers !ctxt [q];
+	(* we apply all the possible subtitution to te1 and te2 *)
+	let te1' = term_substitution (env_substitution !ctxt) te1 in
+	let te2' = term_substitution (env_substitution !ctxt) te2 in
+	(* and we unify them *)
+	let te = unify_term_term ctxt te1' te2' in
+	(* we get the results from poping a quantifier *)
+	let ([q], ctxt') = env_pop_quantifiers !ctxt 1 in
+	(* set the working env to the snd *)
+	ctxt := ctxt';
+	(* and finally returns the result *)
+	Impl (q, te)
+	  
+      | _ -> raise UnificationFail
+  ) with
+      | UnificationFail -> (
+	(* here we should try to reduce the terms *)
+	raise UnificationFail
+      )
+and unify_quantifier_quantifier (ctxt: env ref) (q1: quantifier) (q2: quantifier) : quantifier =
+  raise (Failure "NYI")
 ;;
 
 (*
