@@ -16,18 +16,36 @@ class SpreadSheet:
   _dep_stack = []
 
   def __init__(self, _globals = None):
-    if globals == None:
+    if _globals == None:
       self._globals = globals()
     else:
       self._globals = _globals
+
+    self._debug = False
     pass
 
 
   def __str__(self):
-    return str(self._cells) + "\n" + str(self._dep)
+    res = ""
+
+    for i in self._cells:      
+      res += i 
+      formula = self.getformula(i)
+      if formula <> None:
+        res += " ::= " + formula[1:]
+
+      res += " = " + str(self[i]) + "\n"
+
+
+    return res
+
+  
 
   # we are setting a value
   def __setitem__(self, key, formula):
+
+    if self._debug:
+      print "self.__setitem__(" + key + ", " + str(formula) + ")"
 
     # first, as we change the formula of the cell
     # we remove its dependency to other cell
@@ -51,11 +69,11 @@ class SpreadSheet:
     else:
       self._cells[key] = (None, formula)
 
-
     # we pop the key in the dependency stack
     self._dep_stack.pop()
 
     # than we recompute all dependencies
+    # TODO: compute better dependencies to avoid recompute several time the same var
     try:
       for i in self._dep[key]:
         self.recompute(i)
@@ -73,6 +91,10 @@ class SpreadSheet:
       return "=" + c[0]
 
   def recompute(self, key):
+
+    if self._debug:
+      print "self.recompute(" + key + ")"
+
     # we set again the formula
     f = self.getformula(key)
     if f != None:
