@@ -159,13 +159,13 @@ and quantifier2token q =
       )
 and pattern2token pat p = 
   match pat with
-    | PType -> Verbatim "Type"
-    | PVar n -> Verbatim n
-    | PAVar -> Verbatim "_"
-    | PCste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
-    | PCste (Name n) -> Verbatim n
+    | PType _ -> Verbatim "Type"
+    | PVar (n, _) -> Verbatim n
+    | PAVar _ -> Verbatim "_"
+    | PCste (Symbol (s, _), _) -> Verbatim (String.concat "" ["("; s; ")"])
+    | PCste (Name n, _) -> Verbatim n
 
-    | PApp (PCste (Symbol (name, ({kind = `Infix _; _} as op))), args) when List.length (List.filter (fun x -> snd x = Explicit) args) = 2 -> (
+    | PApp (PCste (Symbol (name, ({kind = `Infix _; _} as op)), _), args, _) when List.length (List.filter (fun x -> snd x = Explicit) args) = 2 -> (
       let [arg1; arg2] = List.filter (fun x -> snd x = Explicit) args in
       (match p with
 	| InArg | InApp | InAlias -> withParen
@@ -177,13 +177,13 @@ and pattern2token pat p =
 
     )      
 
-    | PApp (hd, tl) -> (
+    | PApp (hd, tl, _) -> (
       (match p with
 	| InArg | InAlias -> withParen
 	| _ -> fun x -> x	  
       ) (Box (intercalate ((pattern2token hd InApp) :: (List.map (fun x -> parg2token x) tl)) (Space 1)))
     )
-    | PAlias (n, p) -> Box [Verbatim n; Verbatim "@"; pattern2token p InAlias]
+    | PAlias (n, p, _) -> Box [Verbatim n; Verbatim "@"; pattern2token p InAlias]
 and parg2token arg =
   match arg with
     | (te, Explicit) -> Box [pattern2token te InArg]

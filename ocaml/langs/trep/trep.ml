@@ -68,12 +68,12 @@ type term = Type of univ option
 and equation = Guarded of pattern * (guard * term) list
 	       | NotGuarded of pattern * term
 
-and pattern = PType
-	      | PVar of name
-	      | PAVar 
-	      | PCste of symbol
-	      | PAlias of name * pattern
-	      | PApp of pattern * (pattern * nature) list
+and pattern = PType of univ option
+	      | PVar of name * term 
+	      | PAVar of term
+	      | PCste of symbol * term
+	      | PAlias of name * pattern * term
+	      | PApp of pattern * (pattern * nature) list * term
 
 and nature = Explicit
 	     | Hidden
@@ -138,6 +138,7 @@ type env =
 }
 
 (* push a list of quantifiers in an environment *)
+(* to introduce quantifiers, we need the patterns to be typed *)
 let env_push_quantifiers (ctxt: env) (q: quantifier list) : env =
   raise (Failure "NYI")
 ;;
@@ -181,20 +182,20 @@ type substitution = term IndexMap.t;;
 *)
 
 (* the quantified free variables in quantifiers *)
-let rec quantifier_qfvars (q: quantifier) : name list =
+let rec quantifier_qfvars (q: quantifier) : (name * term) list =
   let (ps, ty, n) = q in
   List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) [] ps
 
-(* the quantified free variables in patterns 
+(* the quantified free variables (together with there type) in patterns 
    there is an order !!!
    (same as debruijn index)
 *)
 
-and pattern_qfvars (p: pattern) : name list =
+and pattern_qfvars (p: pattern) : (name * term) list =
   match p with
-    | PVar n -> [n]
-    | PAlias (n, p) -> n::pattern_qfvars p
-    | PApp (f, arg) -> List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) (pattern_qfvars f) (List.map fst arg)
+    | PVar (n, ty) -> [(n, ty)]
+    | PAlias (n, p, ty) -> (n, ty)::pattern_qfvars p
+    | PApp (f, arg, _) -> List.fold_left (fun acc hd -> pattern_qfvars hd @ acc) (pattern_qfvars f) (List.map fst arg)
     | _ -> []
 
 ;;
@@ -298,9 +299,9 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	
 and quantifier_substitution (s: substitution) (q: quantifier) : quantifier * substitution =
   let (qs, ty, n) = q in
-  let s' = shift_substitution s (quantifier_fqvars_size q) in
-  let ty' = tyAnnotation_substitution s' ty in
-  (qs, ty', n), s'
+  let ty' = tyAnnotation_substitution s ty in
+  let (qs', s') = patterns_substitution s qs in
+  (qs', ty', n), s'
 
 and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotation =
     match ty with
@@ -311,12 +312,12 @@ and tyAnnotation_substitution (s: substitution) (ty: tyAnnotation) : tyAnnotatio
 and equation_substitution (s: substitution) (eq: equation) : equation =
   match eq with
     | Guarded (p, gtes) ->
-      let s' = shift_substitution s (pattern_fqvars_size p) in
-      Guarded (p,
+      let (p', s') = pattern_substitution s p in
+      Guarded (p',
 	       List.map (fun (g, t) -> term_substitution s' g, term_substitution s' t) gtes
       )
     | NotGuarded (p, t) -> 
-      let s' = shift_substitution s (pattern_fqvars_size p) in
+      let (p', s') = pattern_substitution s p in
       NotGuarded (p, term_substitution s' t)
 
 and declaration_substitution (s: substitution) (decl: declaration) : declaration =
@@ -344,6 +345,11 @@ and declaration_substitution (s: substitution) (decl: declaration) : declaration
       let decls' = List.map (fun hd -> declaration_substitution s' hd) decls in
       RecordDecl (n, args', ty', decls')
 
+and pattern_substitution (s: substitution) (p: pattern) : (pattern * substitution) =
+  raise (Failure "NYI")
+
+and patterns_substitution (s: substitution) (p: pattern list) : (pattern list * substitution) =
+  raise (Failure "NYI")
 
 (* aging a substitution: 
    shift the quantified variable index by delta
@@ -451,9 +457,14 @@ and shift_quantifier (q: quantifier) (delta: int) : quantifier * int =
 
 and leveled_shift_quantifier (q: quantifier) (level: int) (delta: int) : quantifier * int =
   let (ps, ty, n) = q in
-  let sz = quantifier_fqvars_size q in
-  let level' = level + sz in
-  (ps, leveled_shift_tyAnnotation ty level' delta, n), level'
+  let (ps', level') = leveled_shift_patterns ps level delta in
+  (ps', leveled_shift_tyAnnotation ty level delta, n), level'
+
+and leveled_shift_patterns (ps: pattern list) (level: int) (delta: int) : pattern list * int =
+  raise (Failure "NYI")
+
+and leveled_shift_pattern (ps: pattern) (level: int) (delta: int) : pattern * int =
+  raise (Failure "NYI")
 
 and shift_tyAnnotation (ty: tyAnnotation) (delta: int) : tyAnnotation =
   leveled_shift_tyAnnotation ty 0 delta
@@ -470,12 +481,12 @@ and shift_equation (eq: equation) (delta: int) : equation =
 and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
   match eq with
     | Guarded (p, gtes) ->
-      let level' = level + (pattern_fqvars_size p) in
-      Guarded (p,
+      let (p', level') = leveled_shift_pattern p level delta in
+      Guarded (p',
 	       List.map (fun (g, t) -> leveled_shift_term g level' delta, leveled_shift_term t level' delta) gtes
       )
     | NotGuarded (p, t) -> 
-      let level' = level + (pattern_fqvars_size p) in
+      let (p', level') = leveled_shift_pattern p level delta in
       NotGuarded (p, leveled_shift_term t level' delta)
 
 and shift_declaration (decl: declaration) (delta: int) : declaration =

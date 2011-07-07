@@ -45,9 +45,13 @@ def ift(test, true):
     if test:
         return true
 
+def f(val):
+    print "f(" + str(val) + ")"
+    return val
+
 ss2._globals.update(locals())
 
-ss2["test"] = "=ift(b, a)"
+ss2["test"] = "=ifte(f(b), f(a), f(a))"
 
 ss2["d"] = "=test + 2"
 
