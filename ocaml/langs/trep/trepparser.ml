@@ -3,8 +3,7 @@ open Planck
 open Pprinter;;
 open Printf;;
 
-open Trep;;
-
+open Def;;
 open Trepprinter;;
 
 (* Stream of chars with buffering and memoization *)
