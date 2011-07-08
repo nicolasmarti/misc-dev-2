@@ -119,8 +119,12 @@ and declaration = Signature of symbol * term
   (* NB: I remove specific top level members for freevars, decls, ... *)
   (* rather than that we have an empty quantified frame (with a dummy pattern) at start time. c.f. init context *)
 
+  (* need to input more proper info 
+     tracking current levels of pushed vars (free and quantified)
+  *)
 
 type frame = {
+
   qvs: (name * term) list; (* quantified variables *)
   pattern: pattern; (* the pattern initially pushed for the frame *)
   
@@ -637,38 +641,26 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
 
 (* applying a substitution to an environment *)
 let subst_env (e: env) (s: substitution) : env =
-(*
-  let (q', s') = List.fold_left (fun (q, s) (qv, p, fv, decl, tstack, eqstack, tystack, qstack) ->
-    let fv' = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
+  let (frames, _) = List.fold_left (fun (fs, s) f ->
+    (* s' is the substitution shift to the upper frame level *)
+    let s' = shift_substitution s (- (List.length f.qvs)) in
+    ({ qvs = List.map (fun (hd1, hd2) -> (hd1, term_substitution s' hd2)) f.qvs;
+       pattern = fst (pattern_substitution s' f.pattern);
+       fvs = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
 					  match hd2 with
-					    | None -> raise (Failure "TODO: look for the freevariable i in the environment and if present replace by Some s(i)")
+					    | None -> raise (Failure "something crippled with environment, should have more flexible info on indices of qvs & fvs")
 					    | Some hd2 -> Some (term_substitution s hd2)
+       )) f.fvs;
+       decls = List.map (fun hd -> declaration_substitution s hd) f.decls;
+       terms = List.map (term_substitution s) f.terms;
+       equations = List.map (equation_substitution s) f.equations;
+       annotations = List.map (tyAnnotation_substitution s) f.annotations;
+       natures = f.natures      
+    }::fs, s'
     )
-    ) fv in
-    let decl' = List.map (fun hd -> declaration_substitution s hd) decl in
-    let tstack' = List.map (term_substitution s) tstack in
-    let eqstack' = List.map (equation_substitution s) eqstack in
-    let tystack' = List.map (tyAnnotation_substitution s) tystack in
-    let s' = shift_substitution s (- (List.length qv)) in
-    (* the types in qv and p are not in the scope of qv vars, but bellow *)
-    let qv' = List.map (fun (hd1, hd2) -> (hd1, term_substitution s' hd2)) qv in
-    (q @ [qv', fv', decl', tstack', eqstack', tystack', qstack'], s')
-  ) ([], s) e.quantified in
-  let fvs' = List.map (fun (hd1, hd2) -> (term_substitution s' hd1,
-					  match hd2 with
-					    | None -> raise (Failure "TODO: look for the freevariable i in the environment and if present replace by Some s(i)")
-					    | Some hd2 -> Some (term_substitution s' hd2)
-  )
-  ) e.fvs in
-  let decls' = List.map (fun hd -> declaration_substitution s' hd) e.decls in
-  {
-    fvs = fvs';
-    decls = decls';
-    inferrules = e.inferrules;
-    quantified = q';
-  } 
-*)
-  raise (Failure "TOREDO")
+  ) ([], s) e.frames
+  in
+  { e with frames = frames }
 ;;
 
 (* the environment is itself reminiscent of a substitution: 
