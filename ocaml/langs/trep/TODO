@@ -1,8 +1,4 @@
 1) implement pending functions
-   - pattern_substitution, patterns_substitution
-   - leveled_shift_patterns, leveled_shift_pattern
-   - env_push_quantifiers
-   - env_pop_quantifiers
    - unify_term_term & unify_quantifier_quantifier
    - ...
 2) properly manage errors with exceptions
