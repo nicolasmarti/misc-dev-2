@@ -22,10 +22,11 @@ module SymbolMap = Map.Make(
   end
 );;
 
-type univ = UnivVar of index
+type univ = Univ0
+	    | UnivVar of index
 	    | UnivSucc of univ (* u < UnivSucc u *)
 	    | UnivMax of univ * univ (* UnivMax u1 u2 >= u1 /\ UnivMax u1 u2 >= u2 *)
-
+		
 type position = Pos.t * Pos.t
 
 let noposition = (Pos.none, Pos.none)
@@ -94,8 +95,6 @@ and declaration = Signature of symbol * term
 		  | Inductive of name * quantifier list * term * (symbol * term) list
 		  | RecordDecl of name * quantifier list * term * declaration list
 
-type env = 
-{
   (* free variables (quantification level dependant) *)
   (* contains the type, and sum of substitution over the vars
      a fv can be pushed backward (for instance when qv is push):
@@ -117,61 +116,44 @@ type env =
      (TODO: have an helper function that check it)
   *)
 
-  (* fv, decl and inferrence rule (at toplevel) *)
-  fvs: (term * term option) list;
-  decls: declaration list;
-  inferrules: name list;
+  (* NB: I remove specific top level members for freevars, decls, ... *)
+  (* rather than that we have an empty quantified frame (with a dummy pattern) at start time. c.f. init context *)
 
-  quantified: (
-    (name * term) list * (* quantified variables *)
-      (term * term option) list * (* free variables *)
-      
-      (* stacks for different data *)
-      declaration list * (* for declaration *)
-      term list * (* for terms *)
-      equation list * (* for equation *)
-      tyAnnotation list * (* for type annotation *)
-      quantifier list (* for quantifier *)
 
-  ) list;
- 
+type frame = {
+  qvs: (name * term) list; (* quantified variables *)
+  pattern: pattern; (* the pattern initially pushed for the frame *)
+  
+  fvs: (term * term option) list; (* free variables *)
+  
+  (* stacks for different data *)
+  decls: declaration list; (* for declaration *)
+  terms: term list; (* for terms *)
+  equations: equation list; (* for equation *)
+  annotations: tyAnnotation list; (* for type annotation *)
+  natures: nature list (* nature *)
+  
 }
 
-(* push a list of quantifiers in an environment *)
-(* to introduce quantifiers, we need the patterns to be typed *)
-let env_push_quantifiers (ctxt: env) (q: quantifier list) : env =
-  raise (Failure "NYI")
-;;
+let empty_frame = {
+  qvs = [];
+  pattern = PType (Some Univ0);
+  fvs = [];
+  decls = [];
+  terms = [];
+  equations = [];
+  annotations = [];
+  natures = [];
+}
 
-(* pop a number of quantifiers from an environment: result also contains the resulting environment *)
-let env_pop_quantifiers (ctxt: env) (n: int) : quantifier list * env =
-  raise (Failure "NYI")
-;;
+type env = 
+{
+  frames: frame list;
+}
 
-module IndexMap = Map.Make(
-  struct
-    type t = int
-    let compare x y = compare x y
-  end
-);;
-
-(*
-  ADT for errors, an exception and a composition function
-*)
-
-type trep_error = AtPos of position * trep_error
-		  | FreeError of string
-		  | UnShiftable
-		  | UnTypeckedTerm of term
-;;
-
-exception TrepException of trep_error
-;;
-
-(*TODO: properly raise exception *)
-
-(* substitution: from free variables to term *) 
-type substitution = term IndexMap.t;;
+let empty_ctxt : env = {
+  frames = [empty_frame]
+};;
 
 (*
   quantified free variables:
@@ -199,6 +181,140 @@ and pattern_qfvars (p: pattern) : (name * term) list =
     | _ -> []
 
 ;;
+
+(* push a (typed) pattern / frame in an environment *)
+let env_push_pattern (ctxt: env) (p: pattern) : env =
+  let l = pattern_qfvars p in
+  { ctxt with frames = {empty_frame with qvs = l; pattern = p}::ctxt.frames }
+;;
+
+(* pop a pattern / frame from the environment *)
+let rec env_pop_pattern (ctxt: env) : env * pattern =
+  match ctxt.frames with
+    (* for poping, here, we need to have a "clean" frame *)
+    (* extension: accept a list of free variable,
+       abstract l in the free vars, 
+       return a substitution, from the free var, to app of freevar to l       
+    *)
+    | { qvs = l;
+	pattern = p;
+	fvs = [];
+	decls = [];
+	terms = [];
+	equations = [];
+	annotations = [];
+	natures = [];
+      }::tl -> 
+      ({ctxt with frames = tl}, p)
+    | _ -> raise (Failure "Case not yet supported")
+;;
+
+let env_push_termstack (ctxt: env) (te: term) : env =
+  match ctxt.frames with
+    | hd::tl  ->
+      {ctxt with frames = {hd with terms = te::hd.terms}::tl}
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_pop_termstack (ctxt: env) : env * term =
+  match ctxt.frames with
+    | hd::tl -> (
+      match hd.terms with
+	| thd::ttl ->	  
+	  ({ctxt with frames = {hd with terms = ttl}::tl}, thd)
+	| _ -> raise (Failure "Catastrophic: no term to pop")
+    )
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_push_annotation (ctxt: env) (ty: tyAnnotation) : env =
+  match ctxt.frames with
+    | hd::tl  ->
+      {ctxt with frames = {hd with annotations = ty::hd.annotations}::tl}
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_pop_annotation (ctxt: env) : env * tyAnnotation =
+  match ctxt.frames with
+    | hd::tl -> (
+      match hd.annotations with
+	| thd::ttl ->	  
+	  ({ctxt with frames = {hd with annotations = ttl}::tl}, thd)
+	| _ -> raise (Failure "Catastrophic: no annotation to pop")
+    )
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_push_nature (ctxt: env) (n: nature) : env =
+  match ctxt.frames with
+    | hd::tl  ->
+      {ctxt with frames = {hd with natures = n::hd.natures}::tl}
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_pop_nature (ctxt: env) : env * nature =
+  match ctxt.frames with
+    | hd::tl -> (
+      match hd.natures with
+	| thd::ttl ->	  
+	  ({ctxt with frames = {hd with natures = ttl}::tl}, thd)
+	| _ -> raise (Failure "Catastrophic: no nature to pop")
+    )
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+(* push a (typed) quantifier in an environment *)
+let env_push_quantifier (ctxt: env) (q: quantifier) : env =
+  (* we grab the patterns, and type annotation *)
+  let (ps, ty, n) = q in
+  (* we push the annotation *)
+  let ctxt = env_push_annotation ctxt ty in
+  let ctxt = env_push_nature ctxt n in
+  List.fold_left env_push_pattern ctxt ps
+;;
+
+let rec fold_leftn (f: 'b -> 'b) (acc: 'b) (n: int) : 'b =
+  if n < 0 then
+    acc
+  else
+    fold_leftn f (f acc) (n-1)
+;; 
+
+(* pop a quantifier from an environment *)
+let rec env_pop_quantifier (ctxt: env) (size: int) : env * quantifier =
+  let (ctxt, ps) = fold_leftn (fun (ctxt, ps) ->
+    let (ctxt, p) = env_pop_pattern ctxt in
+    (ctxt, p::ps)
+  ) (ctxt, []) size in
+  let (ctxt, ty) = env_pop_annotation ctxt in
+  let (ctxt, n) = env_pop_nature ctxt in
+  (ctxt, (ps, ty, n))  
+;;
+
+module IndexMap = Map.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+(*
+  ADT for errors, an exception and a composition function
+*)
+
+type trep_error = AtPos of position * trep_error
+		  | FreeError of string
+		  | UnShiftable
+		  | UnTypeckedTerm of term
+;;
+
+exception TrepException of trep_error
+;;
+
+(*TODO: properly raise exception *)
+
+(* substitution: from free variables to term *) 
+type substitution = term IndexMap.t;;
 
 (*
   get the size 
@@ -521,7 +637,8 @@ and leveled_shift_declaration (decl: declaration) (level: int) (delta: int) : de
 
 (* applying a substitution to an environment *)
 let subst_env (e: env) (s: substitution) : env =
-  let (q', s') = List.fold_left (fun (q, s) (qv, fv, decl, tstack, eqstack, tystack, qstack) ->
+(*
+  let (q', s') = List.fold_left (fun (q, s) (qv, p, fv, decl, tstack, eqstack, tystack, qstack) ->
     let fv' = List.map (fun (hd1, hd2) -> (term_substitution s hd1,
 					  match hd2 with
 					    | None -> raise (Failure "TODO: look for the freevariable i in the environment and if present replace by Some s(i)")
@@ -533,8 +650,7 @@ let subst_env (e: env) (s: substitution) : env =
     let eqstack' = List.map (equation_substitution s) eqstack in
     let tystack' = List.map (tyAnnotation_substitution s) tystack in
     let s' = shift_substitution s (- (List.length qv)) in
-    (* the types in qv and quantifiers are not in the scope of qv vars, but bellow *)
-    let (qstack', _) = List.split (List.map (quantifier_substitution s') qstack) in
+    (* the types in qv and p are not in the scope of qv vars, but bellow *)
     let qv' = List.map (fun (hd1, hd2) -> (hd1, term_substitution s' hd2)) qv in
     (q @ [qv', fv', decl', tstack', eqstack', tystack', qstack'], s')
   ) ([], s) e.quantified in
@@ -551,6 +667,8 @@ let subst_env (e: env) (s: substitution) : env =
     inferrules = e.inferrules;
     quantified = q';
   } 
+*)
+  raise (Failure "TOREDO")
 ;;
 
 (* the environment is itself reminiscent of a substitution: 
@@ -565,6 +683,7 @@ let fvs_substitution (l: (term * term option) list) (startindex: int): (int * su
 ;;
 
 let env_substitution (e: env) : substitution =
+(*
   let (_, s) = List.fold_right (fun hd (i, acc) ->
     let (_, fvs, _, _, _, _, _) = hd in
     let (i', s') = fvs_substitution fvs i in
@@ -577,7 +696,8 @@ let env_substitution (e: env) : substitution =
      ) acc s')
     
   ) e.quantified (fvs_substitution e.fvs (-1)) in
-  s
+  s*)
+  raise (Failure "TOREDO")
 ;; 
 
 (* result of unification *)
@@ -726,14 +846,14 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
       (* first we unify the quantifiers *)
 	let q = unify_quantifier_quantifier ctxt q1 q2 in
       (* then we push q *)
-	ctxt := env_push_quantifiers !ctxt [q];
+	ctxt := env_push_quantifier !ctxt q;
 	(* we apply all the possible subtitution to te1 and te2 *)
 	let te1' = term_substitution (env_substitution !ctxt) te1 in
 	let te2' = term_substitution (env_substitution !ctxt) te2 in
 	(* and we unify them *)
 	let te = unify_term_term ctxt te1' te2' in
 	(* we get the results from poping a quantifier *)
-	let ([q], ctxt') = env_pop_quantifiers !ctxt 1 in
+	let (ctxt', q) = env_pop_quantifier !ctxt 1 in
 	(* set the working env to the snd *)
 	ctxt := ctxt';
 	(* and finally returns the result *)
