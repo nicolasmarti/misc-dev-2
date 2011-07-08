@@ -46,8 +46,8 @@ let rec term_substitution (s: substitution) (te: term) : term =
 
     | Let (false, eqs, te) ->
       let (eqs', s') = List.fold_left (fun (eqs, s) (p, t) -> 
-	let s' = shift_substitution s (pattern_fqvars_size p) in
-	(eqs @ [(p, term_substitution s' t)], s')
+	let (p', s') = pattern_substitution s p in
+	(eqs @ [(p', term_substitution s' t)], s')
       ) ([], s) eqs in
       Let (false, eqs', term_substitution s' te)
 
@@ -55,7 +55,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
       let sz = List.fold_left (fun acc hd -> acc + hd) 0 (List.map (fun hd -> pattern_fqvars_size (fst hd)) eqs) in 
       let s' = shift_substitution s sz in
       Let (true,
-	   List.map (fun (p, t) -> (p, term_substitution s' t)) eqs,
+	   List.map (fun (p, t) -> (pattern_subst s p, term_substitution s' t)) eqs,
 	   term_substitution s' te
       )
 
@@ -74,12 +74,6 @@ let rec term_substitution (s: substitution) (te: term) : term =
       Case (term_substitution s te,
 	    List.map (fun hd -> equation_substitution s hd) eqs
       )
-(*
-    | Where (te, decls) ->
-      Where (term_substitution s te,
-	    List.map (fun hd -> declaration_substitution s hd) decls
-      )
-*)
     | TyAnnotation (te, ty) ->
       TyAnnotation (term_substitution s te,
 		    tyAnnotation_substitution s ty)
@@ -139,17 +133,32 @@ and declaration_substitution (s: substitution) (decl: declaration) : declaration
       RecordDecl (n, args', ty', decls')
 
 and pattern_substitution (s: substitution) (p: pattern) : (pattern * substitution) =
-  raise (Failure "NYI")
+  let s' = shift_substitution s (pattern_fqvars_size p) in
+  (pattern_subst s p, s')
+
+and pattern_subst (s: substitution) (p: pattern) : pattern =
+  match p with
+    | PVar (n, te) -> PVar (n, term_substitution s te)
+    | PAVar te -> PAVar (term_substitution s te)
+    | PCste (symb, te) -> PCste (symb, term_substitution s te)
+    | PAlias (n, p, te) -> PAlias (n, pattern_subst s p, term_substitution s te)
+    | PApp (f, args, te) -> PApp (pattern_subst s f, 
+				  List.map (fun (p, n) -> (pattern_subst s p, n)) args, 
+				  term_substitution s te)
+    | PType u -> PType u
 
 and patterns_substitution (s: substitution) (p: pattern list) : (pattern list * substitution) =
-  raise (Failure "NYI")
+  List.fold_left (fun (ps, s) p -> 
+    let (p, s) = pattern_substitution s p in
+    (ps @ [p], s)
+  ) ([], s) p
 
 (* aging a substitution: 
    shift the quantified variable index by delta
    delta > 0 -> consider the substitution on quantified terms
    delta < 0 -> consider the substitution on less quantified terms
 *)
-(* val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b *)
+
 and shift_substitution (s: substitution) (delta: int) : substitution =
   IndexMap.fold (fun key value acc -> 
     try 
@@ -203,8 +212,8 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 
     | Let (false, eqs, te) ->
       let (eqs', level') = List.fold_left (fun (eqs, level) (p, t) ->
-	let level' = level + (pattern_fqvars_size p) in
-	(eqs @ [(p, leveled_shift_term t level' delta)], level')
+	let (p', level') = leveled_shift_pattern p level delta in
+	(eqs @ [(p', leveled_shift_term t level' delta)], level')
       ) ([], level) eqs in
       Let (false, eqs', leveled_shift_term te level' delta)
       
@@ -212,7 +221,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       let sz = List.fold_left (fun acc hd -> acc + hd) 0 (List.map (fun hd -> pattern_fqvars_size (fst hd)) eqs) in 
       let level' = level + sz in
       Let (true,
-	   List.map (fun (p, t) -> (p, leveled_shift_term t level' delta)) eqs,
+	   List.map (fun (p, t) -> (leveled_shift_pattern' p level' delta, leveled_shift_term t level' delta)) eqs,
 	   leveled_shift_term te level' delta
       )
 
@@ -231,12 +240,6 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       Case (leveled_shift_term te level delta,
 	    List.map (fun hd -> leveled_shift_equation hd level delta) eqs
       )
-(*
-    | Where (te, decls) ->
-      Where (leveled_shift_term te level delta,
-	    List.map (fun hd -> leveled_shift_declaration hd level delta) decls
-      )
-*)
     | TyAnnotation (te, ty) ->
       TyAnnotation (leveled_shift_term te level delta,
 		    leveled_shift_tyAnnotation ty level delta)
@@ -254,10 +257,25 @@ and leveled_shift_quantifier (q: quantifier) (level: int) (delta: int) : quantif
   (ps', leveled_shift_tyAnnotation ty level delta, n), level'
 
 and leveled_shift_patterns (ps: pattern list) (level: int) (delta: int) : pattern list * int =
-  raise (Failure "NYI")
+  List.fold_left (fun (ps, level) p ->
+    let (p, level) = leveled_shift_pattern p level delta in
+    (ps @ [p], level)
+  ) ([], level) ps
 
-and leveled_shift_pattern (ps: pattern) (level: int) (delta: int) : pattern * int =
-  raise (Failure "NYI")
+and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern * int =
+  (leveled_shift_pattern' p level delta,  level + (pattern_fqvars_size p))  
+
+and leveled_shift_pattern' (p: pattern) (level: int) (delta: int) : pattern =
+  match p with
+    | PVar (n, te) -> PVar (n, leveled_shift_term te level delta)
+    | PAVar te -> PAVar (leveled_shift_term te level delta)
+    | PCste (symb, te) -> PCste (symb, leveled_shift_term te level delta)
+    | PAlias (n, p, te) -> PAlias (n, leveled_shift_pattern' p level delta, leveled_shift_term te level delta)
+    | PApp (f, args, te) -> PApp (leveled_shift_pattern' f level delta, 
+				  List.map (fun (p, n) -> (leveled_shift_pattern' p level delta, n)) args, 
+				  leveled_shift_term te level delta)
+    | PType u -> PType u
+
 
 and shift_tyAnnotation (ty: tyAnnotation) (delta: int) : tyAnnotation =
   leveled_shift_tyAnnotation ty 0 delta
