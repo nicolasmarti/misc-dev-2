@@ -123,6 +123,26 @@ and declaration = Signature of symbol * term
      tracking current levels of pushed vars (free and quantified)
   *)
 
+(*
+
+  ideas
+  * for qvs
+    - map: name -> index
+    - map: index -> (term, name)
+    - level: int which keep track of the next DeBruijn index for quantified vars
+    - size: number of quantified vars
+  * for fvs
+    - level: int which keep track of the next DeBruijn index for free vars
+    - size: number of free vars
+    - map: index -> (term * term option)
+  * for stacks:
+    - for each element: a set of free variables (such that no need to always recompute if a substitution should be done)
+
+  have hastbl in frames? --> empty_frame as a function: unit -> frame
+  + summary in env ? map (what you want) (frame were it is)
+  
+*)
+
 type frame = {
 
   qvs: (name * term) list; (* quantified variables *)
