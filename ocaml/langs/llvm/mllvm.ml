@@ -429,7 +429,7 @@ and gc_codegen_create (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let _ = build_call (fst (VarMap.find "__memcpy_" gst.valueenv)) [| arg1; arg2; size1 |] "memcpy" builder in
 
 	    let _ = firstlevel_gc gst builder ty datap true in
-	      build_ret addr builder;
+	      ignore (build_ret addr builder);
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      f
@@ -458,7 +458,7 @@ and gc_codegen_grab (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let counterv = build_add counterv one "add" builder in
 
 	    let _ = build_store counterv counterp builder in
-	      build_ret datap builder;
+	      ignore (build_ret datap builder);
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      f
@@ -507,7 +507,7 @@ and gc_codegen_drop (gst: compile_state) (ty: llvmtype) : llvalue =
 	    let _ = build_br merge_block builder in
 	      
 	    let _ = position_at_end merge_block builder in	      
-	      build_ret_void builder;
+	      ignore (build_ret_void builder);
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      f
@@ -535,8 +535,8 @@ and gc_codegen_delete (gst: compile_state) (ty: llvmtype) : llvalue =
 
 	    let arg1 = build_bitcast (params f).(0) (build_llvmtype gst VarMap.empty (TPtr (TInteger 8))) "cast" builder in
 	      
-	    let mem = build_call (fst (VarMap.find "__free_" gst.valueenv)) [| arg1 |] "" builder in
-	      build_ret_void builder;
+	    let _ = build_call (fst (VarMap.find "__free_" gst.valueenv)) [| arg1 |] "" builder in
+	      ignore (build_ret_void builder);
 	      Llvm_analysis.assert_valid_function f;
 	      if gst.optimize then ignore(PassManager.run_function f gst.passmng);
 	      f

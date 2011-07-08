@@ -178,3 +178,17 @@ type env =
 let empty_ctxt : env = {
   frames = [empty_frame]
 };;
+
+(*
+  ADT for errors, an exception and a composition function
+*)
+
+type trep_error = AtPos of position * trep_error
+		  | FreeError of string
+		  | UnShiftable
+		  | UnTypeckedTerm of term
+;;
+
+exception TrepException of trep_error
+;;
+
