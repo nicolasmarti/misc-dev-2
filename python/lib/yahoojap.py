@@ -245,7 +245,7 @@ def get_historical(ticker, startdate, enddate = date.today()):
             parse_quote_table(quotes, res)
             i += 1
         except Exception as e:
-            print e
+            #print e
             return res
 
     return res
