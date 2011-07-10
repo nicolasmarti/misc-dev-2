@@ -246,21 +246,22 @@ class StckChart2(gtk.VBox):
 
 
 
-win = gtk.Window()
-win.connect("destroy", lambda x: gtk.main_quit())
-win.set_default_size(400,300)
-win.set_title("YHOOSTCK")
+if __name__ == '__main__':
+    win = gtk.Window()
+    win.connect("destroy", lambda x: gtk.main_quit())
+    win.set_default_size(400,300)
+    win.set_title("YHOOSTCK")
 
-try:
-    ticker = sys.argv[1]
-except: 
-    ticker = '^VIX'
+    try:
+        ticker = sys.argv[1]
+    except: 
+        ticker = '^VIX'
 
-vbox = StckChart2(ticker)
-win.add(vbox)
+    vbox = StckChart1(ticker)
+    win.add(vbox)
 
-win.show_all()
-gtk.main()
+    win.show_all()
+    gtk.main()
 
 
 

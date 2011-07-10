@@ -250,7 +250,7 @@ def get_historical(ticker, startdate, enddate = date.today()):
 
     return res
 
-
-#for i in get_historical("8604", date(2008, 1, 1)):
-#    print i
+if __name__ == '__main__':
+    for i in get_historical("8604", date(2008, 1, 1)):
+        print i
 
