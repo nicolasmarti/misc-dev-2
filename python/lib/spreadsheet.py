@@ -2,37 +2,6 @@ from sets import *
 
 from threading import *
 
-# this computes the list of sets of elements that needs to be recomputed
-def compute_recompute(key, _deps):
-  # the result will be a list of sets
-  res = []
-  # current_sets of recomputation
-  current_set = _deps[key]
-  # while there is dependencies
-  while len(current_set) > 0:
-    # we initialize the next set
-    next_set = Set()
-    # adding all following dependencies
-    for i in current_set:
-      next_set.update(_deps[i])
-    # we save the current_set by appending it in the res
-    res.append(current_set)
-    # and the current_set is the next one
-    current_set = next_set
-
-  # here we are sure that current_set = Set(), and that we are done
-
-  # reverse traversing the list of sets, with i
-  resi = range(0, len(res))
-  resi.reverse()
-  for i in resi:
-    # we remove all the elements from the current set from the others
-    for j in range(0, i):
-      res[j] -= res[i]
-
-  # finally we return res
-  return res
-
 class SpreadSheet:
 
   # contains 
@@ -82,6 +51,7 @@ class SpreadSheet:
 
     return res
 
+
   # this is a frontend version for __setitem__
   # this one is locked. All thread changing a cell value should use this function
   # block = False means that if the lock is taken we are getting out directly
@@ -95,18 +65,51 @@ class SpreadSheet:
     self.glock.release()    
     return self[key]
 
-  # we are setting a value
-  def __setitem__(self, key, formula):
+  # this computes the list of sets of elements that needs to be recomputed
+  def compute_recompute(self, key):
+    # the result will be a list of sets
+    res = []
+    # current_sets of recomputation
+    current_set = self._dep[key]
+    # while there is dependencies
+    while len(current_set) > 0:
+      # we initialize the next set
+      next_set = Set()
+      # adding all following dependencies
+      for i in current_set:
+        next_set.update(self._dep[i])
+      # we save the current_set by appending it in the res
+      res.append(current_set)
+      # and the current_set is the next one
+      current_set = next_set
 
-    # first, as we change the formula of the cell
-    # we remove its dependency to other cell
+    # here we are sure that current_set = Set(), and that we are done
+
+    # reverse traversing the list of sets, with i
+    resi = range(0, len(res))
+    resi.reverse()
+    for i in resi:
+      # we remove all the elements from the current set from the others
+      for j in range(0, i):
+        res[j] -= res[i]
+
+    # finally we return res
+    return res
+
+  # remove the key as dependent from other key
+  def remove_key_dependency(self, key):
     for i in self._dep:
       self._dep[i].discard(key)    
 
-    # if I am not registered in _dep I do so
-    if key not in self._dep:
-      self._dep[key] = Set()
+  # set a formula
+  def setformula(self, key, formula):
+    try:
+      self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
+    except Exception as e:
+      self._cells[j] = (formula[1:], str(e))
 
+  # setting a cell
+  def setcell(self, key, formula):
     # then we push the key in the dependency stack
     self._dep_stack.append(key)
 
@@ -123,16 +126,43 @@ class SpreadSheet:
     # we pop the key in the dependency stack
     self._dep_stack.pop()
 
+  # we are setting a value
+  def __setitem__(self, key, formula):
+
+    # first, as we change the formula of the cell
+    # we remove its dependency to other cell
+    self.remove_key_dependency(key)
+
+    # we store the previous value
+    try:
+      old_val = self.getvalue(key)
+    except:
+      pass
+
+    # if I am not registered in _dep I do so
+    if key not in self._dep:
+      self._dep[key] = Set()
+
+    # we set the cell
+    self.setcell(key, formula)
+
+    # we only recompute if we have a different value
+    try:
+      if self.getvalue(key) == old_val:
+        return
+    except:
+      pass
+
     # than we recompute all dependencies
     # TODO: compute better dependencies to avoid recompute several time the same var
     # DONE
 
-    recomputesets = compute_recompute(key, self._dep)
-
     # we "neutralize" the dependency stack
     l = self._dep_stack
     self._dep_stack = []
-    
+
+    recomputesets = self.compute_recompute(key)
+
     if self._debug:
       print "recomputesets := " + str(recomputesets)
 
@@ -142,7 +172,7 @@ class SpreadSheet:
           # grab the formula, and if it exist then recompute cell value
           f = self.getformula(j)
           if f != None:
-            self.setformula(j, f)
+            self[j] = f
           if self._debug:
             print "recomputing " + j + " = " + str(self.getvalue(j))
 
@@ -161,13 +191,6 @@ class SpreadSheet:
       return "=" + c[0]
 
 
-  def setformula(self, key, formula):
-    try:
-      self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
-    except Exception as e:
-      self._cells[j] = (formula[1:], str(e))
-    
-
   def __getitem__(self, key):
     if self._debug:
       print "self.__getitem__(" + key + ")"      
@@ -180,7 +203,9 @@ class SpreadSheet:
     # look if the evaluation comes from another cell computation
     if len(self._dep_stack) > 0:
       # yes, so we are a dependency to another cell
-      self._dep[key].add(self._dep_stack[len(self._dep_stack)-1])
+      #self._dep[key].add(self._dep_stack[len(self._dep_stack)-1])
+      self._dep[key].update(Set(self._dep_stack))
+      #self._dep[key] = (Set(self._dep_stack))
 
     # and just return the second projection
     return self.getvalue(key)
