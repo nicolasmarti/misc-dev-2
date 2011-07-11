@@ -19,13 +19,24 @@ def f(val):
 
 ss2._globals.update(locals())
 
-ss2["test"] = "=ifte(f(b), lambda self : f(self['c']), lambda self : f(self['a']))"
+# ugly workaround
+ss2["test"] = "=ifte(f(b), lambda self : f(self['c'] + 8), lambda self : f(self['a']))"
 
 ss2["d"] = "=test + 2"
 
 print ss2
 
 ss2["c"] = 0
+
+print ss2
+
+ss2["b"] = False
+
+print ss2
+
+# does not work -> test does not depends on a ...
+
+ss2["a"] = 2
 
 print ss2
 
