@@ -2,6 +2,37 @@ from sets import *
 
 from threading import *
 
+# this computes the list of sets of elements that needs to be recomputed
+def compute_recompute(key, _deps):
+  # the result will be a list of sets
+  res = []
+  # current_sets of recomputation
+  current_set = _deps[key]
+  # while there is dependencies
+  while len(current_set) > 0:
+    # we initialize the next set
+    next_set = Set()
+    # adding all following dependencies
+    for i in current_set:
+      next_set.update(_deps[i])
+    # we save the current_set by appending it in the res
+    res.append(current_set)
+    # and the current_set is the next one
+    current_set = next_set
+
+  # here we are sure that current_set = Set(), and that we are done
+
+  # reverse traversing the list of sets, with i
+  resi = range(0, len(res))
+  resi.reverse()
+  for i in resi:
+    # we remove all the elements from the current set from the others
+    for j in range(0, i):
+      res[j] -= res[i]
+
+  # finally we return res
+  return res
+
 class SpreadSheet:
 
   # contains 
@@ -41,6 +72,7 @@ class SpreadSheet:
 
       res += " = " + str(self[i]) + "\n"
 
+    res += str(self._dep) + "\n"
 
     return res
 
@@ -90,12 +122,33 @@ class SpreadSheet:
 
     # than we recompute all dependencies
     # TODO: compute better dependencies to avoid recompute several time the same var
-    try:
-      for i in self._dep[key]:
-        self.recompute(i)
-    except:
-      pass
+    # DONE
 
+    recomputesets = compute_recompute(key, self._dep)
+
+    # we "neutralize" the dependency stack
+    l = self._dep_stack
+    self._dep_stack = []
+    
+    if self._debug:
+      print "recomputesets := " + str(recomputesets)
+
+    # recompute all dependencies
+    for i in recomputesets:
+        for j in i:
+          if self._debug:
+            print "recomputing " + j
+
+          # grab the formula, and if it exist then recompute cell value
+          f = self.getformula(key)
+          if f != None:
+            try:
+              self._cells[key] = (f[1:], eval(f[1:], self._globals, self))
+            except Exception as e:
+              self._cells[key] = (f[1:], str(e))
+
+    # restore the dependency stack
+    self._dep_stack = l
 
   def getformula(self, key):
     # we get the entry for the key
@@ -105,24 +158,6 @@ class SpreadSheet:
       return None
     else:
       return "=" + c[0]
-
-  def recompute(self, key):
-
-    if self._debug:
-      print "self.recompute(" + key + ")"
-
-    # we set again the formula
-    f = self.getformula(key)
-    if f != None:
-
-      # we "neutralize" the dependency stack
-      l = self._dep_stack
-      self._dep_stack = []
-      # reset our formula
-      self[key] = f
-
-      # restore the dependency stack
-      self._dep_stack = l
 
   def __getitem__(self, key):
     # we get the entry for the key
