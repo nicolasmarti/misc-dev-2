@@ -27,6 +27,7 @@ class SpreadSheet:
 
     self.glock = Lock()
 
+    self.recomputing = False
 
     # initialize "special" functions
     self.specials = dict()
@@ -46,8 +47,16 @@ class SpreadSheet:
         res += " ::= " + formula[1:]
 
       res += " = " + str(self[i]) + "\n"
+      
+    for i in self._dep:
+      res += i +" is used in : " 
 
-    res += str(self._dep) + "\n"
+      for j in self._dep[i]:
+        res += j + ", "
+
+      res += "\n"  
+
+    res += "\n"
 
     return res
 
@@ -106,7 +115,7 @@ class SpreadSheet:
     try:
       self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
     except Exception as e:
-      self._cells[j] = (formula[1:], str(e))
+      self._cells[key] = (formula[1:], str(e))
 
   # setting a cell
   def setcell(self, key, formula):
@@ -147,8 +156,9 @@ class SpreadSheet:
     self.setcell(key, formula)
 
     # we only recompute if we have a different value
+    # or if we are not recomputing
     try:
-      if self.getvalue(key) == old_val:
+      if self.recomputing or self.getvalue(key) == old_val:
         return
     except:
       pass
@@ -156,6 +166,8 @@ class SpreadSheet:
     # than we recompute all dependencies
     # TODO: compute better dependencies to avoid recompute several time the same var
     # DONE
+
+    self.recomputing = True
 
     # we "neutralize" the dependency stack
     l = self._dep_stack
@@ -180,6 +192,8 @@ class SpreadSheet:
 
     # restore the dependency stack
     self._dep_stack = l
+
+    self.recomputing = False
 
   def getformula(self, key):
     # we get the entry for the key
