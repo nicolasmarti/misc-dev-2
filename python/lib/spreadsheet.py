@@ -58,6 +58,12 @@ class SpreadSheet:
 
     self.glock = Lock()
 
+
+    # initialize "special" functions
+    self.specials = dict()
+    self.specials["ifte"] = self.ifte
+    self.specials["self"] = self.myself
+
     pass
 
 
@@ -92,9 +98,6 @@ class SpreadSheet:
   # we are setting a value
   def __setitem__(self, key, formula):
 
-    if self._debug:
-      print "self.__setitem__(" + key + ", " + str(formula) + ")"
-
     # first, as we change the formula of the cell
     # we remove its dependency to other cell
     for i in self._dep:
@@ -110,12 +113,12 @@ class SpreadSheet:
     # here we change the formula of the cell
     # and thus recompute it
     if isinstance(formula, str) and formula[0] == '=':
-      try:
-        self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
-      except Exception as e:
-        self._cells[key] = (formula[1:], str(e))
+      self.setformula(key, formula)
     else:
       self._cells[key] = (None, formula)
+
+    if self._debug:
+      print "self.__setitem__(" + key + ", " + str(formula) + ") = " + str(self.getvalue(key))
 
     # we pop the key in the dependency stack
     self._dep_stack.pop()
@@ -136,16 +139,14 @@ class SpreadSheet:
     # recompute all dependencies
     for i in recomputesets:
         for j in i:
-          if self._debug:
-            print "recomputing " + j
-
           # grab the formula, and if it exist then recompute cell value
-          f = self.getformula(key)
+          f = self.getformula(j)
           if f != None:
-            try:
-              self._cells[key] = (f[1:], eval(f[1:], self._globals, self))
-            except Exception as e:
-              self._cells[key] = (f[1:], str(e))
+            self.setformula(j, f)
+          if self._debug:
+            print "recomputing " + j + " = " + str(self.getvalue(j))
+
+
 
     # restore the dependency stack
     self._dep_stack = l
@@ -159,9 +160,22 @@ class SpreadSheet:
     else:
       return "=" + c[0]
 
+
+  def setformula(self, key, formula):
+    try:
+      self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
+    except Exception as e:
+      self._cells[j] = (formula[1:], str(e))
+    
+
   def __getitem__(self, key):
-    # we get the entry for the key
-    c = self._cells[key]
+    if self._debug:
+      print "self.__getitem__(" + key + ")"      
+
+    # we first look if it is a special function
+    if key in self.specials:        
+        # we run the special, that should return a function
+        return self.specials[key]()
 
     # look if the evaluation comes from another cell computation
     if len(self._dep_stack) > 0:
@@ -169,4 +183,21 @@ class SpreadSheet:
       self._dep[key].add(self._dep_stack[len(self._dep_stack)-1])
 
     # and just return the second projection
-    return c[1]
+    return self.getvalue(key)
+
+  def getvalue(self, key):
+    return self._cells[key][1]
+
+  # here a bunch of function with special "semantics"
+  def ifte(self):
+      print "ifte"
+      def ifte_core(cond, true, false):
+          if cond:
+              return true(self)
+          else:
+              return false(self)
+      return ifte_core
+
+  def myself(self):
+      print "myself"
+      return self
