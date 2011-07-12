@@ -6,6 +6,7 @@ import gtk
 from sets import *
 from types import *
 import random
+from time import *
 
 # the global dictionnary used
 state = dict()
@@ -13,6 +14,7 @@ state = dict()
 class MyBuffer(gtk.TextBuffer):
 
     def managekey(self, s):
+        state["myentry"].set_text("")
         pass
 
     def attach(self, textview):
@@ -42,7 +44,26 @@ def switchbuffer(mv):
             buffer = state["buffers"].pop(i)
             state["buffers"].append(buffer)
             mv.set_buffer(buffer)
+            mv.grab_focus()
             return
+    mv.grab_focus()
+
+def askswitchbuffer(mv):
+    global state
+    state["myentry"].set_text("NYI")
+
+def openfile(mv):
+    global state
+
+    def action(txt):
+        state["myentry"].set_text("NYI: open file " + txt)
+        mv.grab_focus()
+        return None
+
+    state["myentry"].setquestion("file: ", action)
+    
+    
+
 
 # list of key bindings
 state["keysemantics"] = [
@@ -66,6 +87,12 @@ state["keysemantics"] = [
      ),
     ([Set([65507, 120]), Set([98])],
      lambda mv: switchbuffer(mv)
+     ),
+    ([Set([65507, 120]), Set([65507, 98])],
+     lambda mv: askswitchbuffer(mv)
+     ),
+    ([Set([65507, 120]), Set([65507, 102])],
+     lambda mv: openfile(mv)
      )
     ]
 
@@ -126,6 +153,7 @@ class MyView(gtk.TextView):
                             self.pressed_key = Set()
                             self.set_editable(False)                            
                             self.grab_focus()
+                            state["mainwin"].set_title(self.get_buffer().name + " " + list_set_key_val2string(self.validkeysequences))
                             i[1](self)
                             return
                         else:
@@ -157,6 +185,7 @@ class MyView(gtk.TextView):
 
     def key_pressed(self, widget, event, data=None):        
         self.pressed_key.add(event.keyval)
+        print event.keyval
         self.managekey()
 
     def key_released(self, widget, event, data=None):
@@ -436,11 +465,38 @@ state["myentry"] = None
     
 class MyEntry(gtk.Entry):
 
+    def key_pressed(self, widget, event, data=None):        
+        print event.keyval
+        if (event.keyval == 65293):
+            text = self.get_text()
+            self.set_text("")
+            self.disconnect(self.keypressedid)
+            self.set_editable(False)
+            self.set_can_focus(False)
+            action = self.on_enter
+            action(text)
+
+
     def __init__(self):
 
         gtk.Entry.__init__(self)
 
         self.on_enter = None
+
+        self.set_editable(False)
+
+        self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        
+        self.set_can_focus(False)
+
+    def setquestion(self, text, action):
+        self.on_enter = action
+        self.set_editable(True)
+        self.set_text(text)
+        self.keypressedid = self.connect("key_press_event", self.key_pressed, None)
+        self.set_can_focus(True)
+        self.grab_focus()
+
 
 class MyEditor:
     
