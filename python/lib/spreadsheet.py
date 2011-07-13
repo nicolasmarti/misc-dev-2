@@ -31,13 +31,6 @@ class SpreadSheet:
 
     self.callback = callback
 
-    # initialize "special" functions
-    self.specials = dict()
-    self.specials["ifte"] = self.ifte
-    self.specials["self"] = self.myself
-
-    pass
-
 
   def __str__(self):
     res = ""
@@ -231,11 +224,6 @@ class SpreadSheet:
     if self._debug:
       print "self.__getitem__(" + key + ")"      
 
-    # we first look if it is a special function
-    if key in self.specials:        
-        # we run the special, that should return a function
-        return self.specials[key]()
-
     # look if the evaluation comes from another cell computation
     if len(self._dep_stack) > 0:
       # yes, so we are a dependency to another cell
@@ -262,3 +250,82 @@ class SpreadSheet:
   def myself(self):
       print "myself"
       return self
+
+
+if __name__ == '__main__':
+  from math import sin, pi
+  
+  from spreadsheet import *
+  
+  ss = SpreadSheet()
+  
+  ss._globals = globals()
+  ss._globals.update(locals())
+  
+  ss['a1'] = 5
+  ss['a2'] = '=a1*6'
+  ss['a4'] = '=a1*6'
+  ss['a3'] = '=a2*7'
+  assert ss['a3'] == 210
+  ss['b1'] = '=sin(pi/4)'
+  print ss['b1']
+  assert ss['b1'] == 0.70710678118654746
+  assert ss.getformula('b1') == '=sin(pi/4)'
+  print str(ss._cells)
+  print str(ss._dep)
+  ss['a1'] = 12
+  print str(ss._cells)
+  print str(ss._dep)
+
+  #--------------------------------------------------------
+
+  ss2 = SpreadSheet()
+
+  ss2['a1'] = 12
+  ss2["a2"] = "=a1+1"
+  ss2["a3"] = "=a1+2"
+  ss2["a4"] = "=a2+a3"
+  
+  print ss2
+  
+  ss2._debug = True
+  
+  ss2["a1"] = 0
+
+  #--------------------------------------------------------
+
+  ss3 = SpreadSheet()
+
+  print "-----------------------------------------------------"
+  ss3._debug = True
+  
+  ss3["b"] = True
+  
+  ss3["prec"] = 10
+  
+  ss3["a"] = "=prec + 1"
+  ss3["c"] = 2
+  
+  def f(val):
+    print val
+    return val
+  
+  ss3._globals.update(locals())
+  
+  ss3["test"] = "= f(a + prec) if b else f(c)"
+
+  ss3["d"] = "=test + 2"
+  
+  print ss3
+  print "-----------------------------------------------------"
+  
+  ss3["c"] = 3
+  
+  print ss3
+  print "-----------------------------------------------------"
+  ss3["b"] = False
+  
+  print ss3
+  print "-----------------------------------------------------"
+
+  #--------------------------------------------------------
