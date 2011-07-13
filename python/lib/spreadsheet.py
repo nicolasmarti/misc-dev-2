@@ -71,8 +71,24 @@ class SpreadSheet:
     
     self.glock.acquire()
     self[key] = formula
+    res = self[key]
     self.glock.release()    
-    return self[key]
+    return res
+
+  # front end for recomputation
+  def recompute(self, key, blocking = True):
+
+    if not blocking and self.glock.locked():
+      return None    
+
+    self.glock.acquire()
+
+    formula = self.getformula(key)
+    self[key] = formula
+    res = self[key]
+    self.glock.release()    
+    return res
+
 
   # this computes the list of sets of elements that needs to be recomputed
   def compute_recompute(self, key):
