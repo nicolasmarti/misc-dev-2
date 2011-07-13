@@ -15,11 +15,13 @@ class GnumericServer(Pyro.core.ObjBase):
 
 
     def setCell(self, wkb, sheet, cellcoo, txt):
-        
+
+        print "setCell(start)"
         wb = g.workbooks()[wkb]
         s = wb.sheets()[sheet]
         c = s[cellcoo[0], cellcoo[1]]
         c.set_text(txt)
+        print "setCell(stop)"
         return c.get_value()
 
     def __del__(self):

@@ -1272,24 +1272,17 @@ py_Cell_set_text_method (py_Cell_object *self, PyObject *args)
 {
 	gchar *text;
 
+	printf("py_Cell_set_text_method\n");
+
 	if (!PyArg_ParseTuple (args, (char *) "s:set_text", &text)) {
 		return NULL;
 	}
 
-	sheet_cell_set_text (self->cell, text, NULL);
-	sheet_redraw_cell(self->cell);
+	sheet_cell_set_text (self->cell, text, NULL);	
 
-	/*
-	  typedef enum {
-	  GNM_SPANCALC_SIMPLE	= 0x0,	// Just calc spans 
-	  GNM_SPANCALC_RESIZE	= 0x1,	// Calculate sizes of all cells 
-	  GNM_SPANCALC_RE_RENDER	= 0x2,	// Render and Size all cells 
-	  GNM_SPANCALC_RENDER	= 0x4,	// Render and Size any unrendered cells 
-	  GNM_SPANCALC_ROW_HEIGHT	= 0x8	// Resize the row height 
-	  } GnmSpanCalcFlags;
-	*/
+	Sheet* sheet = self->cell->base.sheet;
 
-	sheet_cell_calc_span(self->cell, GNM_SPANCALC_RENDER);
+	workbook_recalc_all(sheet->workbook);
 
 	Py_INCREF (Py_None);
 	return Py_None;
