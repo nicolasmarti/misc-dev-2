@@ -43,6 +43,9 @@ class CellRender(gtk.CellRendererText):
 
         self.store = store
         self.ss = ss
+
+        self.ss._debug = True
+
         self.col = col
 
     def editing_start(self, cell, editable, path, user_param = None):
@@ -106,22 +109,26 @@ class Sheet(gtk.TreeView):
 
         self.set_enable_search(False)
 
-        self.set_property('enable-grid-lines', True)
-
+        #self.set_property('enable-grid-lines', True)
+        
+        self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_BOTH)
 
     def raw_activated(self, treeview, path, view_column, user_param1 = None):
         print "raw_activated"
         
 
     def key_pressed(self, widget, event, data=None):        
-        # "=" ==> edit the cell
+        # "=" ==> edit the cell        
+        cursor = self.get_cursor()
+        row = cursor[0][0]
+        renders = cursor[1].get_cell_renderers()
+        col = renders[0].col
+
+        #self.set_cursor(str(row), cursor[1])
+
         if event.keyval == 61:
-            cursor = self.get_cursor()
-            row = cursor[0][0]
-            renders = cursor[1].get_cell_renderers()
-            col = renders[0].col
             print (row, col)
-            #renders[0].start_editing(event, self, str(row), None, None, gtk.CELL_RENDERER_INSENSITIVE)
+            #renders[0].start_editing(event, self, str(row), self.get_visible_rect(), self.get_visible_rect(), gtk.CELL_RENDERER_INSENSITIVE)
         
 
     def edited_cb(self, cell, path, new_text, user_data = None):

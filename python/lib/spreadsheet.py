@@ -135,10 +135,6 @@ class SpreadSheet:
     except Exception as e:
       self._cells[key] = (formula[1:], str(e))
 
-    # calling call back
-    if self.callback <> None:
-      self.callback(key, self._cells[key][1])
-
   # setting a cell
   def setcell(self, key, formula):
     # then we push the key in the dependency stack
@@ -150,6 +146,10 @@ class SpreadSheet:
       self.setformula(key, formula)
     else:
       self._cells[key] = (None, formula)
+
+    # calling call back
+    if self.callback <> None:
+      self.callback(key, self._cells[key][1])
 
     if self._debug:
       print "self.__setitem__(" + key + ", " + str(formula) + ") = " + str(self.getvalue(key))
