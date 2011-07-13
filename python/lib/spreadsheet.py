@@ -17,7 +17,7 @@ class SpreadSheet:
   # stack of currently evaluating cells
   _dep_stack = []
 
-  def __init__(self, _globals = None):
+  def __init__(self, _globals = None, callback = None):
     if _globals == None:
       self._globals = globals()
     else:
@@ -28,6 +28,8 @@ class SpreadSheet:
     self.glock = Lock()
 
     self.recomputing = False
+
+    self.callback = callback
 
     # initialize "special" functions
     self.specials = dict()
@@ -132,6 +134,10 @@ class SpreadSheet:
       self._cells[key] = (formula[1:], eval(formula[1:], self._globals, self))
     except Exception as e:
       self._cells[key] = (formula[1:], str(e))
+
+    # calling call back
+    if self.callback <> None:
+      self.callback(key, self._cells[key][1])
 
   # setting a cell
   def setcell(self, key, formula):

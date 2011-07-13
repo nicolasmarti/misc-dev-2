@@ -15,6 +15,7 @@ import urllib2
 import re
 from types import *
 from datetime import *
+from string import join
 
 # A simple HTML table parser. It turns tables (including nested tables) into arrays
 # Nigel Sim <nigel.sim@gmail.com>
@@ -162,20 +163,14 @@ def parseint(s):
         return int(s)
     except:
         findnum = re.findall("(\d)+?", s)
-        n = ""
-        for j in findnum:
-            n += j
-        return int(n)
+        return int(join(findnum, ""))
 
 def parsefloat(s):
     try:
         return float(s)
     except:
         findnum = re.findall("(\d|\.)+?", s)
-        n = ""
-        for j in findnum:
-            n += j
-        return float(n)
+        return float(join(findnum, ""))
     
 
 def parse_quote_table(data, res = None):
