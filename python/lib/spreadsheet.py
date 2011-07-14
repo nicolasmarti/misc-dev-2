@@ -2,22 +2,11 @@ from sets import *
 
 from threading import *
 
+from pickle import *
+
 class SpreadSheet:
 
-  # contains 
-  # (formula::String, value::Object,)
-  # if fromula is None then it's direclt a value
-  _cells = {}
-
-  # dep: downside dependency
-  # a dict of key::String to set of keys
-  # k -> {k1, k2, k3} means that the value of k is used in the computation of k1, k2, k3
-  _dep = {}
-
-  # stack of currently evaluating cells
-  _dep_stack = []
-
-  def __init__(self, _globals = None, callback = None):
+  def __init__(self, _globals = None, callback = None, file = None):
     if _globals == None:
       self._globals = globals()
     else:
@@ -29,11 +18,32 @@ class SpreadSheet:
 
     self.recomputing = False
 
+    #callback:: action -> param -> ()
+    # action == "update" -> param == (key, value)
+    # action == "delete" -> param == key
+    
     self.callback = callback
+
+    # contains 
+    # (formula::String, value::Object,)
+    # if fromula is None then it's direclt a value
+    self._cells = {}
+
+    # dep: downside dependency
+    # a dict of key::String to set of keys
+    # k -> {k1, k2, k3} means that the value of k is used in the computation of k1, k2, k3
+    self._dep = {}
+
+    # stack of currently evaluating cells
+    self._dep_stack = []
+
+    if file <> None:
+      self.load(file)
+
 
 
   def __str__(self):
-    res = ""
+    res = "-------------------------------------------------\n"
 
     for i in self._cells:      
       res += i 
@@ -51,7 +61,7 @@ class SpreadSheet:
 
       res += "\n"  
 
-    res += "\n"
+    res += "--------------------------------------------------------\n"
 
     return res
 
@@ -87,10 +97,15 @@ class SpreadSheet:
 
   # this computes the list of sets of elements that needs to be recomputed
   def compute_recompute(self, key):
+    return self.compute_recomputes([key])
+
+  def compute_recomputes(self, keys):
     # the result will be a list of sets
     res = []
     # current_sets of recomputation
-    current_set = self._dep[key]
+    current_set = Set()
+    for i in keys:
+      current_set.update(self._dep[i])
     # while there is dependencies
     while len(current_set) > 0:
       # we initialize the next set
@@ -115,11 +130,27 @@ class SpreadSheet:
 
     # finally we return res
     return res
+    
 
   # remove the key as dependent from other key
   def remove_key_dependency(self, key):
     for i in self._dep:
       self._dep[i].discard(key)    
+
+  # remove a key
+  def remove_key(self, key):
+    
+    self.glock.acquire()
+    try:
+      del self._cells[key]
+      self.recompute_dependency(key)
+      del self._dep[key]
+      if self.callback <> None:
+        self.callback("delete", key)
+    except Exception as e:
+      print "error := " + str(e)
+      pass
+    self.glock.release()    
 
   # set a formula
   def setformula(self, key, formula):
@@ -142,13 +173,48 @@ class SpreadSheet:
 
     # calling call back
     if self.callback <> None:
-      self.callback(key, self._cells[key][1])
+      self.callback("update", (key, self._cells[key][1]))
 
     if self._debug:
       print "self.__setitem__(" + key + ", " + str(formula) + ") = " + str(self.getvalue(key))
 
     # we pop the key in the dependency stack
     self._dep_stack.pop()
+
+  # recompute the key dependency
+  def recompute_dependency(self, key):
+
+    if self._debug:
+      print "self.recompute_dependency(" + key + ")"
+
+    self.recomputing = True
+
+    # we "neutralize" the dependency stack
+    l = self._dep_stack
+    self._dep_stack = []
+
+    recomputesets = self.compute_recompute(key)
+
+    if self._debug:
+      print "recomputesets := " + str(recomputesets)
+
+    # recompute all dependencies
+    for i in recomputesets:
+        for j in i:
+          # grab the formula, and if it exist then recompute cell value
+          f = self.getformula(j)
+          if f != None:
+            self[j] = f
+          if self._debug:
+            print "recomputing " + j + " = " + str(self.getvalue(j))
+
+
+
+    # restore the dependency stack
+    self._dep_stack = l
+
+    self.recomputing = False
+
 
   # we are setting a value
   def __setitem__(self, key, formula):
@@ -181,34 +247,7 @@ class SpreadSheet:
     # than we recompute all dependencies
     # TODO: compute better dependencies to avoid recompute several time the same var
     # DONE
-
-    self.recomputing = True
-
-    # we "neutralize" the dependency stack
-    l = self._dep_stack
-    self._dep_stack = []
-
-    recomputesets = self.compute_recompute(key)
-
-    if self._debug:
-      print "recomputesets := " + str(recomputesets)
-
-    # recompute all dependencies
-    for i in recomputesets:
-        for j in i:
-          # grab the formula, and if it exist then recompute cell value
-          f = self.getformula(j)
-          if f != None:
-            self[j] = f
-          if self._debug:
-            print "recomputing " + j + " = " + str(self.getvalue(j))
-
-
-
-    # restore the dependency stack
-    self._dep_stack = l
-
-    self.recomputing = False
+    self.recompute_dependency(key)
 
   def getformula(self, key):
     # we get the entry for the key
@@ -251,6 +290,20 @@ class SpreadSheet:
       print "myself"
       return self
 
+  def save(self, file):
+    # dump the cells
+    dump((self._cells, self._dep), file, 1)
+
+  def load(self, file):
+    for i in self._cells.keys():
+      self.remove_key(i)
+
+    (self._cells, self._dep) = load(file)
+    
+    
+      
+
+
 
 if __name__ == '__main__':
   from math import sin, pi
@@ -288,7 +341,7 @@ if __name__ == '__main__':
   
   print ss2
   
-  ss2._debug = True
+  ss2._debug = False
   
   ss2["a1"] = 0
 
@@ -297,7 +350,7 @@ if __name__ == '__main__':
   ss3 = SpreadSheet()
 
   print "-----------------------------------------------------"
-  ss3._debug = True
+  ss3._debug = False
   
   ss3["b"] = True
   
@@ -329,3 +382,21 @@ if __name__ == '__main__':
   print "-----------------------------------------------------"
 
   #--------------------------------------------------------
+
+  ss4 = SpreadSheet()
+  ss4._debug = False
+
+  ss4['A1'] = True
+  ss4['B1'] = False
+  ss4['C1'] = "=A1 and B1"
+
+  ss4.remove_key("B1")
+
+  print ss4
+  
+  print "save"
+  ss4.save(open('ss4.pkl', 'wb'))
+
+  ss5 = SpreadSheet(file = open('ss4.pkl', 'rb'))
+
+  print ss5

@@ -31,7 +31,6 @@ def colname2colnum(s):
 
     return res
 
-
 class CellRender(gtk.CellRendererText):
 
     def __init__(self, col, store, ss):
@@ -44,7 +43,7 @@ class CellRender(gtk.CellRendererText):
         self.store = store
         self.ss = ss
 
-        self.ss._debug = True
+        self.ss._debug = False
 
         self.col = col
 
@@ -125,11 +124,15 @@ class Sheet(gtk.TreeView):
         col = renders[0].col
 
         #self.set_cursor(str(row), cursor[1])
-
+        #print event.keyval
         if event.keyval == 61:
             print (row, col)
             #renders[0].start_editing(event, self, str(row), self.get_visible_rect(), self.get_visible_rect(), gtk.CELL_RENDERER_INSENSITIVE)
-        
+
+        if event.keyval == 65535:
+            key = colnum2colname(col - 1) + str(row + 1)
+            self.ss.remove_key(key)
+            print self.ss
 
     def edited_cb(self, cell, path, new_text, user_data = None):
         #print "cell := " + str(cell)
@@ -146,20 +149,34 @@ class Sheet(gtk.TreeView):
         except:
             self.ss[colnum2colname(user_data - 1) + str(int(path) + 1)] = new_text
 
+        #print self.ss
         #self.store[path][user_data] = new_text
         
-    def setcell(self, key, value):
-        print "ss callback: " + str((key, value))
+    def setcell(self, action, param):
+        if action == "update":
+            key = param[0]
+            value = param[1]
+            print "ss callback: " + str((key, value))
+            findcol = re.findall("[A-Z]+?", key)
+            col = colname2colnum(join(findcol, ""))
+            
+            findrow = re.findall("(\d|\.)+?", key)
+            row = int(join(findrow, ""))
 
-        findcol = re.findall("[A-Z]+?", key)
-        col = colname2colnum(join(findcol, ""))
+            print str((col, row)) + " := " + str(value)
+            
+            self.store[row - 1][col] = str(value)
+            return
 
-        findrow = re.findall("(\d|\.)+?", key)
-        row = int(join(findrow, ""))
-
-        print str((col, row)) + " := " + str(value)
-
-        self.store[row - 1][col] = str(value)
+        if action == "delete":
+            key = param
+            findcol = re.findall("[A-Z]+?", key)
+            col = colname2colnum(join(findcol, ""))
+            
+            findrow = re.findall("(\d|\.)+?", key)
+            row = int(join(findrow, ""))
+            self.store[row - 1][col] = ""
+            
 
 if __name__ == '__main__':
     
