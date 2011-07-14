@@ -7,4 +7,5 @@ _build
 *.pyo
 *.pyc
 *.bc
+*.pkl
 Pyro_NS_URI
