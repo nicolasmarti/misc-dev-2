@@ -33,7 +33,7 @@ daemon.useNameServer(ns)
 si = GnumericServer()
 si.daemon = daemon
 
-uri=daemon.connect(si,"serverInterface")
+uri=daemon.connect(si,"GnumericInterface")
 print "The daemon runs on port:",daemon.port
 print "The object's uri is:",uri
 

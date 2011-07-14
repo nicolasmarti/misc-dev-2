@@ -5,7 +5,7 @@ from random import *
 
 from Pyro.EventService.Clients import Subscriber
 
-o = Pyro.core.getProxyForURI("PYRONAME://serverInterface")
+o = Pyro.core.getProxyForURI("PYRONAME://GnumericInterface")
 
 print o.setCell(0,0, (0,0), "=1+A2")
 print o.setCell(0,0, (0,1), "=1+8")
