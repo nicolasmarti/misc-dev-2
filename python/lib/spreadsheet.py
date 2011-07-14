@@ -121,6 +121,19 @@ class SpreadSheet:
     for i in self._dep:
       self._dep[i].discard(key)    
 
+  # remove a key
+  def remove_key(self, key):
+    
+    self.glock.acquire()
+    try:
+      del self._cells[key]
+      self.recompute_dependency(key)
+      del self._dep[key]
+    except Exception as e:
+      print "error := " + str(e)
+      pass
+    self.glock.release()    
+
   # set a formula
   def setformula(self, key, formula):
     try:
@@ -149,6 +162,41 @@ class SpreadSheet:
 
     # we pop the key in the dependency stack
     self._dep_stack.pop()
+
+  # recompute the key dependency
+  def recompute_dependency(self, key):
+
+    if self._debug:
+      print "self.recompute_dependency(" + key + ")"
+
+    self.recomputing = True
+
+    # we "neutralize" the dependency stack
+    l = self._dep_stack
+    self._dep_stack = []
+
+    recomputesets = self.compute_recompute(key)
+
+    if self._debug:
+      print "recomputesets := " + str(recomputesets)
+
+    # recompute all dependencies
+    for i in recomputesets:
+        for j in i:
+          # grab the formula, and if it exist then recompute cell value
+          f = self.getformula(j)
+          if f != None:
+            self[j] = f
+          if self._debug:
+            print "recomputing " + j + " = " + str(self.getvalue(j))
+
+
+
+    # restore the dependency stack
+    self._dep_stack = l
+
+    self.recomputing = False
+
 
   # we are setting a value
   def __setitem__(self, key, formula):
@@ -181,34 +229,7 @@ class SpreadSheet:
     # than we recompute all dependencies
     # TODO: compute better dependencies to avoid recompute several time the same var
     # DONE
-
-    self.recomputing = True
-
-    # we "neutralize" the dependency stack
-    l = self._dep_stack
-    self._dep_stack = []
-
-    recomputesets = self.compute_recompute(key)
-
-    if self._debug:
-      print "recomputesets := " + str(recomputesets)
-
-    # recompute all dependencies
-    for i in recomputesets:
-        for j in i:
-          # grab the formula, and if it exist then recompute cell value
-          f = self.getformula(j)
-          if f != None:
-            self[j] = f
-          if self._debug:
-            print "recomputing " + j + " = " + str(self.getvalue(j))
-
-
-
-    # restore the dependency stack
-    self._dep_stack = l
-
-    self.recomputing = False
+    self.recompute_dependency(key)
 
   def getformula(self, key):
     # we get the entry for the key
@@ -329,3 +350,16 @@ if __name__ == '__main__':
   print "-----------------------------------------------------"
 
   #--------------------------------------------------------
+
+  ss4 = SpreadSheet()
+  ss4._debug = True
+
+  ss4['A1'] = True
+  ss4['B1'] = False
+  ss4['C1'] = "=A1 and B1"
+
+  print ss4
+
+  ss4.remove_key("B1")
+
+  print ss4
