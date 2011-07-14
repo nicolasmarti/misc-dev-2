@@ -31,7 +31,6 @@ def colname2colnum(s):
 
     return res
 
-
 class CellRender(gtk.CellRendererText):
 
     def __init__(self, col, store, ss):
@@ -132,7 +131,6 @@ class Sheet(gtk.TreeView):
 
         if event.keyval == 65535:
             key = colnum2colname(col - 1) + str(row + 1)
-            self.setcell(key, "")
             self.ss.remove_key(key)
             print self.ss
 
@@ -154,18 +152,31 @@ class Sheet(gtk.TreeView):
         #print self.ss
         #self.store[path][user_data] = new_text
         
-    def setcell(self, key, value):
-        print "ss callback: " + str((key, value))
+    def setcell(self, action, param):
+        if action == "update":
+            key = param[0]
+            value = param[1]
+            print "ss callback: " + str((key, value))
+            findcol = re.findall("[A-Z]+?", key)
+            col = colname2colnum(join(findcol, ""))
+            
+            findrow = re.findall("(\d|\.)+?", key)
+            row = int(join(findrow, ""))
 
-        findcol = re.findall("[A-Z]+?", key)
-        col = colname2colnum(join(findcol, ""))
+            print str((col, row)) + " := " + str(value)
+            
+            self.store[row - 1][col] = str(value)
+            return
 
-        findrow = re.findall("(\d|\.)+?", key)
-        row = int(join(findrow, ""))
-
-        print str((col, row)) + " := " + str(value)
-
-        self.store[row - 1][col] = str(value)
+        if action == "delete":
+            key = param
+            findcol = re.findall("[A-Z]+?", key)
+            col = colname2colnum(join(findcol, ""))
+            
+            findrow = re.findall("(\d|\.)+?", key)
+            row = int(join(findrow, ""))
+            self.store[row - 1][col] = ""
+            
 
 if __name__ == '__main__':
     
