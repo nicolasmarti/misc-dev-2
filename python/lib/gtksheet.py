@@ -95,6 +95,9 @@ class Sheet(gtk.TreeView):
 
             column.set_min_width(100)
 
+            if i == 0:
+                self.firstcolumn = column
+
             self.append_column(column)
 
         
@@ -125,14 +128,61 @@ class Sheet(gtk.TreeView):
 
         #self.set_cursor(str(row), cursor[1])
         #print event.keyval
+
+        title = str((row, col))
+        if col > 0:
+            
+
+        self.firstcolumn.set_title(title)
+        
+
+        # '='
         if event.keyval == 61:
             print (row, col)
             #renders[0].start_editing(event, self, str(row), self.get_visible_rect(), self.get_visible_rect(), gtk.CELL_RENDERER_INSENSITIVE)
 
+        # Delete
         if event.keyval == 65535:
             key = colnum2colname(col - 1) + str(row + 1)
             self.ss.remove_key(key)
             print self.ss
+
+        # Esc 
+        if event.keyval == 65307:
+            gtk.main_quit()
+
+        # F2 -> save
+        if event.keyval == 65471:
+            self.filew = gtk.FileSelection("File selection")
+
+            def close(w):
+                self.filew.hide()
+
+            def fileok(w):
+                self.filew.hide()                
+                self.ss.save(open(self.filew.get_filename(), 'wb'))
+            
+            self.filew.connect("destroy", close)
+            self.filew.ok_button.connect("clicked", fileok)
+
+            self.filew.show()
+
+        # F3 -> load
+        if event.keyval == 65472:
+            self.filew = gtk.FileSelection("File selection")
+
+            def close(w):
+                self.filew.hide()
+
+            def fileok(w):
+                self.filew.hide()                
+                self.ss.load(open(self.filew.get_filename(), 'rb'))
+            
+            self.filew.connect("destroy", close)
+            self.filew.ok_button.connect("clicked", fileok)
+
+            self.filew.show()
+
 
     def edited_cb(self, cell, path, new_text, user_data = None):
         #print "cell := " + str(cell)
