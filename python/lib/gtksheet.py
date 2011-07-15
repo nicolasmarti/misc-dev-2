@@ -130,9 +130,6 @@ class Sheet(gtk.TreeView):
         #print event.keyval
 
         title = str((row, col))
-        if col > 0:
-            
-
         self.firstcolumn.set_title(title)
         
 
