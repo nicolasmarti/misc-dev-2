@@ -110,6 +110,7 @@ class Sheet(gtk.TreeView):
         self.set_model(self.store)
 
         self.connect("key_press_event", self.key_pressed, None)
+        self.connect("key_release_event", self.key_released, None)
         self.connect("row-activated", self.raw_activated, None)
 
         self.set_enable_search(False)
@@ -123,6 +124,7 @@ class Sheet(gtk.TreeView):
         pass
 
     def key_pressed(self, widget, event, data=None):        
+        #global win
         # "=" ==> edit the cell        
         cursor = self.get_cursor()
         row = cursor[0][0]
@@ -135,6 +137,9 @@ class Sheet(gtk.TreeView):
         title = str((row, col))
         self.firstcolumn.set_title(title)
         
+        #key = colnum2colname(col - 1) + str(row + 1)
+        #f = self.ss.getformula(key)
+        #win.set_title(str(f))
 
         # '='
         if event.keyval == 61:
@@ -183,6 +188,24 @@ class Sheet(gtk.TreeView):
 
             self.filew.show()
 
+    def key_released(self, widget, event, data=None):      
+        try:
+            global win
+
+            cursor = self.get_cursor()
+            row = cursor[0][0]
+            renders = cursor[1].get_cell_renderers()
+            col = renders[0].col
+
+            title = str((row, col))
+            self.firstcolumn.set_title(title)
+        
+            key = colnum2colname(col - 1) + str(row + 1)
+            f = self.ss.getformula(key)
+            win.set_title(str(f))
+
+        except:
+            return 
 
     def edited_cb(self, cell, path, new_text, user_data = None):
         #print "cell := " + str(cell)
