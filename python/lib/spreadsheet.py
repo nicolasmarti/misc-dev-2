@@ -166,7 +166,7 @@ class SpreadSheet:
 
     # here we change the formula of the cell
     # and thus recompute it
-    if isinstance(formula, str) and formula[0] == '=':
+    if isinstance(formula, str) and len(formula) > 0 and formula[0] == '=':
       self.setformula(key, formula)
     else:
       self._cells[key] = (None, formula)
