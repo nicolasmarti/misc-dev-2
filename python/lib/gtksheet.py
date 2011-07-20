@@ -48,7 +48,7 @@ class CellRender(gtk.CellRendererText):
         self.col = col
 
     def editing_start(self, cell, editable, path, user_param = None):
-        print "editing_start"
+        #print "editing_start"
         try:
             f = self.ss.getformula(colnum2colname(self.col - 1) + str(int(path) + 1))
             editable.set_text(f)
@@ -56,8 +56,8 @@ class CellRender(gtk.CellRendererText):
             pass
 
     def editing_cancel(self, cell, user_param = None):
-        print "editing_cancel"
-
+        #print "editing_cancel"
+        pass
 
 class Sheet(gtk.TreeView):
 
@@ -90,10 +90,13 @@ class Sheet(gtk.TreeView):
                 cellrenderertext.set_property('editable', True)
 
             column = gtk.TreeViewColumn('%s'% colnum2colname(i - 1) if (i > 0) else "", cellrenderertext, text=i)
-            
-            column.set_sizing(gtk.TREE_VIEW_COLUMN_AUTOSIZE)
 
-            column.set_min_width(100)
+            if False:
+                column.set_sizing(gtk.TREE_VIEW_COLUMN_AUTOSIZE)
+                column.set_min_width(100)
+            else:
+                column.set_fixed_width(100)
+                column.set_sizing(gtk.TREE_VIEW_COLUMN_FIXED)
 
             if i == 0:
                 self.firstcolumn = column
@@ -116,8 +119,8 @@ class Sheet(gtk.TreeView):
         self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_BOTH)
 
     def raw_activated(self, treeview, path, view_column, user_param1 = None):
-        print "raw_activated"
-        
+        #print "raw_activated"
+        pass
 
     def key_pressed(self, widget, event, data=None):        
         # "=" ==> edit the cell        
@@ -203,14 +206,14 @@ class Sheet(gtk.TreeView):
         if action == "update":
             key = param[0]
             value = param[1]
-            print "ss callback: " + str((key, value))
+            #print "ss callback: " + str((key, value))
             findcol = re.findall("[A-Z]+?", key)
             col = colname2colnum(join(findcol, ""))
             
             findrow = re.findall("(\d|\.)+?", key)
             row = int(join(findrow, ""))
 
-            print str((col, row)) + " := " + str(value)
+            #print str((col, row)) + " := " + str(value)
             
             self.store[row - 1][col] = str(value)
             return
