@@ -251,7 +251,11 @@ class SpreadSheet:
 
   def getformula(self, key):
     # we get the entry for the key
-    c = self._cells[key]
+    try:
+      c = self._cells[key]
+    except:
+      return None
+
     # and just return the first projection
     if c[0] == None:
       return None
