@@ -5,3 +5,5 @@ tests/testibtws.native
 tests/testtrep.native
 tests/testlisp.native
 tests/testauto.native
+
+app/mypython/mypython.native
