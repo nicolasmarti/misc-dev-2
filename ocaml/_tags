@@ -34,5 +34,5 @@
 
 <tests/testparser.{byte,native}>: pkg_str
 
-<app/mypython/mypython.{ml,byte,native}>: pkg_opycaml
+<app/mypython/mypython.{ml,byte,native}>: pkg_opycaml, pkg_spotlib, pkg_planck, plg_unix
 

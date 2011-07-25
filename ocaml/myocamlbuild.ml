@@ -7,7 +7,6 @@ ocaml_lib ~extern:true "llvm_executionengine";;
 ocaml_lib ~extern:true "llvm_target";;
 ocaml_lib ~extern:true "llvm_scalar_opts";;
 ocaml_lib ~extern:true "llvm_bitwriter";;
-ocaml_lib ~extern:true "python2.7";;
 
 flag ["link"; "ocaml"; "g++"] (S[A"-cc"; A"g++"; A"-cclib"; A"-rdynamic"]);;
 dep ["link"; "ocaml"; "use_bindings"] ["langs/llvm/runtime/runtime.o"];;
