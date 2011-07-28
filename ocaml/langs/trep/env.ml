@@ -154,6 +154,7 @@ let declaration_type (ctxt: env) (s: symbol) : term option =
 	  | RecordDecl _ -> 
 	    (* NYI: might need to change RecordDecl definition *)
 	    Right ()
+	  | _ -> Right ()
       ) () frame.decls in
       match type_in_frame with
 	| None -> Right (curr_index + List.length frame.qvs)
@@ -162,3 +163,21 @@ let declaration_type (ctxt: env) (s: symbol) : term option =
     )
     0 ctxt.frames
 ;; 
+
+let env_push_decl (ctxt: env) (decl: declaration) : env =
+  match ctxt.frames with
+    | hd::tl  ->
+      {frames = {hd with decls = decl::hd.decls}::tl}
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_pop_decl (ctxt: env) : env * declaration =
+  match ctxt.frames with
+    | hd::tl -> (
+      match hd.decls with
+	| thd::ttl ->	  
+	  ({frames = {hd with decls = ttl}::tl}, thd)
+	| _ -> raise (Failure "Catastrophic: no declaration to pop")
+    )
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;

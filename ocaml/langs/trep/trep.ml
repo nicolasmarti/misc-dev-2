@@ -172,8 +172,15 @@ let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
   TODO: one function per typing cases
 *)
 
-let infer (ctxt: env ref) (te: term) : term * term =
+let rec infer (ctxt: env ref) (te: term) : term * term =
   match te with
+      (* SourceInfo *)
+    | SrcInfo (te, pos) -> (
+      try
+	infer ctxt te
+      with
+	| Failure s -> raise (Failure s)
+    )
     | Type None -> (te, Type None)
     | Type (Some u) -> (te, Type (Some (UnivSucc u)))
       (* we got a named variable *)
@@ -189,6 +196,13 @@ let infer (ctxt: env ref) (te: term) : term * term =
 	    | Some ty -> (Cste s, ty)
 
     )
+and typecheck (ctxt: env ref) (te: term) (ty: term) : term * term =
+  let (te, ty') = infer ctxt te in
+  ctxt := env_push_termstack !ctxt te;
+  let ty'' = unify_term_term ctxt ty' ty in
+  let (ctxt', te') = env_pop_termstack !ctxt in
+  ctxt := ctxt';
+  (te', ty'')
 ;;
 
 (*
@@ -199,8 +213,14 @@ let infer (ctxt: env ref) (te: term) : term * term =
   )
   modify the ctxt
 *)
-let push_declaration (ctxt: env ref) (decl: declaration) : bool =
-  raise (Failure "NYI")
+let push_declaration (ctxt: env ref) (decl: declaration) : declaration =
+  match decl with
+    | Signature (s, ty) ->
+      let (ty, _) = typecheck ctxt ty (Type None) in
+      let decl = Signature (s, ty) in
+      ctxt := env_push_decl !ctxt decl;
+      decl
+    | _ -> raise (Failure "NYI")
 ;;
 
 
