@@ -180,8 +180,14 @@ let infer (ctxt: env ref) (te: term) : term * term =
     | Var (Left name) -> (
       (* first we look if it's a binded variable *)
       match qv_debruijn !ctxt name with
-	| None -> raise (Failure "unknown name")
 	| Some (i, ty) -> (Var (Right i), ty)
+	  (* if its not in the quantified variables, we look for declarations *)
+	| None -> 
+	  let s = (Name name) in
+	  match declaration_type !ctxt s with
+	    | None -> raise (Failure "Unknown name")
+	    | Some ty -> (Cste s, ty)
+
     )
 ;;
 

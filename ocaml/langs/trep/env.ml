@@ -134,3 +134,31 @@ let qv_debruijn (ctxt: env) (name: string) : (index * term) option =
     )
     0 ctxt.frames
 ;;
+
+(* get the type of a declaration *)
+let declaration_type (ctxt: env) (s: symbol) : term option =
+  foldleft_maybe 
+    (fun curr_index frame -> 
+      let type_in_frame = foldleft_maybe (fun _ decl -> 
+	match decl with
+	  | Signature (s', ty) when s' = s -> Left ty
+	  | Inductive (name, qs, ty, cons) -> (
+	    match s with
+	      | Name n when n = name ->
+		Left (build_impl qs ty)
+	      | _ -> 
+		match foldleft_maybe (fun _ (s', ty) ->  if s = s' then Left (build_impl (make_hiddens qs) ty)       else Right ()) () cons with
+		  | None -> Right  ()
+		  | Some res -> Left res
+	  )
+	  | RecordDecl _ -> 
+	    (* NYI: might need to change RecordDecl definition *)
+	    Right ()
+      ) () frame.decls in
+      match type_in_frame with
+	| None -> Right (curr_index + List.length frame.qvs)
+	(* we need to shift the term (curr_index represent the total number of qvs in visited frames) *)
+	| Some ty -> Left (shift_term ty curr_index)
+    )
+    0 ctxt.frames
+;; 

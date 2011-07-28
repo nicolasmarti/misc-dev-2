@@ -104,3 +104,12 @@ and fv_equation (eq: equation) : IndexSet.t =
 	IndexSet.union acc (fv_term hd)
       ) IndexSet.empty dess      
 ;;
+
+(* build an Impl *)
+let build_impl (qs: quantifier list) (ty: term) =
+  List.fold_right (fun hd acc -> Impl (hd, acc)) qs ty
+;;
+
+let make_hiddens (qs: quantifier list) =
+  List.map (fun (ps, ty, _) -> (ps, ty, Hidden)) qs
+;;
