@@ -172,12 +172,12 @@ let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
   TODO: one function per typing cases
 *)
 
-let rec infer (ctxt: env ref) (te: term) : term * term =
+let rec infer_term (ctxt: env ref) (te: term) : term * term =
   match te with
       (* SourceInfo *)
     | SrcInfo (te, pos) -> (
       try
-	infer ctxt te
+	infer_term ctxt te
       with
 	| Failure s -> raise (Failure s)
     )
@@ -210,32 +210,27 @@ let rec infer (ctxt: env ref) (te: term) : term * term =
     | Obj o -> (Obj o, o#get_type)
 
     | Impl (q, te) -> (
+      let q = typecheck_quantifier ctxt q in
+      ctxt := env_push_quantifier !ctxt q;      
       raise (Failure "Not Yet Implemented")
     )
 
-and typecheck (ctxt: env ref) (te: term) (ty: term) : term * term =
-  let (te, ty') = infer ctxt te in
+and typecheck_term (ctxt: env ref) (te: term) (ty: term) : term * term =
+  let (te, ty') = infer_term ctxt te in
   ctxt := env_push_termstack !ctxt te;
   let ty'' = unify_term_term ctxt ty' ty in
   let (ctxt', te') = env_pop_termstack !ctxt in
   ctxt := ctxt';
   (te', ty'')
-;;
 
-(*
-  this function push a declaration in the current ctxt
-  it is typechecked, then entered in the declaration lists
-  (will be used as an entry point for the RTRL (Read-Typecheck-Register loop)
-   and for typechecking of Where terms
-  )
-  modify the ctxt
-*)
-let push_declaration (ctxt: env ref) (decl: declaration) : declaration =
+and typecheck_quantifier (ctxt: env ref) (q: quantifier) : quantifier =
+  raise (Failure "not yet implemented")
+
+and typecheck_declaration (ctxt: env ref) (decl: declaration) : declaration =
   match decl with
     | Signature (s, ty) ->
-      let (ty, _) = typecheck ctxt ty (Type None) in
+      let (ty, _) = typecheck_term ctxt ty (Type None) in
       let decl = Signature (s, ty) in
-      ctxt := env_push_decl !ctxt decl;
       decl
     | _ -> raise (Failure "NYI")
 ;;
