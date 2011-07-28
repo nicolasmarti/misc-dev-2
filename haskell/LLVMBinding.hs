@@ -1895,7 +1895,7 @@ optimizeModule mod = do {
   ; _ <- Optim.addJumpThreadingPass passmanager
   ; _ <- Optim.addLICMPass passmanager
   ; _ <- Optim.addLoopDeletionPass passmanager
-  ; _ <- Optim.addLoopIndexSplitPass passmanager
+  --; _ <- Optim.addLoopIndexSplitPass passmanager
   ; _ <- Optim.addLoopRotatePass passmanager
   ; _ <- Optim.addLoopUnrollPass passmanager
   ; _ <- Optim.addLoopUnswitchPass passmanager
@@ -1936,7 +1936,7 @@ optimizeFunction fct = do {
   ; _ <- Optim.addIndVarSimplifyPass passmanager
   ; _ <- Optim.addLICMPass passmanager
   ; _ <- Optim.addLoopDeletionPass passmanager
-  ; _ <- Optim.addLoopIndexSplitPass passmanager
+  --; _ <- Optim.addLoopIndexSplitPass passmanager
 
   ; _ <- Optim.addLoopRotatePass passmanager
   ; _ <- Optim.addLoopUnrollPass passmanager

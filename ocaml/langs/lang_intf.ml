@@ -52,8 +52,9 @@ end;;
   might allow:
   * to compile a language to llvm
   * to interface a language with python
+
+not really usefull ...
   
-*)
 module type Compiler = 
   functor (Target: Lang) ->
     functor (Source: Lang) ->
@@ -70,6 +71,8 @@ module type Compiler =
 	(* value mapping inverse *)
 	val valuerevmap: Source.session -> Source.ltype -> Target.value -> Source.value
       end;;
+
+*)
 
 (* 
 

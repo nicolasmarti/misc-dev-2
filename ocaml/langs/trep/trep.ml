@@ -108,8 +108,25 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
 	(* here we should try to reduce the terms *)
 	raise UnificationFail
       )
+
 and unify_quantifier_quantifier (ctxt: env ref) (q1: quantifier) (q2: quantifier) : quantifier =
-  raise (Failure "NYI")
+  let (ps1, ty1, n1) = q1 in
+  let (ps2, ty2, n2) = q2 in
+  (* first we need to assure that natures and patterns are equal 
+     this is an aproximation, as pattern need only to be alpha equivalent ...
+  *)
+  if not (n1 = n2 && ps1 = ps2) then 
+    raise UnificationFail
+  else
+    let ty = 
+      match (ty1, ty2) with
+	(* if ther eis NoAnnotation, it means the terms have not been typechecked *) 
+	| NoAnnotation, _ -> raise UnificationFail
+	| _, NoAnnotation -> raise UnificationFail
+	| Infered ty1, Infered ty2 | Annotated ty1, Infered ty2 | Infered ty1, Annotated ty2 -> Infered (unify_term_term ctxt ty1 ty2)
+	| Annotated ty1, Annotated ty2 -> Annotated (unify_term_term ctxt ty1 ty2)
+    in
+    (ps1, ty, n1)	
 ;;
 
 (*
@@ -155,12 +172,23 @@ let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
   TODO: one function per typing cases
 *)
 
-let typecheck (ctxt: env ref) (te: term) (ty: term) : bool =
-  raise (Failure "NYI")
-;;
+let infer (ctxt: env ref) (te: term) : term * term =
+  match te with
+    | Type None -> (te, Type None)
+    | Type (Some u) -> (te, Type (Some (UnivSucc u)))
+      (* we got a named variable *)
+    | Var (Left name) -> (
+      (* first we look if it's a binded variable *)
+      match qv_debruijn !ctxt name with
+	| Some (i, ty) -> (Var (Right i), ty)
+	  (* if its not in the quantified variables, we look for declarations *)
+	| None -> 
+	  let s = (Name name) in
+	  match declaration_type !ctxt s with
+	    | None -> raise (Failure "Unknown name")
+	    | Some ty -> (Cste s, ty)
 
-let infer (ctxt: env ref) (te: term) : term option =
-  raise (Failure "NYI")
+    )
 ;;
 
 (*

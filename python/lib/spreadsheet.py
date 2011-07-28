@@ -166,7 +166,7 @@ class SpreadSheet:
 
     # here we change the formula of the cell
     # and thus recompute it
-    if isinstance(formula, str) and formula[0] == '=':
+    if isinstance(formula, str) and len(formula) > 0 and formula[0] == '=':
       self.setformula(key, formula)
     else:
       self._cells[key] = (None, formula)
@@ -251,7 +251,11 @@ class SpreadSheet:
 
   def getformula(self, key):
     # we get the entry for the key
-    c = self._cells[key]
+    try:
+      c = self._cells[key]
+    except:
+      return None
+
     # and just return the first projection
     if c[0] == None:
       return None
@@ -300,7 +304,9 @@ class SpreadSheet:
 
     (self._cells, self._dep) = load(file)
     
-    
+    if self.callback <> None:
+      for key in self._cells:
+        self.callback("update", (key, self._cells[key][1]))
       
 
 
@@ -400,3 +406,7 @@ if __name__ == '__main__':
   ss5 = SpreadSheet(file = open('ss4.pkl', 'rb'))
 
   print ss5
+
+  ss6 = SpreadSheet(file = open('ss.pkl', 'rb'))
+
+  print ss6

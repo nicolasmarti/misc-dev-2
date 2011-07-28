@@ -48,7 +48,7 @@ class CellRender(gtk.CellRendererText):
         self.col = col
 
     def editing_start(self, cell, editable, path, user_param = None):
-        print "editing_start"
+        #print "editing_start"
         try:
             f = self.ss.getformula(colnum2colname(self.col - 1) + str(int(path) + 1))
             editable.set_text(f)
@@ -56,8 +56,8 @@ class CellRender(gtk.CellRendererText):
             pass
 
     def editing_cancel(self, cell, user_param = None):
-        print "editing_cancel"
-
+        #print "editing_cancel"
+        pass
 
 class Sheet(gtk.TreeView):
 
@@ -90,10 +90,16 @@ class Sheet(gtk.TreeView):
                 cellrenderertext.set_property('editable', True)
 
             column = gtk.TreeViewColumn('%s'% colnum2colname(i - 1) if (i > 0) else "", cellrenderertext, text=i)
-            
-            column.set_sizing(gtk.TREE_VIEW_COLUMN_AUTOSIZE)
 
-            column.set_min_width(100)
+            if False:
+                column.set_sizing(gtk.TREE_VIEW_COLUMN_AUTOSIZE)
+                column.set_min_width(100)
+            else:
+                column.set_fixed_width(100)
+                column.set_sizing(gtk.TREE_VIEW_COLUMN_FIXED)
+
+            if i == 0:
+                self.firstcolumn = column
 
             self.append_column(column)
 
@@ -104,6 +110,7 @@ class Sheet(gtk.TreeView):
         self.set_model(self.store)
 
         self.connect("key_press_event", self.key_pressed, None)
+        self.connect("key_release_event", self.key_released, None)
         self.connect("row-activated", self.raw_activated, None)
 
         self.set_enable_search(False)
@@ -113,10 +120,11 @@ class Sheet(gtk.TreeView):
         self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_BOTH)
 
     def raw_activated(self, treeview, path, view_column, user_param1 = None):
-        print "raw_activated"
-        
+        #print "raw_activated"
+        pass
 
     def key_pressed(self, widget, event, data=None):        
+        #global win
         # "=" ==> edit the cell        
         cursor = self.get_cursor()
         row = cursor[0][0]
@@ -125,14 +133,79 @@ class Sheet(gtk.TreeView):
 
         #self.set_cursor(str(row), cursor[1])
         #print event.keyval
+
+        title = str((row, col))
+        self.firstcolumn.set_title(title)
+        
+        #key = colnum2colname(col - 1) + str(row + 1)
+        #f = self.ss.getformula(key)
+        #win.set_title(str(f))
+
+        # '='
         if event.keyval == 61:
             print (row, col)
             #renders[0].start_editing(event, self, str(row), self.get_visible_rect(), self.get_visible_rect(), gtk.CELL_RENDERER_INSENSITIVE)
 
+        # Delete
         if event.keyval == 65535:
             key = colnum2colname(col - 1) + str(row + 1)
             self.ss.remove_key(key)
             print self.ss
+
+        # Esc 
+        if event.keyval == 65307:
+            gtk.main_quit()
+
+        # F2 -> save
+        if event.keyval == 65471:
+            self.filew = gtk.FileSelection("File selection")
+
+            def close(w):
+                self.filew.hide()
+
+            def fileok(w):
+                self.filew.hide()                
+                self.ss.save(open(self.filew.get_filename(), 'wb'))
+            
+            self.filew.connect("destroy", close)
+            self.filew.ok_button.connect("clicked", fileok)
+
+            self.filew.show()
+
+        # F3 -> load
+        if event.keyval == 65472:
+            self.filew = gtk.FileSelection("File selection")
+
+            def close(w):
+                self.filew.hide()
+
+            def fileok(w):
+                self.filew.hide()                
+                self.ss.load(open(self.filew.get_filename(), 'rb'))
+            
+            self.filew.connect("destroy", close)
+            self.filew.ok_button.connect("clicked", fileok)
+
+            self.filew.show()
+
+    def key_released(self, widget, event, data=None):      
+        try:
+            global win
+
+            cursor = self.get_cursor()
+            row = cursor[0][0]
+            renders = cursor[1].get_cell_renderers()
+            col = renders[0].col
+
+            title = str((row, col))
+            self.firstcolumn.set_title(title)
+        
+            key = colnum2colname(col - 1) + str(row + 1)
+            f = self.ss.getformula(key)
+            win.set_title(str(f))
+
+        except:
+            return 
 
     def edited_cb(self, cell, path, new_text, user_data = None):
         #print "cell := " + str(cell)
@@ -156,14 +229,14 @@ class Sheet(gtk.TreeView):
         if action == "update":
             key = param[0]
             value = param[1]
-            print "ss callback: " + str((key, value))
+            #print "ss callback: " + str((key, value))
             findcol = re.findall("[A-Z]+?", key)
             col = colname2colnum(join(findcol, ""))
             
             findrow = re.findall("(\d|\.)+?", key)
             row = int(join(findrow, ""))
 
-            print str((col, row)) + " := " + str(value)
+            #print str((col, row)) + " := " + str(value)
             
             self.store[row - 1][col] = str(value)
             return

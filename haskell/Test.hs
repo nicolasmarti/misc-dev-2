@@ -454,14 +454,14 @@ data Testconfig = Testconfig {
               
 testconfig :: Testconfig
 testconfig = Testconfig { 
-  testbinding = False,
+  testbinding = True,
   testbinding2 = False,
-  gcedtest = False,
-  dynarraytest = False,
-  sumtest = False,  
-  stacktest = False,  
-  rectypetest = False,
-  runtimetest= False,
+  gcedtest = True,
+  dynarraytest = True,
+  sumtest = True,  
+  stacktest = True,  
+  rectypetest = True,
+  runtimetest= True,
   
   testvm = True
   }             
@@ -490,17 +490,17 @@ main = do {
     ; putStrLn ""
     ; (time, _) <- timedEval $ putStrLn $ "vmExec (fibonacci " ++ show n ++ ") := " ++ show (testFibonacci n)
     ; putStrLn $ "time := " ++ show time
-      
+
     ; let saved = (fst $ objectFibonacci n)
     ; saveObjectBlocks saved "./test.vmo"
     ; loaded <- loadObjectBlocks "./test.vmo"
     ; when (loaded /= saved) $ error $ "catastrophic: loading/unloading inconsistent"
- 
-      
+
+
     ; putStrLn ""
     ; putStrLn $ "llvm (fibonacci " ++ show n ++ ")"
     ; vmtest (objectFibonacci n)
-      
+
     }  
   
   ; putStrLn ""

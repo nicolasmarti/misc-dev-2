@@ -1,6 +1,11 @@
+
+
+
+
 <lib>: include
 
 <langs>: include
+
 <langs/trep>: include
 <langs/trep/trep.ml>: pkg_spotlib, pkg_planck
 <langs/trep/def.ml>: pkg_spotlib, pkg_planck
@@ -17,6 +22,9 @@
 <langs/lisp/lisp.{ml,byte,native}>: pkg_spotlib, pkg_planck
 <tests/testlisp.{ml,byte,native}>: pkg_spotlib, pkg_planck
 
+<langs/python>: include
+<langs/python/python.ml>: pkg_opycaml
+
 <finance>: include
 <finance/ibtws>: include
 <finance/csvbroker.ml>: pkg_spotlib, pkg_planck
@@ -26,5 +34,5 @@
 
 <tests/testparser.{byte,native}>: pkg_str
 
-
+<app/mypython/mypython.{ml,byte,native}>: pkg_opycaml, pkg_spotlib, pkg_planck, plg_unix
 

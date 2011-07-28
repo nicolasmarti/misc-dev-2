@@ -185,7 +185,7 @@ class MyView(gtk.TextView):
 
     def key_pressed(self, widget, event, data=None):        
         self.pressed_key.add(event.keyval)
-        print event.keyval
+        print "MyView " + str(event.keyval)
         self.managekey()
 
     def key_released(self, widget, event, data=None):
@@ -460,15 +460,23 @@ class MyFrame(gtk.Frame):
             self.inside.get_child().myframe = self
 
         self.myframe = self
-    
+
+        # just for test
+        self.connect("key_press_event", self.key_pressed, None)    
+
+    def key_pressed(self, widget, event, data=None):                
+        print "MyFrame : " + str(event.keyval)
+
+
 state["myentry"] = None
     
 class MyEntry(gtk.Entry):
 
     def key_pressed(self, widget, event, data=None):        
-        print event.keyval
+        print "MyEntry " + str(event.keyval)
         if (event.keyval == 65293):
             text = self.get_text()
+            print "MyEntry enter pressed! " + text
             self.set_text("")
             self.disconnect(self.keypressedid)
             self.set_editable(False)
@@ -485,7 +493,7 @@ class MyEntry(gtk.Entry):
 
         self.set_editable(False)
 
-        self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        #self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
         
         self.set_can_focus(False)
 
@@ -550,6 +558,11 @@ class MyEditor:
         #window.connect("focus-in-event", main_get_focus, None)
 
         window.show()
+
+        def key_pressed(widget, event, data=None):                
+            print "MyEditor : " + str(event.keyval)
+
+        window.connect("key_press_event", key_pressed, None)    
 
         def printmainframe(frame):
             print frame.tostring()

@@ -1,6 +1,6 @@
 1) implement pending functions
-   - unify_term_term & unify_quantifier_quantifier
+   - unify_term_term
    - ...
 2) properly manage errors with exceptions
 3) should decide that no declaration (linked in terms through Cste) should have free variables -> 
-   fix Cste case in fv_term + pay attention in declaration proceed
+   fix Cste case in fv_term + pay attention in declaration proceedoo
