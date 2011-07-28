@@ -135,6 +135,26 @@ let qv_debruijn (ctxt: env) (name: string) : (index * term) option =
     0 ctxt.frames
 ;;
 
+(* get the name and type of a quantified variable by index *)
+let qv_name (ctxt: env) (i: index) : name * term =
+  let res =
+    foldleft_maybe 
+      (fun curr_index frame -> 
+	let type_in_frame = foldleft_maybe (fun curr_index (n, ty) -> 
+	  if curr_index = i then Left (n, ty) else Right (curr_index + 1)	  
+	) curr_index frame.qvs in
+	match type_in_frame with
+	  | None -> Right (curr_index + List.length frame.qvs)
+	  (* we need to shift the term (curr_index represent the total number of qvs in visited frames) *)
+	  | Some (name, ty) -> Left (name, shift_term ty curr_index)
+      )
+      0 ctxt.frames
+  in
+  match res with
+    | None -> raise (Failure "no such indexed variable")
+    | Some res -> res
+;;
+
 (* get the type of a declaration *)
 let declaration_type (ctxt: env) (s: symbol) : term option =
   foldleft_maybe 
@@ -181,3 +201,4 @@ let env_pop_decl (ctxt: env) : env * declaration =
     )
     | _ -> raise (Failure "Catastrophic: empty frame list")
 ;;
+

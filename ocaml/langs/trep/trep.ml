@@ -193,9 +193,26 @@ let rec infer (ctxt: env ref) (te: term) : term * term =
 	  let s = (Name name) in
 	  match declaration_type !ctxt s with
 	    | None -> raise (Failure "Unknown name")
-	    | Some ty -> (Cste s, ty)
-
+	    | Some ty -> (Cste s, ty)	    
     )
+    (* here we have a variable with a Debruijn index ... *)
+    | Var (Right index) -> (
+      let (name, ty) = qv_name !ctxt index in
+      (te, ty)
+    )
+
+    | Cste s -> (
+      match declaration_type !ctxt s with
+	| None -> raise (Failure "Unknown symbol")
+	| Some ty -> (Cste s, ty)
+    )
+
+    | Obj o -> (Obj o, o#get_type)
+
+    | Impl (q, te) -> (
+      raise (Failure "Not Yet Implemented")
+    )
+
 and typecheck (ctxt: env ref) (te: term) (ty: term) : term * term =
   let (te, ty') = infer ctxt te in
   ctxt := env_push_termstack !ctxt te;
