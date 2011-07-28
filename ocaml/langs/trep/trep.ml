@@ -172,12 +172,17 @@ let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
   TODO: one function per typing cases
 *)
 
-let typecheck (ctxt: env ref) (te: term) (ty: term) : bool =
-  raise (Failure "NYI")
-;;
-
-let infer (ctxt: env ref) (te: term) : term option =
-  raise (Failure "NYI")
+let infer (ctxt: env ref) (te: term) : term * term =
+  match te with
+    | Type None -> (te, Type None)
+    | Type (Some u) -> (te, Type (Some (UnivSucc u)))
+      (* we got a named variable *)
+    | Var (Left name) -> (
+      (* first we look if it's a binded variable *)
+      match qv_debruijn !ctxt name with
+	| None -> raise (Failure "unknown name")
+	| Some (i, ty) -> (Var (Right i), ty)
+    )
 ;;
 
 (*

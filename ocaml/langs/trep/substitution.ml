@@ -186,7 +186,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 	if i + delta < level then
 	  raise (TrepException UnShiftable)
 	else
-	  Var (Right (i + level))
+	  Var (Right (i + delta))
       else
 	v
 

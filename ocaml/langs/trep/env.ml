@@ -1,5 +1,6 @@
 open Def;;
 open Misc;;
+open Substitution;;
 
 (* push a (typed) pattern / frame in an environment *)
 let env_push_pattern (ctxt: env) (p: pattern) : env =
@@ -110,3 +111,26 @@ let rec env_pop_quantifier (ctxt: env) (size: int) : env * quantifier =
   (ctxt, (ps, ty, n))  
 ;;
 
+let rec foldleft_maybe (f: 'c -> 'a -> ('b, 'c) either) (acc: 'c) (l: 'a list) : 'b option =
+  match l with
+    | [] -> None
+    | hd::tl -> 
+      match f acc hd with
+	| Right nxt -> foldleft_maybe f nxt tl
+	| Left res -> Some res
+;;
+
+(* get the debruijn index of a quantified variable *)
+let qv_debruijn (ctxt: env) (name: string) : (index * term) option =
+  foldleft_maybe 
+    (fun curr_index frame -> 
+      let index_in_frame = foldleft_maybe (fun curr_index (n, ty) -> 
+	if n = name then Left (curr_index, ty) else Right (curr_index + 1)	  
+      ) curr_index frame.qvs in
+      match index_in_frame with
+	| None -> Right (curr_index + List.length frame.qvs)
+	(* we need to shift the term (curr_index represent the total number of qvs in visited frames) *)
+	| Some (index, ty) -> Left (index, shift_term ty curr_index)
+    )
+    0 ctxt.frames
+;;
