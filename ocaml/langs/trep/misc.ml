@@ -1,4 +1,5 @@
 open Def;;
+open Trepprinter;;
 
 (*
   quantified free variables:
@@ -62,8 +63,9 @@ let rec fv_term (te: term) : IndexSet.t =
     | Type u -> IndexSet.empty
     | Var (Right i) when i < 0 -> IndexSet.singleton i
     | Var (Right i) when i >= 0 -> IndexSet.empty
-    | AVar (Some i) -> IndexSet.singleton i
-    | Cste c -> raise (Failure "NYI")
+    | Var (Left n) -> raise (Failure "fv_term: Var name")
+    | AVar -> raise (Failure "fv_term: AVar")
+    | Cste c -> IndexSet.empty
     | Obj o -> IndexSet.empty
     | Impl (q, te) -> IndexSet.union (fv_quantifier q) (fv_term te)
     | Lambda (qs, te) -> 
@@ -87,7 +89,7 @@ let rec fv_term (te: term) : IndexSet.t =
     | TyAnnotation (te, ty) ->
       IndexSet.union (fv_term te) (fv_tyAnnotation ty)
     | SrcInfo (te, _) -> fv_term te
-    | _ -> raise (Failure "fv_term: not supported term")
+    | _ -> raise (Failure (String.concat "\n" ["fv_term: not supported for"; term2string te]))
 
 and fv_quantifier (q: quantifier) : IndexSet.t =
   let (_, ty, _) = q in

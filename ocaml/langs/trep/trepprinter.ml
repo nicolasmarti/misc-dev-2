@@ -41,7 +41,7 @@ let rec term2token (te : term) (p: place) : token =
 
     | Var (Right i) -> Verbatim (String.concat "" ["<"; string_of_int i; ">"])
 
-    | AVar _ -> Verbatim "_"
+    | AVar -> Verbatim "_"
 
     | Cste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
 
@@ -140,7 +140,7 @@ and equation2token eq =
 			       ]
 and quantifier2token is_lambda q =
   match q with
-    | ([PAVar (AVar None)], annot, nat) when ((not is_lambda) && (annot != NoAnnotation)) -> (
+    | ([PAVar _], annot, nat) when ((not is_lambda) && (annot != NoAnnotation)) -> (
       let encadr = (
 	match nat with
 	  | Explicit -> (fun x -> x)
@@ -238,4 +238,9 @@ and declaration2token (d: declaration) =
 	
     )
     | _ -> raise (Failure "NYI")
+;;
+
+let term2string (te: term) : string =
+  let t = term2token te InAs in
+  box2string (token2box t 80 2)  
 ;;

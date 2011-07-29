@@ -2,6 +2,36 @@ open Def;;
 open Misc;;
 open Substitution;;
 
+open Printf;;
+
+let env2string (ctxt: env) : string =
+  String.concat ", " 
+    (List.map 
+       (fun hd -> 
+	 String.concat " " (["("] @
+			       (let l = List.length hd.qvs in
+				if l > 0 then [String.concat " := " ["|qvs|"; string_of_int l]] else []
+			       ) @
+			       (let l = List.length hd.fvs in
+				if l > 0 then [String.concat " := " ["|fvs|"; string_of_int l]] else []
+			       ) @
+			       (let l = List.length hd.decls in
+				if l > 0 then [String.concat " := " ["|decls|"; string_of_int l]] else []
+			       ) @
+			       (let l = List.length hd.terms in
+				if l > 0 then [String.concat " := " ["|terms|"; string_of_int l]] else []
+			       ) @
+			       (let l = List.length hd.annotations in
+				if l > 0 then [String.concat " := " ["|annotations|"; string_of_int l]] else []
+			       ) @
+			       (let l = List.length hd.natures in
+				if l > 0 then [String.concat " := " ["|natures|"; string_of_int l]] else []
+			       ) @ [")"]
+	 )
+       ) ctxt.frames
+    )
+;;
+
 (* push a (typed) pattern / frame in an environment *)
 let env_push_pattern (ctxt: env) (p: pattern) : env =
   let l = pattern_qfvars p in
@@ -26,7 +56,35 @@ let rec env_pop_pattern (ctxt: env) : env * pattern =
 	natures = [];
       }::tl -> 
       ({frames = tl}, p)
-    | _ -> raise (Failure "Case not yet supported")
+    (* the case where we have still fvs *)
+    | { qvs = l;
+	pattern = p;
+	fvs = l';
+	decls = [];
+	terms = [];
+	equations = [];
+	annotations = [];
+	natures = [];
+      }::tl -> 
+      (* we need to look at the substitution on the fvs at this level 
+	 if all fvs have a substitution that dow not contains any fvs in this frame,
+	 we can remove them (all other terms should have been substituted)
+      *)
+      (* first compute the last fvs index in upper frame *)
+      let min_index = List.fold_left (fun acc hd -> acc - List.length hd.fvs) 0 tl in
+      let can_pop = List.fold_left (fun acc hd -> acc && (
+	match hd with
+	  | (_, None) -> false
+	  | (_, Some te) -> let fv = fv_term te in
+			    (* fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a *)
+			    IndexSet.fold (fun hd acc -> acc && hd >= min_index) fv true
+      )
+      ) true l' in
+      if can_pop then ({ frames = tl }, p) else raise (Failure "env_pop_pattern: cannot pop the fvs at this level, some have no \"outside\" substitution")
+    (* else ... *)
+    | _ -> 
+      printf "%s\n" (env2string ctxt);
+      raise (Failure "Case not yet supported")
 ;;
 
 let env_push_termstack (ctxt: env) (te: term) : env =
@@ -94,7 +152,7 @@ let env_push_quantifier (ctxt: env) (q: quantifier) : env =
 ;;
 
 let rec fold_leftn (f: 'b -> 'b) (acc: 'b) (n: int) : 'b =
-  if n < 0 then
+  if n <= 0 then
     acc
   else
     fold_leftn f (f acc) (n-1)
@@ -207,10 +265,11 @@ let env_new_fv (ctxt: env) (ty: term) : env * index =
   let newindex = List.fold_left (fun acc hd -> acc - List.length hd.fvs) (-1) ctxt.frames in  
   match ctxt.frames with
     | hd::tl -> (
-      match hd.fvs with
-	| thd::ttl ->	  
-	  ({frames = {hd with fvs = (ty, None)::ttl}::tl}, newindex)
-	| _ -> raise (Failure "Catastrophic: no declaration to pop")
+      ({frames = {hd with fvs = (ty,  Some (Var (Right newindex)))::hd.fvs}::tl}, newindex)
     )
     | _ -> raise (Failure "Catastrophic: empty frame list")
+;;
+
+let env_size (ctxt: env) : int =
+  List.length ctxt.frames
 ;;

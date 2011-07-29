@@ -131,7 +131,7 @@ let infix_pattern st = begin
       | `Infix _ -> (
 	try_ (parse_string symb >>= fun () ->
 	      return (Op_prec.infix symb (fun left right -> 
-		PApp (PCste (Symbol (symb, op), AVar None), [(left, Explicit); (right, Explicit)], AVar None)
+		PApp (PCste (Symbol (symb, op), AVar), [(left, Explicit); (right, Explicit)], AVar)
 	      )
 	      )
 	) <|> acc
@@ -145,7 +145,7 @@ let binop_pattern st = begin
     try_ (surrounded 
 	 (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) 
 	 (?* blank >>= fun () -> token ')') 
-	 (parse_string symb) >>= fun () -> return (PCste (Symbol (symb, op), AVar None))
+	 (parse_string symb) >>= fun () -> return (PCste (Symbol (symb, op), AVar))
     ) <|> acc
   ) Op_prec.tbl (error "Not a binop")
 end st
@@ -254,15 +254,15 @@ and parse_apppattern (leftmost: Str.Pos.t) : pattern Parser.t =
     match l with
       | [] -> raise (Failure "this case should never happen")
       | hd::[] -> return (fst hd)
-      | hd::tl -> return (PApp (fst hd, tl, AVar None))
+      | hd::tl -> return (PApp (fst hd, tl, AVar))
 
 and parse_basepattern (leftmost: Str.Pos.t) : pattern Parser.t =
   parse_leftmost leftmost (
     try_ binop_pattern
     <|> try_ (parse_alias leftmost)
     <|> try_ (parse_Type >>= fun () -> return (PType None))
-    <|> try_ (parse_var >>= fun s -> return (PVar (s, AVar None)))
-    <|> try_ (parse_avar >>= fun () -> return (PAVar (AVar None)))
+    <|> try_ (parse_var >>= fun s -> return (PVar (s, AVar)))
+    <|> try_ (parse_avar >>= fun () -> return (PAVar AVar))
     <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_pattern Pos.none >>= fun res -> return res))
   ) >>= fun te ->
   return te
@@ -271,7 +271,7 @@ and parse_alias (leftmost: Pos.t) : pattern Parser.t =
   parse_name >>= fun alias ->
   token '@'  >>= fun _ -> 
   parse_basepattern leftmost >>= fun te ->
-    return (PAlias (alias, te, AVar None))
+    return (PAlias (alias, te, AVar))
 
 ;;
 
@@ -368,7 +368,7 @@ and parse_baseterm (leftmost: Str.Pos.t) : term Parser.t =
      <|> try_ binop_term
      <|> try_ (parse_Type >>= fun () -> return (Type None))
      <|> try_ (parse_var >>= fun s -> return (Var (Left s)))
-     <|> try_ (parse_avar >>= fun () -> return (AVar None))
+     <|> try_ (parse_avar >>= fun () -> return AVar)
      <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_term Pos.none >>= fun res -> return res))
     ) 
   ) >>= fun (te, startp, endp) ->
@@ -495,7 +495,7 @@ and parse_quantifier_lambda (leftmost: Pos.t): quantifier Parser.t =
   <|> try_ (surrounded (token '[' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ']') (parse_quantifier leftmost Implicit))
 
 and parse_quantifier_impl (leftmost: Pos.t): quantifier Parser.t =
-  try_ (parse_appterm leftmost >>= fun ty -> return ([PAVar (AVar None)], Annotated ty, Explicit))
+  try_ (parse_appterm leftmost >>= fun ty -> return ([PAVar AVar], Annotated ty, Explicit))
   <|> try_ (surrounded (token '(' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ')') (parse_quantifier leftmost Explicit))
   <|> try_ (surrounded (token '{' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token '}') (parse_quantifier leftmost Hidden))
   <|> try_ (surrounded (token '[' >>= fun _ -> ?* blank >>= fun () -> return ()) (?* blank >>= fun () -> token ']') (parse_quantifier leftmost Implicit))
@@ -506,7 +506,7 @@ and  parse_declaration (leftmost: Pos.t) : declaration Parser.t =
   <|> try_ (parse_inductive leftmost)
 
 and parse_signature (leftmost: Pos.t) : declaration Parser.t =
-  (try_ (binop_pattern >>= fun (PCste (s, AVar None)) -> return s)
+  (try_ (binop_pattern >>= fun (PCste (s, AVar)) -> return s)
    <|> (parse_name >>= fun s -> return (Name s))   
   ) >>= fun symbol ->
   
@@ -570,7 +570,7 @@ and parse_inductive (leftmost: Pos.t) : declaration Parser.t =
   list_with_sep ~sep:(surrounded (?* blank) (?* blank) (token '|'))   
     (
       surrounded (?* blank) (?* blank) 
-	(try_ (binop_pattern >>= fun (PCste (s, AVar None)) -> return s)
+	(try_ (binop_pattern >>= fun (PCste (s, AVar)) -> return s)
 	 <|> (parse_name >>= fun s -> return (Name s))   
 	) >>= fun symbol ->
       

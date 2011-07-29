@@ -52,7 +52,7 @@ type ('a, 'b) either = Left of 'a
 
 type term = Type of univ option
 	    | Var of (name, index) either
-	    | AVar of index option
+	    | AVar
 	    | Cste of symbol
 	    | Obj of term tObj
 	    | Impl of quantifier * term

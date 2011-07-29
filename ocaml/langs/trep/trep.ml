@@ -3,6 +3,10 @@ open Misc;;
 open Env;;
 open Substitution;;
 
+open Printf;;
+
+open Trepprinter;;
+
 (* result of unification *)
 type unification_result = Unified
 			  | CannotUnified of (position * term) * (position * term) * string
@@ -24,6 +28,7 @@ type unification_result = Unified
 exception UnificationFail;;
 
 let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term = 
+  (*printf "(infer) %s |- %s =?= %s\n" (env2string !ctxt) (term2string te1) (term2string te2);*)
   try (
     match te1, te2 with
       (* THIS IS FALSE DUE TO THE UNIVERSE *)
@@ -50,15 +55,9 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
 	ctxt := subst_env (!ctxt) s;
 	te1
 
-      | AVar (Some i), _ when not (IndexSet.mem i (fv_term te2)) ->
-	let s = IndexMap.singleton i te2 in
-	ctxt := subst_env (!ctxt) s;
-	te1
+      | AVar , _ -> raise (Failure "untypedcheck term")
 
-      | _, AVar (Some i) when not (IndexSet.mem i (fv_term te1)) ->
-	let s = IndexMap.singleton i te1 in
-	ctxt := subst_env (!ctxt) s;
-	te1
+      | _, AVar -> raise (Failure "untypedcheck term")
 
     (* constante stuff ... can be a bit tricky ... *)
       | Cste c1, Cste c2 when c1 = c2 -> Cste c1
@@ -88,7 +87,7 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
       | Impl (q1, te1), Impl (q2, te2) ->
       (* first we unify the quantifiers *)
 	let q = unify_quantifier_quantifier ctxt q1 q2 in
-      (* then we push q *)
+	(* then we push q *)
 	ctxt := env_push_quantifier !ctxt q;
 	(* we apply all the possible subtitution to te1 and te2 *)
 	let te1' = term_substitution (env_substitution !ctxt) te1 in
@@ -180,11 +179,25 @@ let get_annotation_type (ctxt: env ref) (ty: tyAnnotation) : term =
     | Infered ty -> ty
 ;;
 
+(* returns a term and a type for a name *)
+let named_term (ctxt: env) (n: name) : (term * term) option =
+  (* first we look if it's a binded variable *)
+  match qv_debruijn ctxt n with
+    | Some (i, ty) -> Some (Var (Right i), ty)
+    (* if its not in the quantified variables, we look for declarations *)
+    | None -> 
+      let s = (Name n) in
+      match declaration_type ctxt s with
+	| None -> None
+	| Some ty -> Some (Cste s, ty)	    
+;;
+
 (*
   typechecking
 
   TODO: one function per typing cases
 *)
+
 
 let rec infer_term (ctxt: env ref) (te: term) : term * term =
   match te with
@@ -199,20 +212,22 @@ let rec infer_term (ctxt: env ref) (te: term) : term * term =
     | Type (Some u) -> (te, Type (Some (UnivSucc u)))
       (* we got a named variable *)
     | Var (Left name) -> (
-      (* first we look if it's a binded variable *)
-      match qv_debruijn !ctxt name with
-	| Some (i, ty) -> (Var (Right i), ty)
-	  (* if its not in the quantified variables, we look for declarations *)
-	| None -> 
-	  let s = (Name name) in
-	  match declaration_type !ctxt s with
-	    | None -> raise (Failure "Unknown name")
-	    | Some ty -> (Cste s, ty)	    
+      match named_term !ctxt name with
+	| None -> raise (Failure "Unknown name")
+	| Some res -> res
     )
     (* here we have a binded variable with a Debruijn index ... *)
     | Var (Right index) when index >= 0 -> (
       let (name, ty) = qv_name !ctxt index in
       (te, ty)
+    )
+
+    | AVar -> (
+      let (ctxt', fvty) = env_new_fv !ctxt (Type None) in
+      ctxt := ctxt'; 
+      let (ctxt', fvte) = env_new_fv !ctxt (Var (Right fvty)) in
+      ctxt := ctxt'; 
+      (Var (Right fvte), Var (Right fvty))
     )
 
     | Cste s -> (
@@ -234,7 +249,8 @@ let rec infer_term (ctxt: env ref) (te: term) : term * term =
     )
 
 and typecheck_term (ctxt: env ref) (te: term) (ty: term) : term * term =
-  let (te, ty') = infer_term ctxt te in
+  (*printf "%s |- %s :?: %s\n" (env2string !ctxt) (term2string te) (term2string ty);*)
+  let (te, ty') = infer_term ctxt te in   
   ctxt := env_push_termstack !ctxt te;
   let ty'' = unify_term_term ctxt ty' ty in
   let (ctxt', te') = env_pop_termstack !ctxt in
@@ -256,6 +272,7 @@ and typecheck_quantifier (ctxt: env ref) (q: quantifier) : quantifier =
   *)
   let (ps, ty, nat) = q in
   let ty' = get_annotation_type ctxt ty in
+  let (ty', _) = typecheck_term ctxt ty' (Type None) in
   let _ = List.fold_left (fun ty' p -> 
     let p' = typecheck_pattern ctxt p ty' in
     ctxt := env_push_pattern !ctxt p';
@@ -265,10 +282,34 @@ and typecheck_quantifier (ctxt: env ref) (q: quantifier) : quantifier =
     let (ctxt', p) = env_pop_pattern !ctxt in
     ctxt := ctxt'; p::acc
   ) [] ps in
-  (ps', ty, nat)
+  (ps', Infered ty', nat)
 
 and typecheck_pattern (ctxt: env ref) (p: pattern) (ty: term) : pattern =
-  raise (Failure "not yet implemented")
+  match p with
+    | PType u -> 
+      ignore (unify_term_term ctxt (Type None) ty); p
+    | PVar (n, ty') -> (
+      let (ty', _) = typecheck_term ctxt ty' (Type None) in
+      match named_term !ctxt n with
+	(* not a constant *)
+	| None | Some (Var _, _) -> 
+	  let ty' = unify_term_term ctxt ty' ty in
+	  PVar (n, ty')
+	| Some (Cste c, ty'') ->
+	  let ty' = unify_term_term ctxt ty' ty in
+	  let ty' = unify_term_term ctxt ty' ty'' in
+	  PCste (c, ty')
+	| _ -> raise (Failure "catastrophic")	  
+    )
+    | PAVar ty' -> (
+      let (ty', _) = typecheck_term ctxt ty' (Type None) in
+      let ty' = unify_term_term ctxt ty' ty in
+      PAVar ty'
+    )
+    | PCste _ -> raise (Failure "PCste: not yet implemented")
+    | PAlias _ -> raise (Failure "PAlias: not yet implemented")
+    | PApp _ -> raise (Failure "PApp: not yet implemented")
+
 
 and typecheck_declaration (ctxt: env ref) (decl: declaration) : declaration =
   match decl with
