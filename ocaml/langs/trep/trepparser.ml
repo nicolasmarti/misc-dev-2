@@ -276,8 +276,8 @@ and parse_alias (leftmost: Pos.t) : pattern Parser.t =
 ;;
 
 let rec parse_term (leftmost: Pos.t) : term Parser.t =
-  try_ (expr_term leftmost >>= fun x -> return (build x))
-  <|> try_ (parse_impl leftmost)
+  try_ (parse_impl leftmost)
+  <|> try_ (expr_term leftmost >>= fun x -> return (build x))
   <|> try_ (
     ?* blank >>= fun () ->
     parse_leftmost leftmost (
@@ -311,9 +311,9 @@ end st
 
 and parse_impl (leftmost: Pos.t) : term Parser.t =
   parse_quantifier_impl leftmost >>= fun quantifier ->
-
+  
   (surrounded (?* blank) (?* blank) (parse_string "->")) >>= fun _ ->
-
+  
   parse_term leftmost >>= fun te ->
     return (Impl (quantifier, te))    
 
