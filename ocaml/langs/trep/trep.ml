@@ -210,9 +210,13 @@ let rec infer_term (ctxt: env ref) (te: term) : term * term =
     | Obj o -> (Obj o, o#get_type)
 
     | Impl (q, te) -> (
+      let (ps, _, _) = q in
       let q = typecheck_quantifier ctxt q in
-      ctxt := env_push_quantifier !ctxt q;      
-      raise (Failure "Not Yet Implemented")
+      ctxt := env_push_quantifier !ctxt q;
+      let (te, ty) = typecheck_term ctxt te (Type None) in
+      let (ctxt', q) = env_pop_quantifier !ctxt (List.length ps) in
+      ctxt := ctxt';
+      (Impl (q, te), (Type None))
     )
 
 and typecheck_term (ctxt: env ref) (te: term) (ty: term) : term * term =
