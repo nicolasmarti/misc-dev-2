@@ -18,6 +18,7 @@ let _ =
     "*",  { prec = 3.0; kind = `Infix `Left };
     "/",  { prec = 3.0; kind = `Infix `Left };
     "~",  { prec = 5.0; kind = `Prefix }; (* unary minus *)
+    "&&",  { prec = 3.0; kind = `Infix `Left };
   ]
 
 let test_parse_print parse print s = 
@@ -84,6 +85,7 @@ let test_parse_typecheck_push_declaration s =
   let stream = Trepparser.Stream.from_string ~filename:"stdin" s in
   match parse_declaration (Position.File.top "test") stream with
   | Result.Ok (res, _) ->
+    printbox (token2box (declaration2token res) 400 2);
     let decl = typecheck_declaration ctxt res in
     printbox (token2box (declaration2token decl) 400 2);
     ctxt := env_push_decl !ctxt decl
@@ -96,3 +98,4 @@ let test_parse_typecheck_push_declaration s =
 let _ =  test_parse_typecheck_push_declaration "Bool :: Type";;
 let _ =  test_parse_typecheck_push_declaration "True :: Bool";;
 let _ =  test_parse_typecheck_push_declaration "False :: Bool";;
+let _ =  test_parse_typecheck_push_declaration "(&&) :: Bool -> Bool -> Bool";;

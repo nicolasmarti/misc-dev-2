@@ -202,3 +202,15 @@ let env_pop_decl (ctxt: env) : env * declaration =
     | _ -> raise (Failure "Catastrophic: empty frame list")
 ;;
 
+(* rubbish ... need to recompute size each time ... *)
+let env_new_fv (ctxt: env) (ty: term) : env * index = 
+  let newindex = List.fold_left (fun acc hd -> acc - List.length hd.fvs) (-1) ctxt.frames in  
+  match ctxt.frames with
+    | hd::tl -> (
+      match hd.fvs with
+	| thd::ttl ->	  
+	  ({frames = {hd with fvs = (ty, None)::ttl}::tl}, newindex)
+	| _ -> raise (Failure "Catastrophic: no declaration to pop")
+    )
+    | _ -> raise (Failure "Catastrophic: empty frame list")
+;;

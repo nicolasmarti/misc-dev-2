@@ -167,6 +167,20 @@ let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
 ;;
 
 (*
+  function to grab the type of an annotation
+  in case it's NoAnnotation, we create a fresh fv
+*)
+
+let get_annotation_type (ctxt: env ref) (ty: tyAnnotation) : term =
+  match ty with
+    | NoAnnotation -> 
+      let (ctxt', fvte) = env_new_fv !ctxt (Type None) in
+      ctxt := ctxt'; Var (Right fvte)
+    | Annotated ty -> ty
+    | Infered ty -> ty
+;;
+
+(*
   typechecking
 
   TODO: one function per typing cases
@@ -195,8 +209,8 @@ let rec infer_term (ctxt: env ref) (te: term) : term * term =
 	    | None -> raise (Failure "Unknown name")
 	    | Some ty -> (Cste s, ty)	    
     )
-    (* here we have a variable with a Debruijn index ... *)
-    | Var (Right index) -> (
+    (* here we have a binded variable with a Debruijn index ... *)
+    | Var (Right index) when index >= 0 -> (
       let (name, ty) = qv_name !ctxt index in
       (te, ty)
     )
@@ -228,6 +242,32 @@ and typecheck_term (ctxt: env ref) (te: term) (ty: term) : term * term =
   (te', ty'')
 
 and typecheck_quantifier (ctxt: env ref) (q: quantifier) : quantifier =
+  (* grab ps, (ty' = ) ty, nat from q*)
+  (* for each p in ps:
+     1) p' = typecheck p again ty'
+     2) push the pattern p'
+     3) ty' = shift ty' below p'
+  *)
+  (*
+    ps' = unpop |ps| patterns
+  *)
+  (*
+    returns (ps', ty, nat)
+  *)
+  let (ps, ty, nat) = q in
+  let ty' = get_annotation_type ctxt ty in
+  let _ = List.fold_left (fun ty' p -> 
+    let p' = typecheck_pattern ctxt p ty' in
+    ctxt := env_push_pattern !ctxt p';
+    shift_term ty' (List.length (List.hd (!ctxt).frames).qvs)			 
+  ) ty' ps in
+  let ps' = List.fold_left (fun acc hd -> 
+    let (ctxt', p) = env_pop_pattern !ctxt in
+    ctxt := ctxt'; p::acc
+  ) [] ps in
+  (ps', ty, nat)
+
+and typecheck_pattern (ctxt: env ref) (p: pattern) (ty: term) : pattern =
   raise (Failure "not yet implemented")
 
 and typecheck_declaration (ctxt: env ref) (decl: declaration) : declaration =
