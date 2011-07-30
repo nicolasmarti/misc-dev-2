@@ -41,7 +41,7 @@ let rec term2token (te : term) (p: place) : token =
 
     | Var (Right i) -> Verbatim (String.concat "" ["<"; string_of_int i; ">"])
 
-    | AVar _ -> Verbatim "_"
+    | AVar -> Verbatim "_"
 
     | Cste (Symbol (s, _)) -> Verbatim (String.concat "" ["("; s; ")"])
 
@@ -104,7 +104,7 @@ let rec term2token (te : term) (p: place) : token =
 
       (Box (
 	[Verbatim "\\"; Space 1]
-	@ (intercalate (List.map quantifier2token quantifiers) (Space 1))
+	@ (intercalate (List.map (quantifier2token true) quantifiers) (Space 1))
 	@ [Space 1; Verbatim "->"; Space 1; term2token te InAs]			    
       ))  
 
@@ -116,7 +116,7 @@ let rec term2token (te : term) (p: place) : token =
 	| InArg -> withParen
 	| _ -> fun x -> x	  
       )
-      (Box [quantifier2token quantifier; Space 1; Verbatim "->"; Space 1; term2token te InAs])  
+      (Box [quantifier2token false quantifier; Space 1; Verbatim "->"; Space 1; term2token te InAs])  
     )
 
 and arg2token arg =
@@ -138,8 +138,19 @@ and equation2token eq =
 				  ) Newline
 				)
 			       ]
-and quantifier2token q =
+and quantifier2token is_lambda q =
   match q with
+    | ([PAVar _], annot, nat) when ((not is_lambda) && (annot != NoAnnotation)) -> (
+      let encadr = (
+	match nat with
+	  | Explicit -> (fun x -> x)
+	  | Hidden -> withBracket
+	  | Implicit -> withAccol
+      ) in
+      match annot with
+	| NoAnnotation -> raise (Failure "impossible case")
+	| Annotated ty | Infered ty -> encadr (Box [term2token ty InAs])
+    )
     | (qs, annot, nat) ->  
       let encadr = (
 	match nat with
@@ -212,7 +223,7 @@ and declaration2token (d: declaration) =
       Box (
 	[ Verbatim "inductive"; Space 1;
 	  Verbatim name; Space 1]
-	@ (intercalate (List.map quantifier2token qs) (Space 1))
+	@ (intercalate (List.map (quantifier2token false) qs) (Space 1))
 	@ [Space (if List.length qs > 0 then 1 else 0); Verbatim "::"; Space 1; term2token ty InAs; Space 1; Verbatim ":="; Newline;
 	   Box (intercalate (List.map (fun (s, ty) -> Box [Verbatim "|"; Space 1; 
 							   (match s with
@@ -227,4 +238,9 @@ and declaration2token (d: declaration) =
 	
     )
     | _ -> raise (Failure "NYI")
+;;
+
+let term2string (te: term) : string =
+  let t = term2token te InAs in
+  box2string (token2box t 80 2)  
 ;;

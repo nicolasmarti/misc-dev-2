@@ -190,9 +190,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       else
 	v
 
-    | AVar None -> raise (Failure "AVar untypechecked")
-
-    | AVar i as v -> v
+    | AVar -> raise (Failure "AVar untypechecked")
 
     | Cste _ as c -> c
 
@@ -351,7 +349,7 @@ let subst_env (e: env) (s: substitution) : env =
     )
   ) ([], s) e.frames
   in
-  { frames = frames }
+  { frames = List.rev frames }
 ;;
 
 (* the environment is itself reminiscent of a substitution: 

@@ -1,6 +1,8 @@
 open Trep;;
 open Trepparser;;
 open Trepprinter;;
+open Def;;
+open Env;;
 
 open Planck;;
 open Position;;
@@ -16,6 +18,7 @@ let _ =
     "*",  { prec = 3.0; kind = `Infix `Left };
     "/",  { prec = 3.0; kind = `Infix `Left };
     "~",  { prec = 5.0; kind = `Prefix }; (* unary minus *)
+    "&&",  { prec = 3.0; kind = `Infix `Left };
   ]
 
 let test_parse_print parse print s = 
@@ -74,3 +77,25 @@ let _ = test_declaration "(+) {Type} [isNum {Type} plus] a b :=  plus a b" ;;
 let _ = test_declaration "(+) {Type} [isNum {Type} plus] a b :=  plus a b  where Num :: Type -> Type" ;;
 
 let _ = test_declaration "inductive List A :: Type := nil :: List A | cons :: A -> List A -> List A" ;;
+
+let ctxt = ref empty_ctxt;;
+
+let test_parse_typecheck_push_declaration s = 
+  Format.eprintf "input=%S@." s;
+  let stream = Trepparser.Stream.from_string ~filename:"stdin" s in
+  match parse_declaration (Position.File.top "test") stream with
+  | Result.Ok (res, _) ->
+    printbox (token2box (declaration2token res) 400 2);
+    let decl = typecheck_declaration ctxt res in
+    printbox (token2box (declaration2token decl) 400 2);
+    ctxt := env_push_decl !ctxt decl
+  | Result.Error (pos, s) ->
+    Format.eprintf "%a: syntax error: %s@." Position.File.format pos s;      
+    raise Pervasives.Exit
+;;
+
+
+let _ =  test_parse_typecheck_push_declaration "Bool :: Type";;
+let _ =  test_parse_typecheck_push_declaration "True :: Bool";;
+let _ =  test_parse_typecheck_push_declaration "False :: Bool";;
+let _ =  test_parse_typecheck_push_declaration "(&&) :: Bool -> Bool -> Bool";;
