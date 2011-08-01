@@ -25,6 +25,9 @@
 <langs/python>: include
 <langs/python/python.ml>: pkg_opycaml
 
+<langs/doudou>: include
+<langs/doudou/doudou.{ml,byte,native}>: pkg_unix, pkg_str
+
 <finance>: include
 <finance/ibtws>: include
 <finance/csvbroker.ml>: pkg_spotlib, pkg_planck

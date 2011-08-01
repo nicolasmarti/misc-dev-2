@@ -7,3 +7,5 @@ tests/testlisp.native
 tests/testauto.native
 
 app/mypython/mypython.native
+
+langs/doudou/doudou.native

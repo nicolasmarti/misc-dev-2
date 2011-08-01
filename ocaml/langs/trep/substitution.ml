@@ -364,20 +364,6 @@ let fvs_substitution (l: (term * term option) list) (startindex: int): (int * su
 ;;
 
 let env_substitution (e: env) : substitution =
-(*
-  let (_, s) = List.fold_right (fun hd (i, acc) ->
-    let (_, fvs, _, _, _, _, _) = hd in
-    let (i', s') = fvs_substitution fvs i in
-    (i', IndexMap.merge (fun k valacc vals ->
-      match valacc, vals with
-	| None, None -> raise (Failure "Catastrophic: in env_substitution, both substitution have no data for a given key")
-	| Some v1, Some v2 ->  raise (Failure "Catastrophic: in env_substitution, both substitution have a data for a given key")
-	| Some v1, None -> Some v1
-	| None, Some v2 -> Some v2
-     ) acc s')
-    
-  ) e.quantified (fvs_substitution e.fvs (-1)) in
-  s*)
   raise (Failure "TOREDO")
 ;; 
 
