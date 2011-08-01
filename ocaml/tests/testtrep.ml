@@ -85,7 +85,7 @@ let test_parse_typecheck_push_declaration s =
   let stream = Trepparser.Stream.from_string ~filename:"stdin" s in
   match parse_declaration (Position.File.top "test") stream with
   | Result.Ok (res, _) ->
-    printbox (token2box (declaration2token res) 400 2);
+    (*printbox (token2box (declaration2token res) 400 2);*)
     let decl = typecheck_declaration ctxt res in
     printbox (token2box (declaration2token decl) 400 2);
     ctxt := env_push_decl !ctxt decl
