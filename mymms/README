@@ -1,0 +1,76 @@
+This the mymms proof assistant
+
+*********************************
+
+Require software
+  ocaml >= 3.10
+
+*********************************
+
+You need to set some variable environment
+1) set your path such that the mymms executable is reachable
+    ex: export PATH=(path to mymms sources)/src/app/mymms/:$PATH
+
+2) set the MYMMS_STDLIB_PATH to the stdlib directory
+   ex: export MYMMS_STDLIB_PATH=(path to mymms source)/stdlib/
+   This environment variable points to the repositories containing
+   compiled mymms file (.mo), that will be load on script through
+   the Require command.
+
+*********************************
+
+building mymms:
+    make
+
+(beware that after building mymms, the Makefile will build the
+standard library. Thus the 1) variable environment is essential)
+
+REMARK: by default llvm and python mode are disable
+
+*********************************
+
+No real documentation yet (sorry). But there is a tutorial in doc !!! the source of the tutorial can be find in test/mymms
+
+
+ *) the src repositories is organized as follows:
+
+ - lib: some usefull, general functions and data-structures
+ - Core: 
+   	 - kernel: definition of the lambda calculus, all related functions, typechecking algorithm
+	 - interp: eager interpreter
+	 - vm: eager virutal machine 
+	 - jit: jit compiler with llvm (really early stage)
+	 - proof: proof mode functions, tactics
+	 - minima: global state management, mymms commands
+ - Primitives: ocaml implemented mymms primitives
+ - oracles: ocaml implemented oracles for helping typechecking (for now only type classes)
+ - app:
+	 - parser: ocamlyacc ocamllex files
+	 - python: code for python virtual machine
+	 - mymms: executable
+	 
+
+Once finished with the tutorial, more advanced examples can be found in test/mymms:
+
+    *) coq.m: show the power of high-order types. Example of a function which type depends on its first arguments
+       	      ex: 
+	      	  msum 2 : Float -> Float -> Float
+		  msum 3 : Float -> Float -> Float -> Float
+		  msum m : Float -> ..... -> Float -> Float
+		       	   -----------------------
+				     n
+
+    *) deplist.m: sample example with fixed size list (dependent type)
+
+    *) matrix.m: more advanced dependent type example, matrices
+
+    *) PL.m: a first tentative of implementation of propositional logic
+
+    *) shadow.m: example of shadow types
+
+    *) sort.m: insertion sort for list
+
+    *) terminaison.m: example of function with multiple decreasing
+     algorithm (cannot be written as it in Coq)
+
+

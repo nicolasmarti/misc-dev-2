@@ -1,0 +1,121 @@
+The daemon runs on port: 8000
+The object's uri is: PYRO://127.0.0.1:8000/7f00010158301d6a4870f26a803a753e66
+<ib.opt.connection.Connection object at 0x24270d0>
+watcher: <NextValidId orderId=1>
+watcher: <OpenOrderEnd >
+watcher: <Error id=-1, errorCode=2104, errorMsg=Market data farm connection is OK:ibdemo>
+watcher: <Error id=-1, errorCode=2107, errorMsg=HMDS data farm connection is inactive but should be available upon demand.demohmds>
+watcher: <UpdateAccountValue key=AccountCode, value=DU15195, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccountReady, value=true, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccountType, value=UNIVERSAL, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedCash, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedCash, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedCash-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedCash-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedDividend, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedDividend-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AccruedDividend-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AvailableFunds, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AvailableFunds-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=AvailableFunds-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Billable, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Billable-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Billable-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=BuyingPower, value=2000336.80, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=CashBalance, value=500084.20, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=CashBalance, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Currency, value=BASE, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=Currency, value=USD, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Cushion, value=1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=DayTradesRemaining, value=-1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=DayTradesRemainingT+1, value=-1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=DayTradesRemainingT+2, value=-1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=DayTradesRemainingT+3, value=-1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=DayTradesRemainingT+4, value=-1, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=EquityWithLoanValue, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=EquityWithLoanValue-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=EquityWithLoanValue-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=ExcessLiquidity, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=ExcessLiquidity-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=ExcessLiquidity-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=ExchangeRate, value=1.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=ExchangeRate, value=1.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullAvailableFunds, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullAvailableFunds-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullAvailableFunds-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullExcessLiquidity, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullExcessLiquidity-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullExcessLiquidity-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullInitMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullInitMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullInitMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullMaintMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullMaintMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FullMaintMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FutureOptionValue, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=FutureOptionValue, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=FuturesPNL, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=FuturesPNL, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=GrossPositionValue, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=GrossPositionValue-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=IndianStockHaircut, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=IndianStockHaircut-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=IndianStockHaircut-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=InitMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=InitMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=InitMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=Leverage-S, value=0.00, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadAvailableFunds, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadAvailableFunds-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadAvailableFunds-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadExcessLiquidity, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadExcessLiquidity-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadExcessLiquidity-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadInitMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadInitMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadInitMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadMaintMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadMaintMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadMaintMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=LookAheadNextChange, value=0, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=MaintMarginReq, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=MaintMarginReq-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=MaintMarginReq-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=NetLiquidation, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=NetLiquidation-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=NetLiquidation-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=NetLiquidationByCurrency, value=500084.20, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=NetLiquidationByCurrency, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=OptionMarketValue, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=OptionMarketValue, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=PASharesValue, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=PASharesValue-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=PASharesValue-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=PNL, value=true, currency=, accountName=DU15195>
+watcher: <UpdateAccountValue key=RealizedPnL, value=84.20, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=RealizedPnL, value=84.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=RegTEquity, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=RegTEquity-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=RegTMargin, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=RegTMargin-S, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=SMA, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=SMA-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=StockMarketValue, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=StockMarketValue, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=TotalCashBalance, value=500084.20, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=TotalCashBalance, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=TotalCashValue, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=TotalCashValue-C, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=TotalCashValue-S, value=500084.20, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=UnalteredInitMarginReq, value=-1.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=UnalteredMaintMarginReq, value=-1.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=UnrealizedPnL, value=0.00, currency=BASE, accountName=DU15195>
+watcher: <UpdateAccountValue key=UnrealizedPnL, value=0.00, currency=USD, accountName=DU15195>
+watcher: <UpdateAccountValue key=WhatIfPMEnabled, value=true, currency=, accountName=DU15195>
+watcher: <UpdatePortfolio contract=<ib.ext.Contract.Contract object at 0x1d9d950>, position=0, marketPrice=60.29999925, marketValue=0.0, averageCost=0.0, unrealizedPNL=0.0, realizedPNL=73.2, accountName=DU15195>
+watcher: <UpdateAccountTime timeStamp=08:34>
+watcher: <UpdatePortfolio contract=<ib.ext.Contract.Contract object at 0x1d9d950>, position=0, marketPrice=76.1749954, marketValue=0.0, averageCost=0.0, unrealizedPNL=0.0, realizedPNL=11.0, accountName=DU15195>
+watcher: <UpdateAccountTime timeStamp=08:34>
+watcher: <UpdateAccountTime timeStamp=08:34>
+watcher: <AccountDownloadEnd accountName=DU15195>
+watcher: <UpdateAccountTime timeStamp=08:37>

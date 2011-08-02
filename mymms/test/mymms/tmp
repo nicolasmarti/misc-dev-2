@@ -1,0 +1,8 @@
+
+Inductive nexpr (A: Type) (NumA: Num A) : Type :=
+| cste: A -> nexpr A NumA
+| var: String -> nexpr A NumA
+| eadd: nexpr A NumA -> nexpr A NumA -> nexpr A NumA
+| esub: nexpr A NumA -> nexpr A NumA -> nexpr A NumA
+| emul: nexpr A NumA -> nexpr A NumA -> nexpr A NumA
+| ediv: nexpr A NumA -> nexpr A NumA -> nexpr A NumA.

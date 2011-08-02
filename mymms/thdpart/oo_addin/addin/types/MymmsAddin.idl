@@ -1,0 +1,27 @@
+#ifndef __org_openoffice_sheet_addin_XTestAddin_idl__
+#define __org_openoffice_sheet_addin_XTestAddin_idl__
+
+#include <com/sun/star/uno/XInterface.idl> 
+
+module org { 
+  module openoffice { 
+    module sheet { 
+      module addin {
+
+	interface MymmsAddin : com::sun::star::uno::XInterface
+	{
+
+	  string funlambda( [in] any nValue ); 
+	  string termtype( [in] string nValue);
+	  string termvalue( [in] string nValue);
+	  string simplterm( [in] any fct, [in] any args);
+	  string interpterm( [in] any fct, [in] any args);
+
+	};
+      }; 
+    }; 
+  }; 
+};
+
+#endif
+

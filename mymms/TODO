@@ -1,0 +1,18 @@
+TODO List:
+
+Mymms:
+*) implement jit
+*) implement the oracle for equality goals
+
+
+Finance:
+*) implem Date, TSer and Indicators (+ prefine ones)
+*) optimization + ther GSL stuffs
+*) need yield curve construction
+*) need underlying futur price from options
+*) n-nomial trees
+*) contract language
+
+
+Edito:
+*) ... everything ... ?

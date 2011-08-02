@@ -1,0 +1,36 @@
+#This file is part of Mymms.
+
+#Mymms is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+
+#Mymms is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+
+#You should have received a copy of the GNU General Public License
+#along with Mymms.  If not, see <http://www.gnu.org/licenses/>.
+
+# Copyright (C) Nicolas Marti
+
+NATURE = executable
+
+DEPENDENCY = 
+
+FILES = test.$(EXT)
+
+
+INCLUDE = ./ \
+	-I ../../core2/kernel/ \
+	-I ../../lib/
+
+LIBRARY = str.$(LIBEXT) \
+	  ../../lib/lib.$(LIBEXT) \
+	  ../../core2/kernel/kernel.$(LIBEXT)	
+
+
+EXEC = test
+
+include ../../../Makefile.inc

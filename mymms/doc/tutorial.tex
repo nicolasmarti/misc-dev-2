@@ -1,0 +1,629 @@
+\documentclass[a4paper,5pt,onecolumn]{article}
+
+% truc de base
+
+% Permission is granted to copy, distribute and/or modify this
+% document under the terms of the GNU Free Documentation License,
+% Version 1.2 or any later version published by the Free Software
+% Foundation; with no Invariant Sections, no Front-Cover Texts and
+% no Back-Cover Texts.  A copy of the license is included in the
+% section entitled "GNU Free Documentation License".
+%
+% Copyright (C) 2008 Nicolas Marti
+
+\usepackage[latin1]{inputenc}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+%\usepackage[width=20cm,height=29cm]{geometry}
+\usepackage[width=18cm,height=25cm]{geometry}
+%\usepackage{verbatim}
+% pour les graphique ext
+\usepackage{graphicx}
+
+%pour que l'env math marche enfin !!!! X(
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{color}
+\usepackage{proof}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks, 
+           citecolor=black,
+           filecolor=black,
+           linkcolor=black,
+           urlcolor=black,
+           bookmarksopen=true,
+           pdftex}
+
+\hfuzz = .6pt % avoid black boxes
+
+\usepackage{url}
+
+\newcommand{\bnfeq}{::=}
+\newcommand{\matchwith}[2]{{\tt match \ } #1 {\tt \ with\ } #2}
+\newcommand{\consof}[2]{{\tt cons \ } #1 {\tt \ of\ } #2}
+\newcommand{\type}{{\tt type}}
+\newcommand{\myinfer}[3]{\infer[\texttt{#1}]{#2}{#3}}
+\newcommand{\betarel}[1]{\rightarrow^{#1}_\beta}
+\newcommand{\alpharel}[1]{\rightarrow^{#1}_\alpha}
+
+\def\us{\char`\_}
+
+
+%pour l'index
+\usepackage{makeidx}
+
+\title{Mymms Programming Language Tutorial}
+
+\author{Nicolas MARTI}
+
+
+\begin{document}
+
+\maketitle
+
+\abstract{This tutorial require good knowledge about functional
+  programing language, and logic. Experience with a proof assistant
+  (especially Coq) is a plus, but is not required.}
+
+\section{Introduction}
+
+Mymms includes:
+\begin{itemize}
+\item a programming language based on the Calculus of Inductive
+  Construction, extensible with primitives (types, functions, ...),
+  and oracles (functions which goal is to produce a term of a given
+  type, used by the typechecking algorithm for inference and
+  non-trivial unification over types), in ocaml
+\item an interactive proof mode (a la Coq)
+\item a jit compiler (Partially implemented)
+\item a python virtual machine that can use all the previous features
+  (Partially implemented)
+\end{itemize}
+
+Please consult the README file in the root of the source to properly
+compile mymms and set the require environment variables.
+
+\section{The programming language}
+
+In this part of the tutorial we will first focus on the programming
+language. We will first introduce the basics of the language through a
+set a illustrating examples. Then we will review more formally all the
+language constructions. Eventually, we will resume all the presented
+language features into more advanced examples.
+
+Before starting, one remark: whereas most of functional programming
+language, like ocaml or haskell, include separates languages for terms
+and types, the calculus of construction (and all its extensions, such
+as the calculus of inductive construction, further refered as CiC)
+merges both terms and types into a unique syntax. This is actually the
+source of its power!
+
+First thing first, let's start our serie of examples with the
+definition of data-structures: inductive types (also known as GADTs).
+The most simple one is peano implementation of natural numbers:
+
+\begin{verbatim}
+
+Inductive nat : Type :=
+| O: nat
+| S: nat -> nat.
+
+\end{verbatim}
+
+Save the following script into a file \texttt{tutorial1.m} and then
+invoke mymms though \texttt{mymms -f tutorial.m}. If everything goes
+well mymms should output:
+
+\begin{verbatim}
+
+------------- Definition -------------
+O Defined
+S Defined
+nat Defined
+natinduc Defined
+--------------------------------------
+
+\end{verbatim}
+
+What happened? We created an inductive type named \texttt{nat} with
+two constructor: \texttt{O} and \texttt{S}. More intuitively we
+declared the type \texttt{nat} (itself of type \texttt{Type}), a set
+of the term2 of type nat that can be build through the two
+constructors (More formally the the kleene closure\footnote{so an
+  infinite set of finite terms} of the constructors). This set/type
+contains \texttt{0}, (\texttt{S} \texttt{O}), (\texttt{S} (\texttt{S}
+\texttt{0})), ...
+
+What is this \texttt{Type}??? Remember that in the CiC, types and
+terms are merges into one language. \texttt{Type} is somehow the root
+type. It is the type of the sets and of the logical propositions.
+
+Mymms defined \texttt{O}, \texttt{S}, \texttt{nat},
+\texttt{natinduc}. This last one is the induction principle of the
+type \texttt{nat}: a basic, but useful lemma that can be used to prove
+lemmas over the naturals.
+
+We can ask the types of terms to mymms through the command
+\texttt{Check}. For instance:
+
+\begin{verbatim}
+
+Check natinduc.
+
+\end{verbatim}
+
+will ouput
+
+\begin{verbatim}
+
+natinduc: V (Pred: nat -> Type). (Pred O) -> (V (Hyp: nat). (Pred Hyp) -> Pred (S Hyp)) -> V (x: nat). Pred x
+
+\end{verbatim}
+
+This term is a lemma. Let us explains this type. In second ordered
+lambda calculus, a lambda abstraction can be written \texttt{$\lambda$
+  (x: A). t} (in mymms syntax, \texttt{\ (x: A). t}), with its type
+being \texttt{A -> B} (when \texttt{t} is of type B). Somehow
+\texttt{->} is also a quantification, but where the variable is
+omitted because it will not appears in B (as it is second
+order). However it can be the case in CiC, which explicitely
+quantifies the type on the l.h.s of an arrow (formally
+\texttt{$\forall$ (a: A). B} (in mymms syntax, \texttt{V (x: A). t}),
+however when the variable does not appears in the r.h.s the arrow
+notation can be used).
+
+Reading the \texttt{natinduc} lemma informally: 
+\begin{itemize}
+\item \texttt{V (Pred: nat -> Type)}: given a predicate \texttt{Pred}
+  on elements of \texttt{nat}, ...
+\item \texttt{(Pred O)} : given a proof that the predicate is valid for
+  the element \texttt{O} of \texttt{nat}, ...
+\item \texttt{(V (Hyp: nat). (Pred Hyp) -> Pred (S Hyp))}: given a
+  proof that for any nat (\texttt{Hyp}), such that \texttt{Pred} is
+  valid, then \texttt{Pred} is also valid for the next nat, ...
+\item \texttt{V (x: nat). Pred x}: then the predicate \texttt{Pred} is
+  valid for all the element in the set \texttt{nat}
+\end{itemize}
+
+This is a well-known induction for the natural, and mymms just give it
+for free with the definition of the naturals! Yet, nothing fancy here
+... though always having an inductive principle for every defined
+inductive types is really convenient. Unfortunately, really difficult
+lemmas are never solved directly with the induction principles.
+
+So now that we defined the natural numbers, we should define some
+functions on them. The first that comes in mind is the addition! In
+mymms, this could be written as:
+
+\begin{verbatim}
+
+Recursive natplus (x y: nat) [0] : nat :=
+  match x with
+    | O ==> y
+    | S x ==> S (natplus x y).
+
+------------- Definition -------------
+natplus Defined
+--------------------------------------
+
+\end{verbatim}
+
+\texttt{Recursive} allows to define recursive functions. Here we
+defined \texttt{natplus}, which takes two arguments (\texttt{x} and
+\texttt{y}) of type \texttt{nat}, and returns a term of type
+\texttt{nat}. You may be surprise to find the notation
+\texttt{[0]}. This number is an index of arguments (here \texttt{x}),
+which indicates to the function that its first arguments decrease in
+size at each recursive invocation of \texttt{natplus}. This helps the
+typechecker to verify that the recursive function will always be
+terminating. Why is that? Because the CiC is strongly normalizing (all
+computation finishes). This is a condition sine qua non for
+lambda-calculus that are intend to represent proof. Intuitively,
+without strong normalization, a lambda calculus could have a term (==
+proof) of type \texttt{A -> B}, for any \texttt{A} and \texttt{B}
+(imagine false -> true), which is obviously false. The proof (here in
+ocaml):
+
+\begin{verbatim}
+
+let rec f x = f x
+
+\end{verbatim}
+
+We can further implement the multiplication and check its type (here
+we removed all type annotation, mymms will not care):
+
+\begin{verbatim}
+
+Recursive natmul x y [0] :=
+  match x with
+    | O ==> O
+    | S x ==> natplus y (natmul x y).
+
+------------- Definition -------------
+natmul Defined
+--------------------------------------
+
+Check natmul.
+
+natmul: nat -> nat -> nat
+
+\end{verbatim}
+
+Ok everything is fine. Now let's implement something else:
+lists. Lists are parameterized by the type of their element. In mymms:
+
+\begin{verbatim}
+
+Inductive list (A: Type) : Type :=
+| nil: list A
+| cons: A -> list A -> list A.
+
+\end{verbatim}
+
+When we want the inductive type to be parameterized (here by a type
+\texttt{A}), we simply put arguments after the inductive type
+name. This quantification will span over all the constructor (hence
+\texttt{nil} and \texttt{cons} are in the scope of \texttt{A}).
+
+Now we can build a list of naturals, for instance:
+
+\begin{verbatim}
+
+Check (cons nat O (cons nat O (nil nat))).
+
+cons nat O (cons nat O (nil nat)): list nat
+
+\end{verbatim}
+
+However, it is cumbersome to always repeat \texttt{nat}. Indeed as it
+is the type of the second argument of cons, mymms should be able to
+infere it. We can verify it through using the special term \texttt{\_}
+(which stand for a fresh variable that mymms will implement and infere
+during typechecking).
+
+\begin{verbatim}
+
+Check (cons _ O (cons _ O (nil _))).
+
+cons nat O (cons nat O (nil nat)): list nat
+
+\end{verbatim}
+
+Fine, but it would be better to avoid to put one \texttt{\_} after
+both \texttt{nil} and \texttt{cons} each time we use them. We can tell
+that the first argument of both constructors is implicite through the
+following command:
+
+\begin{verbatim}
+
+Implicite cons [1].
+Implicite nil [1].
+
+\end{verbatim}
+
+Thus we can create the same previous list as:
+
+\begin{verbatim}
+
+Check (cons O (cons O nil)).
+
+cons O (cons O (nil)): list nat
+
+\end{verbatim}
+
+But what if I want an empty list of nat? The first arguments can only
+be infered if I give it some type. However, standing alone mymms will
+give us an error. For instance:
+
+\begin{verbatim}
+
+Check nil.
+
+termchecking error (incomplete inference)!
+
+unresolved  (?T: Type) in  (nil ?T: list ?T)
+
+Typecheck: Error!!
+
+\end{verbatim}
+
+Mymms told us that the term does not type because its implicite
+argument cannot be infered. To remove the implicite arguments from a
+defined term, we put the \texttt{@} prefix.
+
+\begin{verbatim}
+
+Check @nil.
+nil: V (A: Type). list A
+
+\end{verbatim}
+
+Let us write well-known functions for list:
+
+\begin{verbatim}
+
+
+Recursive map A B (f: A -> B) (l: list A) [3] :=
+   match l with
+     | nil ==> nil
+     | cons hd tl ==> cons (f hd) (map _ _ f tl).
+Implicite map [2].
+
+Recursive foldl A B (f: A -> B -> A) a l [4] :=
+   match l with
+     | nil ==> a
+     | cons hd tl ==>
+       	     foldl _ _ f (f a hd) tl .
+Implicite foldl [2].
+
+Recursive foldr A B (f: B -> A -> A) a l [4] :=
+   match l with
+     | nil ==> a
+     | cons hd tl ==>
+       	     f hd (foldr _ _ f a tl).
+Implicite foldr [2].
+
+Recursive intercalate A a (l: list A) [2] :=
+  match l with
+    | cons hd1 (cons hd2 tl) ==> cons hd1 (cons a (intercalate _ a (cons hd2 tl)))
+    | _ ==> l.
+Implicite intercalate [1].
+
+\end{verbatim}
+
+Let us write a simple function to illustrate the termination notation
+when it need to span on more than one arguments. We will write a
+function taking two lists and returning their mixing.
+
+\begin{verbatim}
+
+Recursive mixlist A (l1 l2: list A) [1, 2] :=
+  match l1 with
+    | nil ==> l2
+    | cons hd1 tl1 ==>
+      	   cons hd1 (mixlist _ l2 tl1).
+
+\end{verbatim}
+
+Here the problem comes from the fact that we swap the lists on the
+recursive call. Thus the second arguments does not necessarily
+decrease in size. Yet, the sum of the two lists sizes decrease. To
+indicate to mymms to look for the sum of several arguments, we just
+give their indices list.
+
+So far so good. But nothing that ocaml or haskell can't do. What about
+more a complicated type. For instance a list which type contains its
+size? We can implement them like:
+
+\begin{verbatim}
+
+Inductive listn (A: Type) : nat -> Type :=
+| niln: listn A O
+| consn: V (n: nat). A -> listn A n -> listn A (S n).
+
+\end{verbatim}
+
+But why is the type of \texttt{listn (A: Type)} is \texttt{nat ->
+  Type}??? Actually the type of a set is always \texttt{Type} (look at
+the final type of both constructor, it is indeed of type
+\texttt{Type}). But somehow, we cannot put the size as an argument of
+the inductive type, because it is not the same in both
+constructor. Thus the \texttt{nat -> Type}. The \texttt{nat} is a
+parameter which quantification is not in the scope of the
+constructors.
+
+The type checking for this kind of inductive type is much more
+difficult (mainly due to unification). For instance, the append
+function on \texttt{listn} will be typecheck, but the reverse list
+will fail (to work fine the typechecker should be aware of the
+commutativity of the addition over \texttt{nat}). 
+
+If you want to test them, here they are (the first arguments of each
+constructor of \texttt{listn} has been declared as implicite):
+
+\begin{verbatim}
+
+Recursive appendn A n1 n2 (l1: listn A n1) (l2: listn A n2) [3] : listn A (natplus n1 n2) :=
+   match l1 with
+     | niln ==> l2
+     | consn n1 a l1 ==> consn _ a (appendn _ _ _ l1 l2).
+
+Implicite appendn [3].
+
+Recursive revn A n (l: listn A n) [2] : listn A n :=
+   match l with
+     | niln ==> niln
+     | consn n e l ==> appendn (revn _ _ l) (consn _ e niln).
+
+\end{verbatim}
+
+In difficult situation (inference of unification), the kernel can ask
+help from a set of oracles. These are decision procedure taking as
+input a type, and giving for result a term supposely of the same
+type. The kernel typechecks the result for verification. Currently the
+type classes are implemented using an oracle (we will see it
+later). It is scheduled to implement a decision procedure for equality
+using lemmas of commutativity and associativity (and more generally
+equality). Once performed, mymms should be able to typecheck correctly
+\texttt{revn}.
+
+But what is the real interest of the dependent types? Their basic role
+is to cut invalid destructor. For instance, if I know that the size of
+some list is greater than zero, then I should not consider the
+destructor \texttt{niln}. Mymms, as most functional programming
+language support the basic \texttt{let} construction, has in:
+
+\begin{verbatim}
+
+Definition fct x := let x := S x in natplus x x.
+
+\end{verbatim}
+
+The \texttt{Definition} command allow to define non-recursive
+function. Another use of \texttt{let} is to destruct an inductive type
+when their is only one possible destructor. For instance:
+
+\begin{verbatim}
+
+Definition fct A n (l: listn A (S n)) := let consn _ e l := l in e.
+
+\end{verbatim}
+
+We are destructing an inductive type with two constructors, yet we
+know from the dependent type that the term can only be a
+\texttt{consn}.
+
+A really useful dependent type for proof assistant is the definition
+of equally:
+
+\begin{verbatim}
+
+Inductive eq A (a: A) : A -> Type :=
+| eqrefl: eq A a a.
+
+\end{verbatim}
+
+Basically, two terms are equal if they are ... the same term. It could
+be surprising, but remember that it is only a definition. What is
+important is what can we do with this definition. And actually, we can
+do a lot! This definition of equality, is the univeral congruence for
+typechecking over any term! If you don't believe me I will give you a
+proof (and so you will see a little bit of the proof mode).
+
+Here is the lemma I will prove: for all type \texttt{A}, and for two
+of its elements \texttt{a} and \texttt{b}, for all predicat \texttt{P}
+on \texttt{A}, if \texttt{P} is valid on \texttt{a}, then it is valid
+on \texttt{b}. Or more formally:
+
+\begin{verbatim}
+
+Lemma congruence_eq: V (A: Type) (a b: A) (H: eq a b) (P: A -> Type). P a -> P b.
+
+\end{verbatim}
+
+We remind that the curry-howard isomorphism put in relation logical
+proposition with types, and proof with term. Thus we need to define th
+body of \texttt{congruence\_eq}. Rather than giving the function in a
+whole, we use the proof mode, which can be seen as a way to
+iteratively build a term of a given type.
+
+Entering the previous lemma definition in mymms leads to the following state:
+
+\begin{verbatim}
+
+----------------------------
+V (A: Type). V (a: A). V (b: A). (eq A a b) -> V (P: A -> Type). (P a) -> P b
+
+\end{verbatim}
+
+
+The line separates the variables that we can use (on the top, and for
+now empty), and the type of the term we need to build. We will
+introduce the quantified variables. Intuitively it means that we build
+the term as a sequence of lambda abstractions quantifying a term that
+still need to be given. However, as we are now under the lambdas, we
+are in the scope of the variables.
+
+\begin{verbatim}
+
+intros.
+
+Hyp : P a
+P : A -> Type
+H : eq A a b
+b : A
+a : A
+A : Type
+----------------------------
+P b
+
+\end{verbatim}
+
+Thus we need to is to give a term of type \texttt{P b}. If we were
+writing the lambda term be hand we should be able to destruct a term
+through a \texttt{match .... with} instruction. To do the same in the
+proof mode, the command is \texttt{destruct} followed by the
+destructed term. The inductive type \texttt{eq} has only one
+constructor \texttt{eqrefl}. By definition, the second and third
+arguments are the same. What does happen when destructing? Both are
+unified to the same variable. In mymms:
+
+\begin{verbatim}
+
+destruct H.
+
+a1 : A
+A1 : Type
+Hyp : P b
+P : A -> Type
+H : eq A b b
+b : A
+a : A
+A : Type
+----------------------------
+P b
+
+\end{verbatim}
+
+Now the goal is trivial, as the term \texttt{Hyp} has exactly the good
+type, in mymms:
+
+\begin{verbatim}
+
+exact Hyp.
+
+No more subgoals
+
+\end{verbatim}
+
+We can now exit the proof mode and let mymms verify the whole proof:
+
+\begin{verbatim}
+
+Qed.
+
+proof complete.
+
+\end{verbatim}
+
+We finished our proof through \texttt{Qed.} and thus mymms does not
+save our proof but an axiom (which does not compute). The proof mode
+can also be used to build functions (like \texttt{map}, ...)  which
+you may want to compute later. In this case you have to end the proof
+with the command \texttt{Defined}.
+
+This closed this first version of the tutorial. For further examples,
+the reader should look at the standard library (repository
+\texttt{stdlib}) and the tests for mymms (repository
+\texttt{test/mymms})
+
+[TODO: Class Type example, more advanced example (maybe the balanced
+  tree)]
+
+\subsection{GADTs}
+
+TODO
+
+\subsection{Functions}
+
+TODO
+
+\subsubsection{Non recursive functions}
+
+TODO
+
+\subsubsection{Recursive functions}
+
+TODO
+
+\subsection{Advanced Examples}
+
+\subsection{Proof Mode}
+
+\section{Commands}
+
+\end{document}
+
+
