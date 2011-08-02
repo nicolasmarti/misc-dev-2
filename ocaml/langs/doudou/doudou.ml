@@ -65,6 +65,8 @@ type frame = {
   ty: term;
   (* its nature *)
   nature: nature;
+  (* its value: most stupid one: itself *)
+  value: term;
     
   (* the free variables *)
   fvs: (term * term) list;
