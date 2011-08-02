@@ -53,9 +53,9 @@ and equation = (pattern * nature) list * term
 and pattern = PType
 	      | PVar of name * term
 	      | PAVar of term
-	      | PCste of symbol * term
+	      | PCste of symbol
 	      | PAlias of name * pattern * term
-	      | PApp of pattern * (pattern * nature) list * term
+	      | PApp of symbol * (pattern * nature) list * term
 
 (* context of a term *)
 type frame = {
