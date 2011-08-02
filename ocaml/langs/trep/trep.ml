@@ -27,9 +27,57 @@ type unification_result = Unified
 (* this exception is just for rising on defualt case *)
 exception UnificationFail;;
 
-let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term = 
+(*
+  reduction of terms
+  several strategy are possible:
+  for beta reduction: Lazy or Eager
+  possibility to have strong beta reduction
+  delta: unfold equations (replace cste with their equations)
+  iota: try to match equations l.h.s
+  deltaiotaweak: if after delta reduction, a iota reduction fails, then the delta reduction is backtracked
+  zeta: compute the let bindings
+  eta: not sure if needed
+
+  all these different strategy are used for several cases: unification, typechecking, ...
+  
+*)
+type strategy = 
+  | Lazy 
+  | Eager;;
+
+type interp_strat = {
+  strat: strategy;
+  beta: bool;
+  betastrong: bool;
+  delta: bool;
+  iota: bool;
+  deltaiotaweak: bool;
+  zeta: bool;
+  eta: bool;
+};;
+
+let unification_strat = {
+  strat = Lazy;
+  beta = true;
+  betastrong = false;
+  delta = true;
+  iota = true;
+  deltaiotaweak = false;
+  zeta = true;
+  eta = true;
+};;
+
+(*
+
+  te must be well typed w.r.t. ctxt
+*) 
+let rec reduction_term (ctxt: env ref) (start: interp_strat) (te: term) : term =
+  te
+
+and unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term = 
   (*printf "(infer) %s |- %s =?= %s\n" (env2string !ctxt) (term2string te1) (term2string te2);*)
   try (
+
     match te1, te2 with
       (* THIS IS FALSE DUE TO THE UNIVERSE *)
       | Type _, Type _ -> Type None
@@ -59,28 +107,15 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
 
       | _, AVar -> raise (Failure "untypedcheck term")
 
-    (* constante stuff ... can be a bit tricky ... *)
+      (* constante stuff ... can be a bit tricky ... *)
       | Cste c1, Cste c2 when c1 = c2 -> Cste c1
 
-
-    (* in the folowwing two cases, only definition unambiguously unfoldable to a term should be
-       considered as unifyable:
-       - constante refering to an Inductive, to a RecordDecl, or a unique equation 
-          which might need to be rewrite as a lambda abstraction 
-       N.B.: we should returns the Cste c1, or c2, as after unification their definition would have been applied to the proper substitution
-    *) 
-      | Cste c1, _ ->
-	raise (Failure "NYI")
-
-      | _, Cste c2 ->
-	raise (Failure "NYI")
-
-    (* for now we only support unification on equal object,
-       here equality is strict (same object in memory)
-       there are other possibility:
-       - add a method to object
-       - compare generated string representation
-    *)
+      (* for now we only support unification on equal object,
+	 here equality is strict (same object in memory)
+	 there are other possibility:
+	 - add a method to object
+	 - compare generated string representation
+      *)
 
       | Obj o1, Obj o2 when o1 = o2 -> Obj o1
 
@@ -100,12 +135,20 @@ let rec unify_term_term (ctxt: env ref) (te1: term) (te2: term) : term =
 	ctxt := ctxt';
 	(* and finally returns the result *)
 	Impl (q, te)
-	  
+
       | _ -> raise UnificationFail
   ) with
       | UnificationFail -> (
-	(* here we should try to reduce the terms *)
-	raise UnificationFail
+	
+	(* we reduce te1 and te2 and assure that they changed *)
+	let te1' = reduction_term ctxt unification_strat te1 in
+	let te2' = reduction_term ctxt unification_strat te1 in
+	if (te1 = te2 && te2 = te2') then raise UnificationFail;
+	(* unify them *)
+	let _ = unify_term_term ctxt te1' te2' in
+	(* substitute in te1 *)
+	term_substitution (env_substitution !ctxt) te1
+
       )
 
 and unify_quantifier_quantifier (ctxt: env ref) (q1: quantifier) (q2: quantifier) : quantifier =
@@ -128,42 +171,6 @@ and unify_quantifier_quantifier (ctxt: env ref) (q1: quantifier) (q2: quantifier
     (ps1, ty, n1)	
 ;;
 
-(*
-  reduction of terms
-  several strategy are possible:
-  for beta reduction: Lazy or Eager
-  possibility to have strong beta reduction
-  delta: unfold equations (replace matched l.h.s. with r.h.s)
-  iota: try to match equations l.h.s
-  deltaiotaweak: if after delta reduction, a iota reduction fails, then the delta reduction is backtracked
-  zeta: compute the let bindings
-  eta: not sure if needed
-
-  all these different strategy are used for several cases: unification, typechecking, ...
-  
-*)
-type strategy = 
-  | Lazy 
-  | Eager;;
-
-type interp_strat = {
-  strat: strategy;
-  beta: bool;
-  betastrong: bool;
-  delta: bool;
-  iota: bool;
-  deltaiotaweak: bool;
-  zeta: bool;
-  eta: bool;
-};;
-
-(*
-
-  te must be well typed w.r.t. ctxt
-*) 
-let reduction (ctxt: env ref) (start: interp_strat) (te: term) : term =
-  raise (Failure "NYI")
-;;
 
 (*
   function to grab the type of an annotation
