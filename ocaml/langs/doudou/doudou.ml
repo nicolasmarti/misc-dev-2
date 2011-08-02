@@ -170,6 +170,14 @@ foldr f (hd:tl) acc := f hd (foldr f tl acc)
 (******************)
 
 
-(****************************)
-(* online typechking parser *)
-(****************************)
+(******************************)
+(* online typechecking parser *)
+(******************************)
+
+let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
+  fun pb ->
+    let curp = cur_pos pb in
+    if (snd startp <= snd curp) then raise NoMatch;
+    p pb
+;;
+
