@@ -244,6 +244,24 @@ let op_priority (o: op) : int =
 let filter_explicit (l: (term * nature) list) : term list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
     
+(***************************)
+(*      context/frame      *)
+(***************************)
+
+let build_new_frame (s: symbol) (ty: term) ?(value: term = TVar 0) (nature: nature) : frame =
+{ 
+  symbol = s;
+  ty = ty;
+  nature = nature;
+  value = value;
+
+  fvs = [];
+  termstack = [];
+  naturestack = [];
+  equationstack = [];
+  patternstack = [];
+
+}
 
       
 (******************)
@@ -268,7 +286,7 @@ let rec withBracket (t: token) : token =
 (* a data structure to mark the place where the term/pattern is *)
 type place = InNotation of op * int (* in the sndth place of the application to the notation with op *)
 	     | InApp (* in the head of application *)
-	     | InArg (* as an argument (Explicit) *)
+	     | InArg of nature (* as an argument (Explicit) *)
 	     | InAlias  (* in an alias pattern *)
 	     | Alone (* standalone *)
 
@@ -292,7 +310,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
-	| InArg -> withParen
+	| InArg Explicit -> withParen
 	(* if we are in a notation such that *)
 	(* a prefix or postfix binding more  than us *)
 	| InNotation (Prefix i, _) when i > myprio -> withParen
@@ -323,7 +341,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	 - in a postfix notation more binding than us
       *)
       (match p with
-	| InArg -> withParen
+	| InArg Explicit -> withParen
 	| InApp -> withParen
 	| InNotation (Postfix i, _) when i > myprio -> withParen
 	| _ -> fun x -> x
@@ -343,7 +361,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	 - in a prefix notation more binding than us
       *)
       (match p with
-	| InArg -> withParen
+	| InArg Explicit -> withParen
 	| InApp -> withParen
 	| InNotation (Prefix i, _) when i > myprio -> withParen
 	| _ -> fun x -> x
@@ -356,7 +374,6 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
 
-
     (* general case *)
     | App (te, args) ->
       (* we only embed in parenthesis if
@@ -364,14 +381,48 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	 - we are in a notation
       *)
       (match p with
-	| InArg -> withParen
+	| InArg Explicit -> withParen
 	| InNotation _ -> withParen
 	| _ -> fun x -> x
       ) (
-	let args = List.map (fun te -> term2token ctxt te InArg) (filter_explicit args) in
+	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (filter_explicit args) in
 	let te = term2token ctxt te InApp in
 	Box (intercalate (Space 1) (te::args))
        )
+
+    (* implication *)
+    | Impl ((s, ty, nature), te) ->
+      (* we embed in parenthesis if 
+	 - embed as some arg 
+	 - ??
+      *)
+      (
+	match p with
+	  | InArg Explicit -> withParen
+	  | _ -> fun x -> x
+      )
+	(
+	  (* the lhs of the ->*)
+	  let lhs = 
+	    (* if the symbol is NoFix _ -> we skip the symbol *)
+	    (* IMPORTANT: it means that Symbol ("_", NoFix)  as a special meaning !!!! *)
+	    match s with
+	      | Symbol ("_", NoFix) ->
+		(* we only put brackets if implicit *)
+		(if nature = Implicit then withBracket else fun x -> x)
+		  (term2token ctxt ty (InArg nature))
+	      | _ -> 
+		(* here we put the nature marker *)
+		(if nature = Implicit then withBracket else withParen)
+		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
+	  in 
+	  (* for computing the r.h.s, we need to push a new frame *)
+	  let newframe = build_new_frame s ty nature in
+	  let rhs = term2token (newframe::ctxt) te Alone in
+	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
+	)
+
+    (* by default we do not support *)
     | _ -> raise (Failure "term2token: NYI")
 
 (* make a string from a term *)
@@ -395,7 +446,7 @@ let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
 (*        tests               *)
 (******************************)
 
-let zero = Cste (Symbol ("0", NoFix))
+let zero = Cste (Name "0")
 let plus = Cste (Symbol ("+", Infix (30, LeftAssoc)))
 let minus = Cste (Symbol ("-", Infix (30, LeftAssoc)))
 let mult = Cste (Symbol ("*", Infix (40, LeftAssoc)))
@@ -403,6 +454,10 @@ let div = Cste (Symbol ("/", Infix (40, LeftAssoc)))
 let colon = Cste (Symbol (";", Infix (20, RightAssoc)))
 let andc = Cste (Symbol ("&", Postfix 20))
 let neg = Cste (Symbol ("-", Prefix 50))
+
+let nat = (Cste (Name "nat"))
+
+let asymb = Symbol ("_", NoFix)
 
 open Printf
 
@@ -412,3 +467,8 @@ let _ = printf "%s\n" (term2string empty_context andc)
 let _ = printf "%s\n" (term2string empty_context neg)
 let _ = printf "%s\n" (term2string empty_context (App (andc, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
 let _ = printf "%s\n" (term2string empty_context (App (neg, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
+
+let _ = printf "%s\n" (term2string empty_context (
+  Impl ((asymb, Impl ((asymb, nat, Explicit), Impl ((asymb, nat, Implicit), nat)), Implicit), Impl ((Name "prout", nat, Explicit), nat))
+)
+)
