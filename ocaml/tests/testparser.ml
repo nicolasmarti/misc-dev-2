@@ -74,10 +74,10 @@ let postfixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 
 Hashtbl.add postfixes "&" (3, fun x -> Lazy x);;
 
 let infixes: (string, (priority * associativity * (expr -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
-Hashtbl.add infixes "+" (1, Left, fun x y -> Plus (x, y));;
-Hashtbl.add infixes "-" (2, Left, fun x y -> Minus (x, y));;
-Hashtbl.add infixes "*" (4, Right, fun x y -> Mult (x, y));;
-Hashtbl.add infixes "/" (4, Right, fun x y -> Div (x, y));;
+Hashtbl.add infixes "+" (1, LeftAssoc, fun x y -> Plus (x, y));;
+Hashtbl.add infixes "-" (2, LeftAssoc, fun x y -> Minus (x, y));;
+Hashtbl.add infixes "*" (4, RightAssoc, fun x y -> Mult (x, y));;
+Hashtbl.add infixes "/" (4, RightAssoc, fun x y -> Div (x, y));;
 
 
 let valparser : expr Parser.parsingrule = 

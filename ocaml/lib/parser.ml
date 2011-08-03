@@ -357,8 +357,8 @@ let foldp (l: ('a parsingrule) list) : 'a parsingrule =
  
 (* operator precedence *)
 type associativity =
- | Left
- | Right
+ | LeftAssoc
+ | RightAssoc
  | NoAssoc
 ;;
  
@@ -400,7 +400,7 @@ and operator_precedence_loop (opparse: ('a * 'd) parsingrule) (opdef: ('a, (int 
                     | None -> rhs
                     | Some ((nop, p), _) ->
                         let (npred, nassoc, _) = Hashtbl.find opdef nop in
-                          if (npred > pred || (npred = pred && nassoc = Right)) then
+                          if (npred > pred || (npred = pred && nassoc = RightAssoc)) then
                             operator_precedence_loop opparse opdef primary rhs npred pb      
                           else
                             rhs
@@ -810,8 +810,8 @@ let rec insert_infix (infix: (string * priority * associativity * ('a -> 'a -> '
 
        (* we are on an infix *) 
      | Node (InfixNode (name2, prio2, assoc2, f2, Some left, Some right), root) ->
-	  (* which either bind more, or both are of equal prio and assoc = Left*)
-          if (prio2 > prio || (prio2 = prio && assoc = Left)) then (
+	  (* which either bind more, or both are of equal prio and assoc = LeftAssoc*)
+          if (prio2 > prio || (prio2 = prio && assoc = LeftAssoc)) then (
  
             match root with
 		(* the current node is the root of the tree*)
