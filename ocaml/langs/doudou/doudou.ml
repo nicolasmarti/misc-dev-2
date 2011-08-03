@@ -59,8 +59,7 @@ type frame = {
   symbol : symbol;
   (* its type *)
   ty: term;
-  (* its nature *)
-  nature: nature;
+
   (* its value: most stupid one: itself *)
   value: term;
     
@@ -244,15 +243,26 @@ let op_priority (o: op) : int =
 let filter_explicit (l: (term * nature) list) : term list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
     
+
+(* returns the list of bound variables, their value (w.r.t. other bound variable) and their type in a pattern 
+   the order is such that 
+   hd::tl -> hd is the "oldest" variable, and is next to be framed
+*)
+
+let pattern_bvars (p: pattern) : (symbol * term * term option) list =
+  raise Exit
+
 (***************************)
 (*      context/frame      *)
 (***************************)
 
-let build_new_frame (s: symbol) (ty: term) ?(value: term = TVar 0) (nature: nature) : frame =
+(* build a new frame 
+   value is optional
+*)
+let build_new_frame (s: symbol) ?(value: term = TVar 0) (ty: term) : frame =
 { 
   symbol = s;
   ty = ty;
-  nature = nature;
   value = value;
 
   fvs = [];
@@ -262,6 +272,17 @@ let build_new_frame (s: symbol) (ty: term) ?(value: term = TVar 0) (nature: natu
   patternstack = [];
 
 }
+
+let push_pattern_bvars (ctxt: context) (l: (symbol * term * term option) list) : context =
+  List.fold_left (fun ctxt (s, ty, v) ->
+    (
+      match v with
+	| None -> build_new_frame s ty
+	| Some v -> build_new_frame s ~value:v ty
+    ) :: ctxt	
+
+
+  ) ctxt l
 
       
 (******************)
@@ -427,7 +448,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
 	  in 
 	  (* for computing the r.h.s, we need to push a new frame *)
-	  let newframe = build_new_frame s ty nature in
+	  let newframe = build_new_frame s ty in
 	  let rhs = term2token (newframe::ctxt) te Alone in
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
@@ -448,7 +469,19 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | _ -> raise (Failure "term2token: NYI")
 
 and equation2token (ctxt: context) (eq: equation) : token =
-  raise (Failure "equation2token: NYI")
+  let (pattern, nature), te = eq in
+  (* we extract the list of bound variable in the pattern *)
+  let bvars = pattern_bvars pattern in
+  (* we create the pattern token *)
+  let pattern = pattern2token ctxt pattern (if nature = Implicit then InArg Implicit else Alone) in
+  (* we build a new context with the pattern bvars frames pushed *)
+  let ctxt = push_pattern_bvars ctxt bvars in
+  (* create the term token *)
+  let te = term2token ctxt te Alone in
+  Box [pattern; Space 1; Verbatim ":="; Space 1; te]
+
+and pattern2token (ctxt: context) (p: pattern) (p: place) : token =
+  raise (Failure "pattern2token: NYI")
 
 (* make a string from a term *)
 let term2string (ctxt: context) (te: term) : string =
