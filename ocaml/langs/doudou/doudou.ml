@@ -44,7 +44,7 @@ type term = Type
 	    | TyAnnotation of term * term
 	    | SrcInfo of pos * term
 
-and equation = (pattern * nature) list * term
+and equation = (pattern * nature) * term
 
 and pattern = PType
 	      | PVar of name * term
@@ -277,6 +277,12 @@ let rec intercalate (inter: 'a) (l: 'a list) : 'a list =
       hd1::inter::(intercalate inter (hd2::tl))
     | _ -> l
 
+let rec intercalates (inter: 'a list) (l: 'a list) : 'a list =
+  match l with
+    | hd1::hd2::tl ->
+      hd1::inter @ intercalates inter (hd2::tl)
+    | _ -> l
+
 let rec withParen (t: token) : token =
   Box [Verbatim "("; t; Verbatim ")"]
 
@@ -290,7 +296,11 @@ type place = InNotation of op * int (* in the sndth place of the application to 
 	     | InAlias  (* in an alias pattern *)
 	     | Alone (* standalone *)
 
-(* TODO: add an option for printing implicit terms *)
+(* TODO: add options for 
+   - printing implicit terms 
+   - printing type annotation
+   - source info
+*)
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -422,8 +432,23 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
+    | DestructWith eqs ->
+      (* we always put parenthesis here *)
+      (
+	withParen
+      )
+      (
+	let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
+	Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
+      )
+    | TyAnnotation (te, _) | SrcInfo (_, te) ->
+      term2token ctxt te p      
+
     (* by default we do not support *)
     | _ -> raise (Failure "term2token: NYI")
+
+and equation2token (ctxt: context) (eq: equation) : token =
+  raise (Failure "equation2token: NYI")
 
 (* make a string from a term *)
 let term2string (ctxt: context) (te: term) : string =
