@@ -166,7 +166,32 @@ foldl f acc (hd:tl) := foldl f (f acc hd) tl
 foldr :: {A B :: Type} -> (A -> B -> B) -> List A -> B -> B
 foldr f [] acc := acc
 foldr f (hd:tl) acc := f hd (foldr f tl acc)
+
+Nat :: Type
+O :: Nat
+S :: Nat -> Nat
+
+T :: Type -> Type -> Nat -> Type
+T _ B O := B
+T A B (S n) := A -> T A B n
+
+depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n
+depfold f acc O := acc
+depfold f acc (S n) := (x := depfold f (f acc x) n)
+
+NatPlus :: Nat -> Nat -> Nat 
+NatPlus O x := x
+NatPlus x O := x
+NatPlus (S x) y := S (NatPlus x y)
+
+plusType Nat Nat := Nat
+(+) {Nat] {Nat} := NatPlus
+
+depfold {Nat} (+) O (S (S 0)) :?: 
+(* :?: Nat -> Nat -> Nat *)
 "
+
+
 
 (******************)
 (*      misc      *)
@@ -247,6 +272,8 @@ type place = InNotation of op * int (* in the sndth place of the application to 
 	     | InAlias  (* in an alias pattern *)
 	     | Alone (* standalone *)
 
+(* TODO: add an option for printing implicit terms *)
+
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
   match te with
@@ -286,9 +313,50 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    let arg1 = term2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
 	    let arg2 = term2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
 	    let te = Verbatim s in
-	    Box (intercalate (Space 1) (te::arg1::arg2::[]))
+	    Box (intercalate (Space 1) [arg1; te; arg2])
 	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
        )
+    (* the case for Prefix *)
+    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a postfix notation more binding than us
+      *)
+      (match p with
+	| InArg -> withParen
+	| InApp -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = term2token ctxt arg (InNotation (Prefix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [te; arg])
+	  | _ -> raise (Failure "term2token, App prefix case: irrefutable patten")
+       )
+
+    (* the case for Postfix *)
+    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a prefix notation more binding than us
+      *)
+      (match p with
+	| InArg -> withParen
+	| InApp -> withParen
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = term2token ctxt arg (InNotation (Postfix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg; te])
+	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+       )
+
+
     (* general case *)
     | App (te, args) ->
       (* we only embed in parenthesis if
@@ -305,7 +373,6 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	Box (intercalate (Space 1) (te::args))
        )
     | _ -> raise (Failure "term2token: NYI")
-
 
 (* make a string from a term *)
 let term2string (ctxt: context) (te: term) : string =
@@ -324,3 +391,24 @@ let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
     p pb
 
 
+(******************************)
+(*        tests               *)
+(******************************)
+
+let zero = Cste (Symbol ("0", NoFix))
+let plus = Cste (Symbol ("+", Infix (30, LeftAssoc)))
+let minus = Cste (Symbol ("-", Infix (30, LeftAssoc)))
+let mult = Cste (Symbol ("*", Infix (40, LeftAssoc)))
+let div = Cste (Symbol ("/", Infix (40, LeftAssoc)))
+let colon = Cste (Symbol (";", Infix (20, RightAssoc)))
+let andc = Cste (Symbol ("&", Postfix 20))
+let neg = Cste (Symbol ("-", Prefix 50))
+
+open Printf
+
+let _ = printf "%s\n" (term2string empty_context zero)
+let _ = printf "%s\n" (term2string empty_context plus)
+let _ = printf "%s\n" (term2string empty_context andc)
+let _ = printf "%s\n" (term2string empty_context neg)
+let _ = printf "%s\n" (term2string empty_context (App (andc, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
+let _ = printf "%s\n" (term2string empty_context (App (neg, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
