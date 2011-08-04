@@ -329,7 +329,39 @@ type substitution = term IndexMap.t;;
 
 (* substitution *)
 let rec term_substitution (s: substitution) (te: term) : term =
-  raise (Failure "NYI: term_substitution")
+  match te with
+    | Type | Cste _ | Obj _ -> te
+    | TVar i as v when i < 0 -> 
+      (
+	try IndexMap.find i s 
+	with
+	  | Not_found -> v
+      )
+    | TVar i as v when i >= 0 -> v
+    | AVar -> raise (Failure "term_substitution catastrophic: AVar")
+    | App (te, args) ->
+      App (term_substitution s te,
+	   List.map (fun (te, n) -> term_substitution s te, n) args)
+    | Impl ((symb, ty, n), te) ->
+      Impl ((symb, term_substitution s ty, n),
+	    term_substitution s te)
+    | DestructWith eqs ->
+      DestructWith (List.map (equation_substitution s) eqs)
+    | TyAnnotation (te, ty) -> TyAnnotation (term_substitution s te, term_substitution s ty)
+    | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
+and equation_substitution (s: substitution) (eq: equation) : equation =
+  let (p, n), te = eq in
+  (pattern_substitution s p, n), term_substitution (shift_substitution s (pattern_size p)) te
+and pattern_substitution (s: substitution) (p: pattern) : pattern =
+  match p with
+    | PType -> PType
+    | PVar (n, ty) -> PVar (n, term_substitution s ty)
+    | PCste s -> PCste s
+    | PAlias (n, p, ty) -> PAlias (n, pattern_substitution s p, term_substitution s ty)
+    | PApp (symb, args, ty) ->
+      PApp (symb,
+	    List.map (fun (p, n) -> pattern_substitution s p, n) args,
+	    term_substitution s ty)
 
 (* shift bvar index in a substitution *)
 and shift_substitution (s: substitution) (delta: int) : substitution =
