@@ -209,8 +209,31 @@ module IndexSet = Set.Make(
 );;
 
 let rec fv_term (te: term) : IndexSet.t =
-  raise (Failure "NYI")
+  match te with
+    | Type | Cste _ | Obj _ -> IndexSet.empty
+    | TVar i when i >= 0 -> IndexSet.empty
+    | TVar i when i < 0 -> IndexSet.singleton i
+    | AVar -> raise (Failure "fv_term catastrophic: AVar")
+    | App (te, args) ->
+      List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
+    | Impl ((s, ty, n), te) ->
+      IndexSet.union (fv_term ty) (fv_term te)
+    | DestructWith eqs ->
+      List.fold_left (fun acc eq -> IndexSet.union acc (fv_equation eq)) IndexSet.empty eqs
+    | TyAnnotation (te, ty) -> IndexSet.union (fv_term ty) (fv_term te)
+    | SrcInfo (pos, term) -> (fv_term te)
 
+and fv_equation (eq: equation) : IndexSet.t = 
+  let (p, _), te = eq in
+  IndexSet.union (fv_pattern p) (fv_term te)
+and fv_pattern (p: pattern) : IndexSet.t =
+  match p with
+    | PType | PCste _ -> IndexSet.empty
+    | PVar (n, ty) -> fv_term ty
+    | PAVar ty -> fv_term ty
+    | PAlias (n, p, ty) -> IndexSet.union (fv_term ty) (fv_pattern p)
+    | PApp (s, args, ty) ->
+      List.fold_left (fun acc (p, _) -> IndexSet.union acc (fv_pattern p)) (fv_term ty) args
 
 
 (* function like map, but that can skip elements *)
