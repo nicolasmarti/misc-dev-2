@@ -95,6 +95,9 @@ type doudou_error = NoSuchBVar of index * context
 		    | NegativeIndexBVar of index
 		    | Unshiftable_term of term * int * int
 
+		    | ErrorPosPair of pos option * pos option * doudou_error
+		    | ErrorPos of pos * doudou_error
+
 exception DoudouException of doudou_error
 
 (********************************************)
@@ -199,6 +202,15 @@ depfold {Nat} (+) O (S (S 0)) :?:
 (******************)
 (*      misc      *)
 (******************)
+
+(* assert that pos1 contains pos2 *)
+let pos_in (pos1: pos) (pos2: pos) : bool =
+  let ((begin_line1, begin_col1), (end_line1, end_col1)) = pos1 in
+  let ((begin_line2, begin_col2), (end_line2, end_col2)) = pos2 in
+  (* the start of pos2 must be equal or after the start of pos1 *)
+  ((begin_line2 > begin_line1) || (begin_line1 = begin_line2 && begin_col2 >= begin_col1))
+  (* and the end of pos2 must be equal or before the end of pos 1*)
+  && ((end_line2 < end_line1) || (end_line1 = end_line2 && end_col2 <= end_col1))
 
 (* computation of free variable in a term *)
 module IndexSet = Set.Make(
@@ -311,6 +323,41 @@ let rec pattern_size (p: pattern) : int =
     | PAlias (n, p, ty) -> 1 + pattern_size p
     | PApp (s, args, ty) -> 
       List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
+
+(* utilities for DoudouException *)
+
+(* makes error more precise *)
+let error_left_pos (err: doudou_error) (pos: pos) =
+  match err with
+    (* there is no pos information for first element *)
+    | ErrorPosPair (None, pos2, err) -> ErrorPosPair (Some pos, pos2, err)
+    (* our source information is better *)
+    | ErrorPosPair (Some pos1, pos2, err) when pos_in pos1 pos -> ErrorPosPair (Some pos, pos2, err)
+    (* the given source information is better *)
+    | ErrorPosPair (Some pos1, pos2, err) when pos_in pos pos1 -> ErrorPosPair (Some pos1, pos2, err)
+    (* else ... *)
+    | err -> ErrorPosPair (Some pos, None, err)
+
+let error_right_pos (err: doudou_error) (pos: pos) =
+  match err with
+    (* there is no pos information for first element *)
+    | ErrorPosPair (pos1, None, err) -> ErrorPosPair (pos1, Some pos, err)
+    (* our source information is better *)
+    | ErrorPosPair (pos1, Some pos2, err) when pos_in pos2 pos -> ErrorPosPair (pos1, Some pos, err)
+    (* the given source information is better *)
+    | ErrorPosPair (pos1, Some pos2, err) when pos_in pos pos2 -> ErrorPosPair (pos1, Some pos2, err)
+    (* else ... *)
+    | err -> ErrorPosPair (Some pos, None, err)
+
+let error_pos (err: doudou_error) (pos: pos) =
+  match err with
+    (* our source information is better *)
+    | ErrorPos (pos1, err) when pos_in pos1 pos -> ErrorPos (pos, err)
+    (* the given source information is better *)
+    | ErrorPos (pos1, err) when pos_in pos pos1 -> ErrorPos (pos1, err)
+    (* else ... *)
+    | err -> ErrorPos (pos, err)
+
 
 (***************************)
 (*      substitution       *)
@@ -489,6 +536,78 @@ let push_pattern (ctxt: context) (p: pattern) : context =
   let (bvars, _) = pattern_bvars p in
   (* we build a new context with the pattern bvars frames pushed *)
   push_pattern_bvars ctxt bvars
+
+(***********************************)
+(*      unification/reduction      *)
+(***********************************)
+
+(*
+  reduction of terms
+  several strategy are possible:
+  for beta reduction: Lazy or Eager
+  possibility to have strong beta reduction
+  delta: unfold equations (replace cste with their equations)
+  iota: try to match equations l.h.s
+  deltaiotaweak: if after delta reduction, a iota reduction fails, then the delta reduction is backtracked
+  zeta: compute the let bindings
+  eta: not sure if needed
+
+  all these different strategy are used for several cases: unification, typechecking, ...
+  
+*)
+type strategy = 
+  | Lazy 
+  | Eager;;
+
+type reduction_strategy = {
+  strat: strategy;
+  beta: bool;
+  betastrong: bool;
+  delta: bool;
+  iota: bool;
+  deltaiotaweak: bool;
+  zeta: bool;
+  eta: bool;
+};;
+
+let unification_strat : reduction_strategy = {
+  strat = Lazy;
+  beta = true;
+  betastrong = false;
+  delta = true;
+  iota = true;
+  deltaiotaweak = false;
+  zeta = true;
+  eta = true;
+};;
+
+let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
+  match te1, te2 with
+    | SrcInfo (pos, te1), _ -> (
+      try 
+	unification_term_term defs ctxt te1 te2
+      with
+	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
+    )
+    | _, SrcInfo (pos, te2) -> (
+      try 
+	unification_term_term defs ctxt te1 te2
+      with
+	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
+    )
+
+    | _ -> raise (Failure "unification_term_term: NYI")
+and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
+  raise (Failure "reduction: NYI")
+
+(****************************************)
+(*      typechecking/typeinference      *)
+(****************************************)
+
+let rec typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
+  raise (Failure "NYI")
+and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
+  raise (Failure "NYI")
 
       
 (******************)
