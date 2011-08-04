@@ -87,7 +87,8 @@ let empty_context = []
 (* definitions *)
 type defs = {
   (* here we store all id in a string *)
-  store : (string, (term * equation list)) Hashtbl.t;
+  (* id -> (type * value) *)
+  store : (string, (term * term)) Hashtbl.t;
   mutable hist : symbol list;
 }
 
@@ -97,6 +98,8 @@ type doudou_error = NoSuchBVar of index * context
 
 		    | ErrorPosPair of pos option * pos option * doudou_error
 		    | ErrorPos of pos * doudou_error
+
+		    | UnknownCste of symbol
 
 exception DoudouException of doudou_error
 
@@ -203,6 +206,13 @@ depfold {Nat} (+) O (S (S 0)) :?:
 (*      misc      *)
 (******************)
 
+(* some traverse fold without the reverse *)
+let mapacc (f: 'b -> 'a -> ('c * 'b)) (acc: 'b) (l: 'a list) : 'c list * 'b =
+  let acc = ref acc in
+  (List.map (fun hd -> let (hd, acc') = f !acc hd in
+		       acc := acc';
+		       hd) l, !acc)
+
 (* assert that pos1 contains pos2 *)
 let pos_in (pos1: pos) (pos2: pos) : bool =
   let ((begin_line1, begin_col1), (end_line1, end_col1)) = pos1 in
@@ -264,7 +274,7 @@ let symbol2string (s: symbol) =
     | Symbol (n, o) ->
       let (pre, post) = 
 	match o with
-	  | NoFix -> "[", "]"
+	  | NoFix -> "", ""
 	  | Prefix _ -> "[", ")"
 	  | Infix _ -> "(", ")"
 	  | Postfix _ -> "(", "]"
@@ -537,9 +547,25 @@ let push_pattern (ctxt: context) (p: pattern) : context =
   (* we build a new context with the pattern bvars frames pushed *)
   push_pattern_bvars ctxt bvars
 
-(***********************************)
-(*      unification/reduction      *)
-(***********************************)
+(* apply a substitution in a context *)
+let context_substitution (s: substitution) (ctxt: context) : context =
+  fst (mapacc (fun s frame ->
+    { frame with
+      ty = term_substitution s frame.ty;
+      (* not sure on this one ... there should be no fv in value ... *)
+      value = term_substitution s frame.value;
+      fvs = List.map (fun (ty, value) -> term_substitution s ty, term_substitution s value) frame.fvs;
+      termstack = List.map (term_substitution s) frame.termstack;
+      equationstack = List.map (equation_substitution s) frame.equationstack;
+      patternstack = List.map (pattern_substitution s) frame.patternstack
+    }, shift_substitution s 1
+  ) s ctxt
+  )
+
+
+(*************************************************************)
+(*      unification/reduction, type{checking/inference}      *)
+(*************************************************************)
 
 (*
   reduction of terms
@@ -555,9 +581,10 @@ let push_pattern (ctxt: context) (p: pattern) : context =
   all these different strategy are used for several cases: unification, typechecking, ...
   
 *)
+
 type strategy = 
   | Lazy 
-  | Eager;;
+  | Eager
 
 type reduction_strategy = {
   strat: strategy;
@@ -568,7 +595,7 @@ type reduction_strategy = {
   deltaiotaweak: bool;
   zeta: bool;
   eta: bool;
-};;
+}
 
 let unification_strat : reduction_strategy = {
   strat = Lazy;
@@ -579,16 +606,20 @@ let unification_strat : reduction_strategy = {
   deltaiotaweak = false;
   zeta = true;
   eta = true;
-};;
+}
 
 let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
+
+    (* first the cases for SrcInfo and TyAnnotation *)
+
     | SrcInfo (pos, te1), _ -> (
       try 
 	unification_term_term defs ctxt te1 te2
       with
 	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
     )
+
     | _, SrcInfo (pos, te2) -> (
       try 
 	unification_term_term defs ctxt te1 te2
@@ -596,15 +627,74 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
 	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
     )
 
+    | TyAnnotation (te1, ty1), TyAnnotation (te2, ty2) ->
+      let te = unification_term_term defs ctxt te1 te2 in
+      let ty = unification_term_term defs ctxt ty1 ty2 in
+      TyAnnotation (te, ty)
+
+    (* and the two cases above, we need to unify the annotated type with the infered type 
+       not sure this is really needed ... but 
+    *)
+    | TyAnnotation (te1, ty1), _ ->
+      let (te2, ty2) = typeinfer defs ctxt te2 in
+      unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
+
+    | _, TyAnnotation (te2, ty2) ->
+      let (te1, ty1) = typeinfer defs ctxt te1 in
+      unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
+
+    (* the error cases for AVar *)
+    | AVar, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
+    | _, AVar -> raise (Failure "unification_term_term catastrophic: AVar in te2 ")
+
+    (* the trivial cases for Type, Cste and Obj *)
+    | Type, Type -> Type
+    | Obj o1, Obj o2 when o1 = o2 -> Obj o1
+    | Cste c1, Cste c2 when c1 = c2 -> Cste c1
+    (* when a term is a constant we just look for its definition and expand *)
+    | Cste c1, _ -> (
+      try 
+	unification_term_term defs ctxt (snd (Hashtbl.find defs.store (symbol2string c1))) te2
+      with
+	| Not_found -> raise (DoudouException (UnknownCste c1))
+    )
+    | _, Cste c2 -> (
+      try 
+	unification_term_term defs ctxt te1 (snd (Hashtbl.find defs.store (symbol2string c2)))
+      with
+	| Not_found -> raise (DoudouException (UnknownCste c2))
+    )
+
+    (* the trivial case for variable *)
+    | TVar i1, TVar i2 when i1 = i2 -> TVar i1
+    (* the case for free variables *)
+    (* we need the free var to not be a free var of the term *)
+    | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2))->
+      let s = IndexMap.singleton i1 te2 in
+      ctxt := context_substitution s (!ctxt);
+      (* should we rewrite subst in te2 ? a priori no:
+	 1- i not in te2
+	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
+	 and that we did not comply with the N.B. above
+      *)
+      te2      
+	  
+    | _, TVar i2 when i2 < 0 && not (IndexSet.mem i2 (fv_term te1))->
+      let s = IndexMap.singleton i2 te1 in
+      ctxt := context_substitution s (!ctxt);
+      (* should we rewrite subst in te2 ? a priori no:
+	 1- i not in te2
+	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
+	 and that we did not comply with the N.B. above
+      *)
+      te1
+      
+
     | _ -> raise (Failure "unification_term_term: NYI")
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
   raise (Failure "reduction: NYI")
 
-(****************************************)
-(*      typechecking/typeinference      *)
-(****************************************)
-
-let rec typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
+and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
   raise (Failure "NYI")
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
   raise (Failure "NYI")
