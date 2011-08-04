@@ -3,6 +3,9 @@ open Parser
 (* for pretty printing *)
 open Pprinter
 
+open Printf
+
+
 (*********************************)
 (* Definitions of data structure *)
 (*********************************)
@@ -100,6 +103,9 @@ type doudou_error = NoSuchBVar of index * context
 		    | ErrorPos of pos * doudou_error
 
 		    | UnknownCste of symbol
+
+		    | UnknownUnification of context * term * term
+		    | NoUnification of context * term * term
 
 exception DoudouException of doudou_error
 
@@ -205,6 +211,26 @@ depfold {Nat} (+) O (S (S 0)) :?:
 (******************)
 (*      misc      *)
 (******************)
+
+(* take and drop as in haskell *)
+let rec take (n: int) (l: 'a list) :'a list =
+  match n with
+    | 0 -> []
+    | i when i < 0 -> raise (Invalid_argument "take")
+    | _ -> 
+      match l with
+	| [] -> []
+	| hd::tl -> hd::take (n-1) tl
+
+let rec drop (n: int) (l: 'a list) :'a list =
+  match n with
+    | 0 -> l
+    | i when i < 0 -> raise (Invalid_argument "drop")
+    | _ -> 
+      match l with
+	| [] -> []
+	| hd::tl -> drop (n-1) tl
+
 
 (* some traverse fold without the reverse *)
 let mapacc (f: 'b -> 'a -> ('c * 'b)) (acc: 'b) (l: 'a list) : 'c list * 'b =
@@ -562,6 +588,15 @@ let context_substitution (s: substitution) (ctxt: context) : context =
   ) s ctxt
   )
 
+(* grab the value of a fvar *)
+let bvar_value (ctxt: context) (i: index) : term =
+  try (
+    let frame = List.nth ctxt i in
+    let value = frame.value in
+    shift_term value i
+  ) with
+    | Failure "nth" -> raise (DoudouException (NoSuchBVar (i, ctxt)))
+    | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
 
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
@@ -608,6 +643,7 @@ let unification_strat : reduction_strategy = {
   eta = true;
 }
 
+(* something's wrong: we do not push terms such that they can be substituted with the generated unifiers !!! *)
 let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
 
@@ -688,9 +724,98 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
 	 and that we did not comply with the N.B. above
       *)
       te1
-      
+    (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
+    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 != TVar i1 ->
+      unification_term_term defs ctxt (bvar_value !ctxt i1) te2
+    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 != TVar i2 ->
+      unification_term_term defs ctxt te1 (bvar_value !ctxt i2)
 
-    | _ -> raise (Failure "unification_term_term: NYI")
+    (* the case of two application: with not the same arity *)
+    | App (hd1, args1), App (hd2, args2) when List.length args1 != List.length args2 ->
+      (* first we try to change them such that they have the same number of arguments and try to match them *)
+      let min_arity = min (List.length args1) (List.length args2) in
+      let te1' = if List.length args1 = min_arity then te1 else App (App (hd1, take (List.length args1 - min_arity) args1), drop (List.length args1 - min_arity) args1) in
+      let te2' = if List.length args2 = min_arity then te2 else App (App (hd2, take (List.length args2 - min_arity) args2), drop (List.length args2 - min_arity) args2) in
+      (* we save the current context somewhere to rollback *)
+      let saved_ctxt = !ctxt in
+      (try 
+	 unification_term_term defs ctxt te1' te2' 
+       with
+	 (* apparently it does not work, so we try to reduce them *)
+	 | DoudouException _ ->
+	   (* restore the context *)
+	   ctxt := saved_ctxt;
+	   (* reducing them *)
+	   let te1' = reduction defs ctxt unification_strat te1 in
+	   let te2' = reduction defs ctxt unification_strat te2 in
+	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
+      )
+    (* the case of two application with same arity *)
+    | App (hd1, args1), App (hd2, args2) when List.length args1 = List.length args2 ->
+      (* first we save the context and try to unify all term component *)
+      let saved_ctxt = !ctxt in
+      (try
+	 (**)
+	 (* first we unify the head of applications *)
+	 let hd = unification_term_term defs ctxt hd1 hd2 in
+	 (* then we unify all the arguments pair-wise *)
+	 let args = List.map (fun ((te1, n1), (te2, n2)) ->
+	   if n1 != n2 then
+	     (* if both nature are different -> no unification ! *)
+	     raise (DoudouException (NoUnification (!ctxt, te1, te2)))
+	   else
+	     let te = unification_term_term defs ctxt te1 te2 in
+	     (te, n1)
+	 ) (List.combine args1 args2) in
+	 (* finally we have our unified term ! *)
+	 App (hd, args)
+
+       with
+	 (* apparently it does not work, so we try to reduce them *)
+	 | DoudouException _ ->
+	   (* restore the context *)
+	   ctxt := saved_ctxt;
+	   (* reducing them *)
+	   let te1' = reduction defs ctxt unification_strat te1 in
+	   let te2' = reduction defs ctxt unification_strat te2 in
+	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
+      )	
+    (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
+    | App (hd1, args1), _ ->
+      let te1' = reduction defs ctxt unification_strat te1 in
+      if te1 = te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
+    | _, App (hd2, args2) ->
+      let te2' = reduction defs ctxt unification_strat te2 in
+      if te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
+
+    (* the impl case: only works if both are impl *)
+    | Impl ((s1, ty1, n1), te1), Impl ((s2, ty2, n2), te2) ->
+      (* the symbol is not important, yet the nature is ! *)
+      if n1 != n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
+	(* we unify the types *)
+	let ty = unification_term_term defs ctxt ty1 ty2 in
+	(* we push a frame *)
+	let frame = build_new_frame s1 ty in
+	ctxt := frame::!ctxt;
+	(* we unify *)
+	let te = unification_term_term defs ctxt te1 te2 in
+	(* we pop the frame *)
+	ctxt := List.tl !ctxt;
+	(* and we return the term *)
+	Impl ((s1, ty, n1), te)
+
+    (* for now we do not allow unification of DestructWith *)
+    | DestructWith eqs1, DestructWith eq2 ->
+      printf "unification_term_term: DestructWith\n";
+      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+
+    (* for all the rest: I do not know ! *)
+    | _ -> 
+      printf "unification_term_term: case not explicitely defined\n";
+      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
   raise (Failure "reduction: NYI")
 
@@ -1049,8 +1174,6 @@ let nat = (Cste (Name "nat"))
 let asymb = Symbol ("_", NoFix)
 
 let avar = Cste asymb
-
-open Printf
 
 let _ = printf "%s\n" (term2string empty_context zero)
 let _ = printf "%s\n" (term2string empty_context plus)
