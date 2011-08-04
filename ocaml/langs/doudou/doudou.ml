@@ -93,6 +93,7 @@ type defs = {
 
 type doudou_error = NoSuchBVar of index * context
 		    | NegativeIndexBVar of index
+		    | Unshiftable_term of term * int * int
 
 exception DoudouException of doudou_error
 
@@ -199,6 +200,19 @@ depfold {Nat} (+) O (S (S 0)) :?:
 (*      misc      *)
 (******************)
 
+(* computation of free variable in a term *)
+module IndexSet = Set.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+let rec fv_term (te: term) : IndexSet.t =
+  raise (Failure "NYI")
+
+
+
 (* function like map, but that can skip elements *)
 let rec skipmap (f: 'a -> 'b option) (l: 'a list) : 'b list =
   match l with
@@ -247,21 +261,6 @@ let filter_explicit (l: ('a * nature) list) : 'a list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
     
 
-(* returns the list of bound variables, their value (w.r.t. other bound variable) and their type in a pattern 
-   the order is such that 
-   hd::tl -> hd is the "oldest" variable, and is next to be framed
-*)
-
-(* TODO: properly assert the value for alias *)
-let rec pattern_bvars (p: pattern) : (name * term * term option) list =
-  match p with
-    | PType -> []
-    | PVar (n, ty) -> [n, ty, None]
-    | PAVar ty -> ["_", ty, None]
-    | PCste s -> []
-    | PAlias (n, p, ty) -> pattern_bvars p @ [n, ty, None] (* here should replace the None by a proper term corresponding to p *)
-    | PApp (s, args, ty) -> List.flatten (List.map (fun (p, _) -> pattern_bvars p ) args)
-
 (* this function take a term te1 and
    return a list of pattern ps and a term te2 such that
    List.fold_right (fun p acc -> DestructWith p acc) ps te2 == te1
@@ -275,6 +274,98 @@ let rec accumulate_pattern_destructwith (te: term) : (pattern * nature) list * t
       let (ps, te) = accumulate_pattern_destructwith te in
       (p::ps, te)
     | _ -> ([], te)
+
+(* returns the numbers of bvars introduced by a pattern 
+   we should always have 
+   pattern_size p = List.length (fst (pattern_bvars p)))
+*)
+let rec pattern_size (p: pattern) : int =
+  match p with
+    | PType -> 0
+    | PVar (n, ty) -> 1
+    | PAVar ty -> 0
+    | PCste s -> 0
+    | PAlias (n, p, ty) -> 1 + pattern_size p
+    | PApp (s, args, ty) -> 
+      List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
+
+(***************************)
+(*      substitution       *)
+(***************************)
+
+
+module IndexMap = Map.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+(* substitution: from free variables to term *) 
+type substitution = term IndexMap.t;;
+
+(* substitution *)
+let rec term_substitution (s: substitution) (te: term) : term =
+  raise (Failure "NYI: term_substitution")
+
+(* shift bvar index in a substitution *)
+and shift_substitution (s: substitution) (delta: int) : substitution =
+  IndexMap.fold (fun key value acc -> 
+    try 
+      IndexMap.add key (shift_term value delta) acc
+    with
+      | DoudouException (Unshiftable_term _) -> acc
+  ) s IndexMap.empty
+
+(* shift bvar index in a term *)
+and shift_term (te: term) (delta: int) : term =
+  leveled_shift_term te 0 delta
+
+(* shift bvar index in a term, above a given index *)
+and leveled_shift_term (te: term) (level: int) (delta: int) : term =
+  match te with
+    | Type -> Type
+    | Cste s -> Cste s
+    | Obj o -> Obj o
+    | TVar i as v ->
+      if i >= level then
+	if i + delta < level then
+	  raise (DoudouException (Unshiftable_term (te, level, delta)))
+	else
+	  TVar (i + delta)
+      else
+	v
+    | AVar -> raise (Failure "leveled_shift_term catastrophic: AVar")
+
+    | App (te, args) ->
+      App (
+	leveled_shift_term te level delta,
+	List.map (fun (te, n) -> leveled_shift_term te level delta, n) args
+      )
+    | Impl ((s, ty, n), te) ->
+      Impl ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
+
+    | DestructWith eqs ->
+      DestructWith (List.map (fun eq -> leveled_shift_equation eq level delta) eqs)
+
+    | TyAnnotation (te, ty) -> TyAnnotation (leveled_shift_term te level delta, leveled_shift_term ty level delta)
+
+    | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
+
+and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
+  let (p, n), te = eq in
+  (leveled_shift_pattern p level delta, n), leveled_shift_term te (level + pattern_size p) delta
+
+and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
+  match p with
+    | PType -> PType
+    | PVar (n, ty) -> PVar (n, leveled_shift_term ty level delta)
+    | PAVar ty -> PAVar (leveled_shift_term ty level delta)
+    | PAlias (s, p, ty) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty level delta)
+    | PApp (s, args, ty) ->
+      PApp (s,
+	    List.map (fun (p, n) -> leveled_shift_pattern p level delta, n) args,
+	    leveled_shift_term ty level delta)
 
 (***************************)
 (*      context/frame      *)
@@ -298,21 +389,49 @@ let build_new_frame (s: symbol) ?(value: term = TVar 0) (ty: term) : frame =
 }
 
 (* push the bvars of a pattern in a context *)
-let push_pattern_bvars (ctxt: context) (l: (name * term * term option) list) : context =
+let push_pattern_bvars (ctxt: context) (l: (name * term * term) list) : context =
   List.fold_left (fun ctxt (n, ty, v) ->
     (
-      match v with
-	| None -> build_new_frame (Name n) ty
-	| Some v -> build_new_frame (Name n) ~value:v ty
-    ) :: ctxt	
-
+      build_new_frame (Name n) ~value:v ty
+    ) :: ctxt	     
 
   ) ctxt l
+
+
+(* returns the list of bound variables, their value (w.r.t. other bound variable) and their type in a pattern 
+   the order is such that 
+   it also returns the overall value of the pattern (under the pattern itself)
+   hd::tl -> hd is the "oldest" variable, and is next to be framed
+*)
+
+let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
+  match p with
+    | PType -> [], Type
+    | PVar (n, ty) -> [n, ty, TVar 0], TVar 0
+    | PAVar ty -> ["_", ty, TVar 0], TVar 0
+    | PCste s -> [] , Cste s
+    | PAlias (n, p, ty) -> 
+      let l, te = pattern_bvars p in
+      (* the value is shift by one (under the alias-introduced var) *)
+      (l, shift_term te 1)
+    | PApp (s, args, ty) -> 
+      let (delta, l, rev_values) = 
+	(* for sake of optimization the value list is in reverse order *)
+	List.fold_left (fun (delta, l, rev_values) (p, n) ->
+	  (* first we grab the result for p *)
+	  let (pl, te) = pattern_bvars p in
+	  (* then we need to shift the value term by the current delta level *)
+	  let te = shift_term te delta in
+	  (* we update the delta value, and returns the concatenation *)
+	  (delta + List.length l, l @ pl, (te, n)::rev_values)
+	) (0, [], []) args in
+      (l, App (Cste s, List.rev rev_values))
+
 
 (* compute the context under a pattern *)
 let push_pattern (ctxt: context) (p: pattern) : context =
   (* we extract the list of bound variable in the pattern *)
-  let bvars = pattern_bvars p in
+  let (bvars, _) = pattern_bvars p in
   (* we build a new context with the pattern bvars frames pushed *)
   push_pattern_bvars ctxt bvars
 
@@ -509,7 +628,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	      (* N.B.: we are printing even the implicit arguments ... is it always a good thing ? *)
 
 	      (* we print the pattern *)
-	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (if nature = Implicit then InArg Implicit else Alone)) in
+	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (InArg nature)) in
 	      (* grab the underlying context *)
 	      let ctxt = push_pattern ctxt p in
 	      (* we return the whole thing *)
@@ -524,8 +643,6 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
 
-    (* by default we do not support *)
-    | _ -> raise (Failure "term2token: NYI")
 
 and equation2token (ctxt: context) (eq: equation) : token =
   (* here we simply print the DestructWith with only one equation *)
@@ -654,7 +771,8 @@ let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
 (******************************)
 
 let zero = Cste (Name "0")
-let plus = Cste (Symbol ("+", Infix (30, LeftAssoc)))
+let splus = (Symbol ("+", Infix (30, LeftAssoc)))
+let plus = Cste splus
 let minus = Cste (Symbol ("-", Infix (30, LeftAssoc)))
 let mult = Cste (Symbol ("*", Infix (40, LeftAssoc)))
 let div = Cste (Symbol ("/", Infix (40, LeftAssoc)))
@@ -684,5 +802,19 @@ let _ = printf "%s\n" (term2string empty_context (
 
 let _ = printf "%s\n" (term2string empty_context (
   DestructWith [((PVar ("x", avar), Explicit), DestructWith [((PVar ("y", avar), Implicit), App (plus, [TVar 0, Explicit; TVar 1, Explicit]))])]
+)
+)
+
+let _ = printf "%s\n" (term2string empty_context (
+  DestructWith [
+    (
+      (PApp (splus, [PVar ("x", avar), Explicit; PVar ("z", avar), Explicit], Cste asymb), Explicit), 
+      DestructWith [
+	((PVar ("y", avar), Implicit), 
+	 App (plus, [TVar 0, Explicit; TVar 1, Explicit])
+	)
+      ]
+    )
+  ]
 )
 )
