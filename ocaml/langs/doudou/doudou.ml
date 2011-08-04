@@ -14,7 +14,7 @@ type op = NoFix
 	  | Infix of int * associativity
 	  | Postfix of int
 
-type symbol = Name of name
+type symbol = | Name of name
 	      | Symbol of name * op
 
 type index = int
@@ -36,6 +36,9 @@ type term = Type
 	    | Obj of term tObj
 
 	    | TVar of index
+		
+	    (* this constructor is only valide after parsing, and removed by typechecking *)
+	    | AVar
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
@@ -240,7 +243,7 @@ let op_priority (o: op) : int =
     | Postfix i -> i
 
 (* returns only the elements that are explicit *)
-let filter_explicit (l: (term * nature) list) : term list =
+let filter_explicit (l: ('a * nature) list) : 'a list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
     
 
@@ -249,8 +252,29 @@ let filter_explicit (l: (term * nature) list) : term list =
    hd::tl -> hd is the "oldest" variable, and is next to be framed
 *)
 
-let pattern_bvars (p: pattern) : (symbol * term * term option) list =
-  raise Exit
+(* TODO: properly assert the value for alias *)
+let rec pattern_bvars (p: pattern) : (name * term * term option) list =
+  match p with
+    | PType -> []
+    | PVar (n, ty) -> [n, ty, None]
+    | PAVar ty -> ["_", ty, None]
+    | PCste s -> []
+    | PAlias (n, p, ty) -> pattern_bvars p @ [n, ty, None] (* here should replace the None by a proper term corresponding to p *)
+    | PApp (s, args, ty) -> List.flatten (List.map (fun (p, _) -> pattern_bvars p ) args)
+
+(* this function take a term te1 and
+   return a list of pattern ps and a term te2 such that
+   List.fold_right (fun p acc -> DestructWith p acc) ps te2 == te1
+   
+   less formally, traversing a term to find the maximum list of DestructWith with only one equation (the next visited term being the r.h.s of the equation)
+*)
+
+let rec accumulate_pattern_destructwith (te: term) : (pattern * nature) list * term =
+  match te with
+    | DestructWith ([(p, te)]) ->
+      let (ps, te) = accumulate_pattern_destructwith te in
+      (p::ps, te)
+    | _ -> ([], te)
 
 (***************************)
 (*      context/frame      *)
@@ -273,16 +297,24 @@ let build_new_frame (s: symbol) ?(value: term = TVar 0) (ty: term) : frame =
 
 }
 
-let push_pattern_bvars (ctxt: context) (l: (symbol * term * term option) list) : context =
-  List.fold_left (fun ctxt (s, ty, v) ->
+(* push the bvars of a pattern in a context *)
+let push_pattern_bvars (ctxt: context) (l: (name * term * term option) list) : context =
+  List.fold_left (fun ctxt (n, ty, v) ->
     (
       match v with
-	| None -> build_new_frame s ty
-	| Some v -> build_new_frame s ~value:v ty
+	| None -> build_new_frame (Name n) ty
+	| Some v -> build_new_frame (Name n) ~value:v ty
     ) :: ctxt	
 
 
   ) ctxt l
+
+(* compute the context under a pattern *)
+let push_pattern (ctxt: context) (p: pattern) : context =
+  (* we extract the list of bound variable in the pattern *)
+  let bvars = pattern_bvars p in
+  (* we build a new context with the pattern bvars frames pushed *)
+  push_pattern_bvars ctxt bvars
 
       
 (******************)
@@ -454,34 +486,151 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	)
 
     | DestructWith eqs ->
-      (* we always put parenthesis here *)
+      (* we do not put parenthesis only when
+	 - we are alone
+      *)
       (
-	withParen
+	match p with
+	  | Alone -> (fun x -> x)
+	  | _ -> withParen
       )
       (
-	let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
-	Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
+	(* we extract the accumulation of destructwith *)
+	let (ps, te) = accumulate_pattern_destructwith te in
+	match ps with
+	  (* if ps is empty -> do something basic *)
+	  | [] ->
+	    let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
+	    Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
+	  (* else we do more prettty printing *)
+	  | _ ->
+	    let (ps, ctxt) = List.fold_left (fun (ps, ctxt) (p, nature)  -> 
+
+	      (* N.B.: we are printing even the implicit arguments ... is it always a good thing ? *)
+
+	      (* we print the pattern *)
+	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (if nature = Implicit then InArg Implicit else Alone)) in
+	      (* grab the underlying context *)
+	      let ctxt = push_pattern ctxt p in
+	      (* we return the whole thing *)
+	      (* NB: for sake of optimization we return a reversed list of pattern, which are reversed in the final box *)
+	      ((pattern::ps), ctxt)
+	    ) ([], ctxt) ps in
+	      let te = term2token ctxt te Alone in
+	      Box (intercalate (Space 1) (List.rev ps) @ [Space 1; Verbatim ":="; Space 1; te])
       )
     | TyAnnotation (te, _) | SrcInfo (_, te) ->
       term2token ctxt te p      
+
+    | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
 
     (* by default we do not support *)
     | _ -> raise (Failure "term2token: NYI")
 
 and equation2token (ctxt: context) (eq: equation) : token =
-  let (pattern, nature), te = eq in
-  (* we extract the list of bound variable in the pattern *)
-  let bvars = pattern_bvars pattern in
-  (* we create the pattern token *)
-  let pattern = pattern2token ctxt pattern (if nature = Implicit then InArg Implicit else Alone) in
-  (* we build a new context with the pattern bvars frames pushed *)
-  let ctxt = push_pattern_bvars ctxt bvars in
-  (* create the term token *)
-  let te = term2token ctxt te Alone in
-  Box [pattern; Space 1; Verbatim ":="; Space 1; te]
+  (* here we simply print the DestructWith with only one equation *)
+  term2token ctxt (DestructWith [eq]) Alone
 
-and pattern2token (ctxt: context) (p: pattern) (p: place) : token =
-  raise (Failure "pattern2token: NYI")
+and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
+  match pattern with
+    | PType -> Verbatim "Type"
+    | PVar (n, _) -> Verbatim n
+    | PAVar _ -> Verbatim "_"
+    | PCste s -> Verbatim (symbol2string s)
+    | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
+
+    (* for the append we have several implementation that mimics the ones for terms *)
+    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (filter_explicit args) = 2->
+      (* we should put parenthesis in the following condition: *)
+      (match p with
+	(* if we are an argument *)
+	| InArg Explicit -> withParen
+	(* if we are in a notation such that *)
+	(* a prefix or postfix binding more  than us *)
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	(* or another infix with higher priority *)
+	| InNotation (Infix (i, _), _) when i > myprio -> withParen
+	(* or another infix with same priority depending on the associativity and position *)
+	(* I am the first argument and its left associative *)
+	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
+	(* I am the second argument and its right associative *)
+	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
+	(* if we are in an alias *)
+	| InAlias -> withParen
+
+	(* else we do not need parenthesis *)
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg1::arg2::[] ->
+	    let arg1 = pattern2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
+	    let arg2 = pattern2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg1; te; arg2])
+	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
+       )
+    (* the case for Prefix *)
+    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a postfix notation more binding than us
+	 - in an alias
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InAlias -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = pattern2token ctxt arg (InNotation (Prefix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [te; arg])
+	  | _ -> raise (Failure "pattern2token, App prefix case: irrefutable patten")
+       )
+
+    (* the case for Postfix *)
+    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a prefix notation more binding than us
+	 - in an alias
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| InAlias -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = pattern2token ctxt arg (InNotation (Postfix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg; te])
+	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+       )
+
+    (* general case *)
+    | PApp (s, args, _) ->
+      (* we only embed in parenthesis if
+	 - we are an argument of an application
+	 - we are in a notation
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InNotation _ -> withParen
+	| InAlias -> withParen
+	| _ -> fun x -> x
+      ) (
+	let args = List.map (fun te -> pattern2token ctxt te (InArg Explicit)) (filter_explicit args) in
+	let s = symbol2string s in
+	Box (intercalate (Space 1) (Verbatim s::args))
+       )
+
 
 (* make a string from a term *)
 let term2string (ctxt: context) (te: term) : string =
@@ -517,6 +666,8 @@ let nat = (Cste (Name "nat"))
 
 let asymb = Symbol ("_", NoFix)
 
+let avar = Cste asymb
+
 open Printf
 
 let _ = printf "%s\n" (term2string empty_context zero)
@@ -528,5 +679,10 @@ let _ = printf "%s\n" (term2string empty_context (App (neg, [App (mult, [zero, E
 
 let _ = printf "%s\n" (term2string empty_context (
   Impl ((asymb, Impl ((asymb, nat, Explicit), Impl ((asymb, nat, Implicit), nat)), Implicit), Impl ((Name "prout", nat, Explicit), nat))
+)
+)
+
+let _ = printf "%s\n" (term2string empty_context (
+  DestructWith [((PVar ("x", avar), Explicit), DestructWith [((PVar ("y", avar), Implicit), App (plus, [TVar 0, Explicit; TVar 1, Explicit]))])]
 )
 )
