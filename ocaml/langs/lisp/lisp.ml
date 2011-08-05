@@ -1393,6 +1393,7 @@ let interp_file ctxt filename =
 
 let interp_stdin ctxt =
   let finished = ref false in
+  let terms = ref [] in
   let parse =
     eos_as_none (parse_oneexpr >>= fun (_, expr) -> return expr) in      
   while not !finished do
@@ -1402,7 +1403,11 @@ let interp_stdin ctxt =
       match parse stream with
 	| Result.Ok (Some res, _) -> (	  
 	  try (
+	    (* we evaluate the term *)
 	    let res' = eval res ctxt in
+	    (* we save it *)
+	    terms := res'::!terms;
+	    (* and show the result *)	    
 	    printf "\nresult:\n";
 	    printbox (token2box (expr2token res') 400 2);
 	    printf "\n";
@@ -1411,7 +1416,23 @@ let interp_stdin ctxt =
 	    | LispException err -> printf "%s\n" (box2string (token2box (execException2box err) 400 2))
 	)
 	| Result.Ok (None, _) -> (
-	  finished := true;
+	  (* we are done *)
+	  (* before leaving the loop, let's save the terms at the end of the file *)
+	  let _ = (
+	    try 
+	      let terms = List.rev !terms in
+	      let oc = open_out "saved-interactive-session.lisp" in
+	      seek_out oc (out_channel_length oc);
+	      let _ = List.map (fun hd -> 
+		output_string oc (box2string (token2box (expr2token hd) 400 2));
+		output_string oc "\n\n"
+	      ) terms in
+	      close_out oc
+	    with
+	      | Sys_error _ -> ()
+	  ) in
+	  printf "\n"; 
+	  finished := true;	  
 	  flush Pervasives.stdout
 	)
 	| Result.Error (pos, s) ->
