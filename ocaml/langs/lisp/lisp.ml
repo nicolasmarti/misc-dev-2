@@ -319,7 +319,7 @@ end st
 
 let parse_exprs st = begin
   (list_with_sep 
-     ~sep:(?* blank <|> parse_comment <|> eos)
+     ~sep:(?* blank <|> parse_comment)
      parse_expr
   ) >>= fun exprs ->
   position >>= fun pos ->
@@ -1356,11 +1356,15 @@ let interp_exprs ctxt expr =
 let interp_file ctxt filename = 
   let ic = Pervasives.open_in filename in
   let stream = Stream.from_chan ~filename:filename ic in
-  match parse_exprs stream with
-    | Result.Ok ((consume, res), _) -> (
+  let parse =   
+    parse_exprs >>= fun (_, exprs) ->
+    ?* blank <|> parse_comment >>= fun _ ->
+    eos >>= fun _ ->
+    return exprs in
+  match parse stream with
+    | Result.Ok (res, _) -> (
       let _ = List.map (fun hd -> 
-	let res = eval hd ctxt in
-	printbox (token2box (expr2token res) 400 2)
+	eval hd ctxt
       ) res in
       close_in ic
     )
