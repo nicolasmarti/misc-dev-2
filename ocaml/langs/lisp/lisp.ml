@@ -847,7 +847,10 @@ let parse_escaped : string Parser.t =
     tokenp (fun _ -> true) >>= fun _ ->
     return ()
   ) >>= fun s ->
-  return s
+  match s with
+    | "\\n" -> return "\n"
+    | "\\t" -> return "\t"
+    | "\\r" -> return "\r"
 ;;
 
 (* I cannot managed to properly grab the error from parse_formatter ... grrr*)
