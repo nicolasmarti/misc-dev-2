@@ -72,10 +72,11 @@ type frame = {
   value: term;
     
   (* the free variables 
-     fst: the type of the free variable
-     snd: its corresponding value (by unification)
+     - the index (redundant information put for sake of optimization)
+     - the type of the free variable
+     - its corresponding value (by unification)
   *)
-  fvs: (term * term) list;
+  fvs: (index * term * term) list;
 
   (* the stacks *)
   termstack: term list;
@@ -85,9 +86,21 @@ type frame = {
   
 }
 
+let empty_frame = {
+  symbol = Name "not name";
+  ty = TName "no type";
+  value = TName "no value";
+  fvs = [];
+  termstack = [];
+  naturestack = [];
+  equationstack = [];
+  patternstack = [];
+}
+
 type context = frame list
 
-let empty_context = []
+(* the context must a least have one frame, for pushing/poping stack elements *)
+let empty_context = empty_frame::[]
 	   
 (* definitions *)
 type defs = {
@@ -585,7 +598,7 @@ let context_substitution (s: substitution) (ctxt: context) : context =
       ty = term_substitution s frame.ty;
       (* not sure on this one ... there should be no fv in value ... *)
       value = term_substitution s frame.value;
-      fvs = List.map (fun (ty, value) -> term_substitution s ty, term_substitution s value) frame.fvs;
+      fvs = List.map (fun (index, ty, value) -> index, term_substitution s ty, term_substitution s value) frame.fvs;
       termstack = List.map (term_substitution s) frame.termstack;
       equationstack = List.map (equation_substitution s) frame.equationstack;
       patternstack = List.map (pattern_substitution s) frame.patternstack
@@ -602,6 +615,30 @@ let bvar_value (ctxt: context) (i: index) : term =
   ) with
     | Failure "nth" -> raise (DoudouException (NoSuchBVar (i, ctxt)))
     | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
+
+(* extract a substitution from the context *)
+let context2substitution (ctxt: context) : substitution =
+  fst (List.fold_left (
+    fun (s, level) frame -> 
+      let s = List.fold_left (fun s (index, ty, value) ->
+	(* add : key -> 'a -> 'a t -> 'a t *)
+	IndexMap.add index (shift_term value level) s
+      ) s frame.fvs in
+      (s, level+1)
+  ) (IndexMap.empty, 0) ctxt
+  )
+
+(* pushing and poping terms in the term stack 
+   N.B.: with side effect
+*)
+let push_terms (ctxt: context ref) (tes: term list) : unit =
+  let (hd::tl) = !ctxt in
+  ctxt := ({hd with termstack = tes @ hd.termstack})::tl
+
+let pop_terms (ctxt: context ref) (sz: int) : term list =
+  let (hd::tl) = !ctxt in  
+  ctxt := ({hd with termstack = drop sz hd.termstack})::tl;
+  take sz hd.termstack
 
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
@@ -648,7 +685,6 @@ let unification_strat : reduction_strategy = {
   eta = true;
 }
 
-(* something's wrong: we do not push terms such that they can be substituted with the generated unifiers !!! *)
 let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
 
@@ -669,7 +705,11 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
     )
 
     | TyAnnotation (te1, ty1), TyAnnotation (te2, ty2) ->
+      (* we push ty1 and ty2, so that they will be substituted with the result of the substitution of te1 te2 *)
+      push_terms ctxt [ty1; ty2];
       let te = unification_term_term defs ctxt te1 te2 in
+      (* we pop back ty1 and ty2 *)
+      let [ty1; ty2] = pop_terms ctxt 2 in
       let ty = unification_term_term defs ctxt ty1 ty2 in
       TyAnnotation (te, ty)
 
@@ -677,11 +717,19 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
        not sure this is really needed ... but 
     *)
     | TyAnnotation (te1, ty1), _ ->
+      (* pushing ty1 *)
+      push_terms ctxt [ty1];
       let (te2, ty2) = typeinfer defs ctxt te2 in
+      (* poping ty1 *)
+      let [ty1] = pop_terms ctxt 1 in
       unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
 
     | _, TyAnnotation (te2, ty2) ->
+      (* pushing ty1 *)
+      push_terms ctxt [ty2];
       let (te1, ty1) = typeinfer defs ctxt te1 in
+      (* poping ty2 *)
+      let [ty2] = pop_terms ctxt 1 in
       unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
 
     (* the error cases for AVar and TName *)
@@ -764,18 +812,29 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
       (* first we save the context and try to unify all term component *)
       let saved_ctxt = !ctxt in
       (try
-	 (**)
+	 (* we need to push the arguments (through this we also verify that the nature matches ) *)
+	 (* we build a list where arguments of te1 and te2 are alternate *)
+	 let rev_arglist = List.fold_left (
+	   fun acc ((arg1, n1), (arg2, n2)) ->
+	     if n1 != n2 then
+	     (* if both nature are different -> no unification ! *)
+	       raise (DoudouException (NoUnification (!ctxt, te1, te2)))
+	     else  
+	       arg2::arg1::acc
+	 ) [] (List.combine args1 args2) in
+	 let arglist = List.rev rev_arglist in
+	 (* and we push this list *)
+	 push_terms ctxt arglist;
 	 (* first we unify the head of applications *)
 	 let hd = unification_term_term defs ctxt hd1 hd2 in
-	 (* then we unify all the arguments pair-wise *)
-	 let args = List.map (fun ((te1, n1), (te2, n2)) ->
-	   if n1 != n2 then
-	     (* if both nature are different -> no unification ! *)
-	     raise (DoudouException (NoUnification (!ctxt, te1, te2)))
-	   else
-	     let te = unification_term_term defs ctxt te1 te2 in
-	     (te, n1)
-	 ) (List.combine args1 args2) in
+	 (* then we unify all the arguments pair-wise, taking them from the list *)
+	 let args = List.map (fun (_, n) ->
+	   (* we grab the next argument for te1 and te2 in the context (and we know that their nature is equal to n) *)
+	   let [arg1; arg2] = pop_terms ctxt 2 in
+	   (* and we unify *)
+	   let arg = unification_term_term defs ctxt arg1 arg2 in
+	   (arg, n)
+	 ) args1 in
 	 (* finally we have our unified term ! *)
 	 App (hd, args)
 
@@ -807,6 +866,10 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
 	(* we push a frame *)
 	let frame = build_new_frame s1 ty in
 	ctxt := frame::!ctxt;
+	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
+	let s = context2substitution !ctxt in
+	let te1 = term_substitution s te1 in
+	let te2 = term_substitution s te2 in
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
