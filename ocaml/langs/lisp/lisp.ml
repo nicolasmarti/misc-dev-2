@@ -1353,6 +1353,24 @@ let interp_exprs ctxt expr =
       raise (LispException (StringError (String.concat "\n" ["Parsing error:"; s])))
 ;;
 
+let interp_file ctxt filename = 
+  let ic = Pervasives.open_in filename in
+  let stream = Stream.from_chan ~filename:filename ic in
+  match parse_exprs stream with
+    | Result.Ok ((consume, res), _) -> (
+      let _ = List.map (fun hd -> 
+	let res = eval hd ctxt in
+	printbox (token2box (expr2token res) 400 2)
+      ) res in
+      close_in ic
+    )
+    | Result.Error (pos, s) ->
+      Format.eprintf "%s\n%a: syntax error: %s@." filename Position.File.format pos s;      
+      close_in ic;
+      raise (LispException (StringError (String.concat "\n" ["Parsing error:"; s])))
+	
+;;
+
 (******************************************************************************)
 
 open Lang_intf;;
@@ -1379,12 +1397,16 @@ struct
 
   let empty_session () =  init_ctxt () ;;
 
-  let proceed session exprs = 
+  let proceed_expr session exprs = 
     interp_expr session exprs 
   ;;
 
-  let proceeds session exprs = 
+  let proceed_exprs session exprs = 
     interp_exprs session exprs
+  ;;
+
+  let proceed_file session filename =
+    interp_file session filename
   ;;
 
   let print session value = 

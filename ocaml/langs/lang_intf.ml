@@ -26,8 +26,9 @@ module type Lang = sig
   (* together with the value, it returns the number of chars consume *)
   (* proceed only take one unit of code *)
   (* while proceeds take as much as possible *)
-  val proceed: session -> string -> (int * value)
-  val proceeds: session -> string -> (int * value list)
+  val proceed_expr: session -> string -> (int * value)
+  val proceed_exprs: session -> string -> (int * value list)
+  val proceed_file: session -> string -> unit
     
   (* pretty printing of values *)
   val print: session -> value -> string
