@@ -254,6 +254,15 @@ let spaces : ('a -> 'a) parsingrule =
    with
      | NoMatch -> fun x -> x      
 ;;
+
+let whitespaces : unit parsingrule = 
+ fun pb ->
+   try    
+     (* it seems a miss something ... but what ?? *)
+     applylexingrule (regexp "[' ' '\t' '\r' '\n']*", fun (s:string) -> ()) pb
+   with
+     | NoMatch -> ()      
+;;
  
  
 let keyword (s: string) (v: 'a) : 'a parsingrule =
