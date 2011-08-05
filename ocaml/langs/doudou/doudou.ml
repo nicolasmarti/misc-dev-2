@@ -1153,9 +1153,9 @@ let term2string (ctxt: context) (te: term) : string =
   let box = token2box token 80 2 in
   box2string box
 
-(******************************)
-(* parser *)
-(******************************)
+(**********************************)
+(* parser (lib/parser.ml version) *)
+(**********************************)
 
 let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
   fun pb ->
@@ -1163,10 +1163,24 @@ let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
     if (snd startp <= snd curp) then raise NoMatch;
     p pb
 
+let doudou_keywords = []
 
+open Str;;
+
+let name_parser : name parsingrule = applylexingrule (regexp "[a-zA-Z][a-zA-Z0-9]*", 
+						      fun (s:string) -> 
+							if List.mem s doudou_keywords then raise NoMatch else s
+)
+
+let parse_avar : unit parsingrule = applylexingrule (regexp "_", 
+						     fun (s:string) -> ()
+)
+  
 (******************************)
 (*        tests               *)
 (******************************)
+
+(* pretty printer *)
 
 let zero = Cste (Name "0")
 let splus = (Symbol ("+", Infix (30, LeftAssoc)))
