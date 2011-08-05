@@ -2,7 +2,8 @@
 
 set -e
 
-TARGET=tests.otarget
+TESTS=tests.otarget
+APPS=apps.otarget
 FLAGS=""
 OCAMLBUILD=ocamlbuild
 
@@ -14,7 +15,9 @@ ocb()
 rule() {
   case $1 in
     clean)  ocb -clean;;
-    all)    ocb $TARGET;;
+    all)    ocb $TESTS; ocb $APPS;;
+    tests)  ocb $TESTS;;	  
+    apps)   ocb $APPS;;
     *)      echo "Unknown action $1";;
   esac;
 }
