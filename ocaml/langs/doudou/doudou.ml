@@ -38,10 +38,12 @@ type term = Type
 	    | Cste of symbol
 	    | Obj of term tObj
 
+	    (* the Left name is only valid after parsing, and removed by typecheck*)
 	    | TVar of index
 		
-	    (* this constructor is only valide after parsing, and removed by typechecking *)
+	    (* these constructors are only valide after parsing, and removed by typechecking *)
 	    | AVar
+	    | TName of name
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
@@ -262,6 +264,7 @@ let rec fv_term (te: term) : IndexSet.t =
     | TVar i when i >= 0 -> IndexSet.empty
     | TVar i when i < 0 -> IndexSet.singleton i
     | AVar -> raise (Failure "fv_term catastrophic: AVar")
+    | TName _ -> raise (Failure "fv_term catastrophic: TName")
     | App (te, args) ->
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
     | Impl ((s, ty, n), te) ->
@@ -422,6 +425,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
       )
     | TVar i as v when i >= 0 -> v
     | AVar -> raise (Failure "term_substitution catastrophic: AVar")
+    | TName _ -> raise (Failure "term_substitution catastrophic: TName")
     | App (te, args) ->
       App (term_substitution s te,
 	   List.map (fun (te, n) -> term_substitution s te, n) args)
@@ -474,6 +478,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       else
 	v
     | AVar -> raise (Failure "leveled_shift_term catastrophic: AVar")
+    | TName _ -> raise (Failure "leveled_shift_term catastrophic: TName")
 
     | App (te, args) ->
       App (
@@ -679,9 +684,12 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
       let (te1, ty1) = typeinfer defs ctxt te1 in
       unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
 
-    (* the error cases for AVar *)
+    (* the error cases for AVar and TName *)
     | AVar, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
     | _, AVar -> raise (Failure "unification_term_term catastrophic: AVar in te2 ")
+    | TName _, _ -> raise (Failure "unification_term_term catastrophic: TName in te1 ")
+    | _, TName _ -> raise (Failure "unification_term_term catastrophic: TName in te2 ")
+
 
     (* the trivial cases for Type, Cste and Obj *)
     | Type, Type -> Type
@@ -1031,6 +1039,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       term2token ctxt te p      
 
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
+    | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
 
 
 and equation2token (ctxt: context) (eq: equation) : token =
@@ -1145,7 +1154,7 @@ let term2string (ctxt: context) (te: term) : string =
   box2string box
 
 (******************************)
-(* online typechecking parser *)
+(* parser *)
 (******************************)
 
 let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
