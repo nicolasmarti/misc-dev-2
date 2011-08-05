@@ -1378,6 +1378,28 @@ let interp_file ctxt filename =
 	
 ;;
 
+let interp_stdin ctxt =
+  let stream = Stream.from_chan ~filename:"stdin" Pervasives.stdin in
+  let finished = ref false in
+  let parse =
+    eos_as_none (parse_oneexpr >>= fun (_, expr) -> return expr) in      
+  while not !finished do
+    (
+      match parse stream with
+	| Result.Ok (Some res, _) -> (
+	  let res' = eval res ctxt in
+	  printbox (token2box (expr2token res') 400 2)	  
+	)
+	| Result.Ok (None, _) -> (
+	  finished := true
+	)
+	| Result.Error (pos, s) ->
+	  Format.eprintf "%a: syntax error: %s@." Position.File.format pos s
+    )
+  done
+;;
+	  
+
 (******************************************************************************)
 
 open Lang_intf;;

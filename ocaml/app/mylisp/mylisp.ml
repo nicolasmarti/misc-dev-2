@@ -8,9 +8,8 @@ let main () =
     let session = LispLang.empty_session () in
     LispLang.proceed_file session filename
     
-    
   ) with
-      | Invalid_argument _ -> printf "usage: %s <filename>\n" (Sys.argv.(0))
+      | Invalid_argument _ -> interp_stdin (init_ctxt ())
       | LispLang.Exception err -> printf "%s\n" (LispLang.error2string err)
 ;;
 
