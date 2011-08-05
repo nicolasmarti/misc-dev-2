@@ -302,7 +302,7 @@ let rec parse_expr st = begin
 		   parse_expr
 		) >>= fun l -> return (List l)
     )	   
-    <|> try_ (surrounded (?+ blank) (?* blank) parse_expr)
+    <|> try_ ((?+ blank) >>= fun _ ->  parse_expr)
     <|> try_ (parse_comment >>= fun _ -> parse_expr)
   ) >>= fun (e, startp, endp) ->  
   return (SrcInfo (e, (startp, endp)))
@@ -1379,24 +1379,27 @@ let interp_file ctxt filename =
 ;;
 
 let interp_stdin ctxt =
-  let stream = Stream.from_chan ~filename:"stdin" Pervasives.stdin in
   let finished = ref false in
   let parse =
     eos_as_none (parse_oneexpr >>= fun (_, expr) -> return expr) in      
   while not !finished do
-    (
+    ( 
+      let stream = Stream.from_chan ~filename:"stdin" Pervasives.stdin in
       match parse stream with
-	| Result.Ok (Some res, _) -> (
+	| Result.Ok (Some res, _) -> (	  
 	  let res' = eval res ctxt in
-	  printbox (token2box (expr2token res') 400 2)	  
+	  printbox (token2box (expr2token res') 400 2);
+	  flush Pervasives.stdout
 	)
 	| Result.Ok (None, _) -> (
-	  finished := true
+	  finished := true;
+	  flush Pervasives.stdout
 	)
 	| Result.Error (pos, s) ->
 	  Format.eprintf "%a: syntax error: %s@." Position.File.format pos s
     )
   done
+
 ;;
 	  
 
