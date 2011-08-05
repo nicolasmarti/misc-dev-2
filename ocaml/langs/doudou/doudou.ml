@@ -110,14 +110,15 @@ type defs = {
   mutable hist : symbol list;
 }
 
-type doudou_error = NoSuchBVar of index * context
-		    | NegativeIndexBVar of index
+type doudou_error = NegativeIndexBVar of index
 		    | Unshiftable_term of term * int * int
 
 		    | ErrorPosPair of pos option * pos option * doudou_error
 		    | ErrorPos of pos * doudou_error
 
 		    | UnknownCste of symbol
+		    | UnknownBVar of index * context
+		    | UnknownFVar of index * context
 
 		    | UnknownUnification of context * term * term
 		    | NoUnification of context * term * term
@@ -254,6 +255,19 @@ let mapacc (f: 'b -> 'a -> ('c * 'b)) (acc: 'b) (l: 'a list) : 'c list * 'b =
 		       acc := acc';
 		       hd) l, !acc)
 
+type ('a, 'b) either = Left of 'a
+		       | Right of 'b
+;;
+
+(* a fold that might stop before the whole traversal *)
+let rec fold_stop (f: 'b -> 'a -> ('b, 'c) either) (acc: 'b) (l: 'a list) : ('b, 'c) either =
+  match l with
+    | [] -> Left acc
+    | hd::tl ->
+      match f acc hd with
+	| Left acc -> fold_stop f acc tl
+	| Right res -> Right res
+
 (* assert that pos1 contains pos2 *)
 let pos_in (pos1: pos) (pos2: pos) : bool =
   let ((begin_line1, begin_col1), (end_line1, end_col1)) = pos1 in
@@ -328,7 +342,7 @@ let get_bvar_frame (ctxt: context) (i: index) : frame =
   try 
     List.nth ctxt i
   with
-    | Failure _ -> raise (DoudouException (NoSuchBVar (i, ctxt)))
+    | Failure _ -> raise (DoudouException (UnknownBVar (i, ctxt)))
     | Invalid_argument _ -> raise (DoudouException (NegativeIndexBVar i))
 
 (*
@@ -523,9 +537,9 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 	    List.map (fun (p, n) -> leveled_shift_pattern p level delta, n) args,
 	    leveled_shift_term ty level delta)
 
-(***************************)
-(*      context/frame      *)
-(***************************)
+(********************************)
+(*      defs/context/frame      *)
+(********************************)
 
 (* build a new frame 
    value is optional
@@ -606,15 +620,29 @@ let context_substitution (s: substitution) (ctxt: context) : context =
   ) s ctxt
   )
 
-(* grab the value of a fvar *)
+(* grab the value of a bound var *)
 let bvar_value (ctxt: context) (i: index) : term =
   try (
     let frame = List.nth ctxt i in
     let value = frame.value in
     shift_term value i
   ) with
-    | Failure "nth" -> raise (DoudouException (NoSuchBVar (i, ctxt)))
+    | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
     | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
+
+(* grab the value of a free var *)
+let fvar_value (ctxt: context) (i: index) : term =
+  let lookup = fold_stop (fun level frame ->
+    let lookup = fold_stop (fun () (index, ty, value) -> 
+      if index = i then Right value else Left ()
+    ) () frame.fvs in
+    match lookup with
+      | Left () -> Left (level + 1)
+      | Right res -> Right (shift_term res level)
+  ) 0 ctxt in
+  match lookup with
+    | Left _ -> raise (DoudouException (UnknownFVar (i, ctxt)))
+    | Right res -> res
 
 (* extract a substitution from the context *)
 let context2substitution (ctxt: context) : substitution =
@@ -640,6 +668,14 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
   ctxt := ({hd with termstack = drop sz hd.termstack})::tl;
   take sz hd.termstack
 
+(* unfold a constante *)
+let unfold_constante (defs: defs) (s: symbol) : term =
+  try 
+    snd (Hashtbl.find defs.store (symbol2string s))
+  with
+    | Not_found -> raise (DoudouException (UnknownCste s))
+
+
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
 (*************************************************************)
@@ -651,7 +687,8 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
   possibility to have strong beta reduction
   delta: unfold equations (replace cste with their equations)
   iota: try to match equations l.h.s
-  deltaiotaweak: if after delta reduction, a iota reduction fails, then the delta reduction is backtracked
+  deltaiotaweak: if after delta reduction (on head of app), a iota reduction fails, then the delta reduction is backtracked
+  deltaiotaweak_armed: just a flag to tell the reduction function that it should raise a IotaReductionFailed
   zeta: compute the let bindings
   eta: not sure if needed
 
@@ -670,6 +707,7 @@ type reduction_strategy = {
   delta: bool;
   iota: bool;
   deltaiotaweak: bool;
+  deltaiotaweak_armed: bool;
   zeta: bool;
   eta: bool;
 }
@@ -681,9 +719,15 @@ let unification_strat : reduction_strategy = {
   delta = true;
   iota = true;
   deltaiotaweak = false;
+  deltaiotaweak_armed = false;
   zeta = true;
   eta = true;
 }
+
+(* a special exception for the reduction which 
+   signals that an underlying iota reduction fails
+*)
+exception IotaReductionFailed
 
 let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
@@ -743,19 +787,9 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
     | Type, Type -> Type
     | Obj o1, Obj o2 when o1 = o2 -> Obj o1
     | Cste c1, Cste c2 when c1 = c2 -> Cste c1
-    (* when a term is a constant we just look for its definition and expand *)
-    | Cste c1, _ -> (
-      try 
-	unification_term_term defs ctxt (snd (Hashtbl.find defs.store (symbol2string c1))) te2
-      with
-	| Not_found -> raise (DoudouException (UnknownCste c1))
-    )
-    | _, Cste c2 -> (
-      try 
-	unification_term_term defs ctxt te1 (snd (Hashtbl.find defs.store (symbol2string c2)))
-      with
-	| Not_found -> raise (DoudouException (UnknownCste c2))
-    )
+    (* when a term is a constant we just unfold it *)
+    | Cste c1, _ -> unification_term_term defs ctxt (unfold_constante defs c1) te2
+    | _, Cste c2 -> unification_term_term defs ctxt te1 (unfold_constante defs c2)
 
     (* the trivial case for variable *)
     | TVar i1, TVar i2 when i1 = i2 -> TVar i1
@@ -888,12 +922,78 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
-  raise (Failure "reduction: NYI")
+  match te with
+    | SrcInfo (pos, te) -> (
+      try 
+	reduction defs ctxt strat te
+      with
+	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
+    )
+    | TyAnnotation (te, ty) ->
+      let te = reduction defs ctxt strat te in
+      let ty = reduction defs ctxt strat ty in
+      TyAnnotation (te, ty)
+
+    | Type -> Type
+    (* without delta reduction we do unfold *)
+    | Cste c1 when not strat.delta -> te
+    (* with delta reduction we unfold *)
+    | Cste c1 when strat.delta -> unfold_constante defs c1
+
+    | Obj o -> te
+
+    (* for both free and bound variables we have their value in the context *)
+    | TVar i when i >= 0 -> bvar_value !ctxt i
+    | TVar i when i < 0 -> fvar_value !ctxt i
+
+    (* trivial error cases *) 
+    | AVar -> raise (Failure "reduction catastrophic: AVar")
+    | TName _ -> raise (Failure "reduction catastrophic: TName")
+
+    (* Impl: we reduce the type, and the term only if betastrong *)
+    | Impl ((s, ty, n), te) -> 
+      let ty = reduction defs ctxt strat ty in
+      if strat.betastrong then (
+	(* we push a frame *)
+	let frame = build_new_frame s ty in
+	ctxt := frame::!ctxt;
+	(* we reduce the body *)
+	let te = reduction defs ctxt strat te in
+	(* we pop the frame *)
+	ctxt := List.tl !ctxt;
+	(* and we return the term *)
+	Impl ((s, ty, n), te)
+
+      ) else Impl ((s, ty, n), te)
+      
+
+    (* Application: the big part *)
+    | App _ when strat.beta -> (
+      raise (Failure "reduction App _: NYI");
+      match te with
+	  
+	(* a first subcase for app: with a Cste as head *)
+	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
+	| App (Cste c1, args) when strat.deltaiotaweak -> (
+	  (* first we save the context *)
+	  let saved_ctxt = ! ctxt in
+	  (* we unfold the constante *)
+	  let te1 = unfold_constante defs c1 in
+	  try 
+	    reduction defs ctxt {strat with deltaiotaweak_armed = true} (App (te1, args))
+	  with
+	    | IotaReductionFailed -> 
+	  (* we restore the context *)
+	      ctxt := saved_ctxt;
+	      App (Cste c1, args)
+	)
+    )
+
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
-  raise (Failure "NYI")
+  raise (Failure "typecheck: NYI")
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
-  raise (Failure "NYI")
+  raise (Failure "typeinfer: NYI")
 
       
 (******************)
