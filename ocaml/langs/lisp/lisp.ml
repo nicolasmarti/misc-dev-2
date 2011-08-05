@@ -1281,6 +1281,18 @@ object (self)
     List (List.map (fun hd -> eval hd ctxt) args)
 end;;
 
+class progn =
+object (self)
+  inherit [expr] eObj
+  method get_name = "progn"
+  method get_doc = "(progn BODY...)
+
+Eval BODY forms sequentially and return value of last one."
+  method apply args ctxt = 
+    List.fold_left (fun acc hd -> 
+      eval hd ctxt) (List []) args
+end;;
+
 
 (******************************************************************************)
 
@@ -1301,6 +1313,7 @@ let primitives = [new plus; new mult; new plusone; new minusone;
 		  new currenttimestring;
 		  new enot;
 		  new ewhile; new dolist; new dotimes;
+		  new progn;
 		 ];;
 
 let init_ctxt () = 
