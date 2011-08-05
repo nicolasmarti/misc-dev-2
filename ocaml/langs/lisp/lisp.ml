@@ -358,7 +358,7 @@ let rec eval (e: expr) (ctxt: env) : expr =
     | List (hd::tl) -> 
       let hd' = eval hd ctxt in
       if hd = hd' then
-	raise (LispException (FreeError ("not a function", e)))
+	raise (LispException (FreeError ("not a function", hd)))
       else
 	eval (List (hd'::tl)) ctxt
 ;;
@@ -1313,7 +1313,7 @@ let init_ctxt () =
 let rec execException2box (e: lisp_error) : token =
   match e with
     | StringError s -> Verbatim s
-    | FreeError (s, e) -> Box [Verbatim s; Verbatim ":"; Space 1; Verbatim "'"; expr2token e; Verbatim "'"; ]
+    | FreeError (s, e) -> Box [Verbatim s; Verbatim ":"; Space 1; Verbatim "'"; expr2token e; Verbatim "'"; Space 1; Verbatim "::"; Space 1; Verbatim (exprtype e)]
     | AtPos (_, ((AtPos _) as e)) -> execException2box e
     | AtPos ((startp, endp), e) -> Box [Verbatim (string_of_int (startp.Pos.line)); 
 					Verbatim ":"; 
@@ -1384,12 +1384,18 @@ let interp_stdin ctxt =
     eos_as_none (parse_oneexpr >>= fun (_, expr) -> return expr) in      
   while not !finished do
     ( 
+      printf "mylisp> "; flush Pervasives.stdout;
       let stream = Stream.from_chan ~filename:"stdin" Pervasives.stdin in
       match parse stream with
 	| Result.Ok (Some res, _) -> (	  
-	  let res' = eval res ctxt in
-	  printbox (token2box (expr2token res') 400 2);
-	  flush Pervasives.stdout
+	  try (
+	    let res' = eval res ctxt in
+	    printf "\nresult:\n";
+	    printbox (token2box (expr2token res') 400 2);
+	    printf "\n";
+	    flush Pervasives.stdout
+	  ) with
+	    | LispException err -> printf "%s\n" (box2string (token2box (execException2box err) 400 2))
 	)
 	| Result.Ok (None, _) -> (
 	  finished := true;
