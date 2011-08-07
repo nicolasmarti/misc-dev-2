@@ -123,6 +123,8 @@ type doudou_error = NegativeIndexBVar of index
 		    | UnknownUnification of context * term * term
 		    | NoUnification of context * term * term
 
+		    | NoMatchingPattern of context * pattern * term
+
 		    | PoppingNonEmptyFrame of frame
 
 exception DoudouException of doudou_error
@@ -427,9 +429,12 @@ let error_pos (err: doudou_error) (pos: pos) =
     | err -> ErrorPos (pos, err)
 
 
-(***************************)
-(*      substitution       *)
-(***************************)
+(*************************************)
+(*      substitution/rewriting       *)
+(*************************************)
+
+(* substitution = replace free variables by terms (used for typechecking/inference) *)
+(* rewriting = replacing bound variable by terms (used for reduction) *)
 
 
 module IndexMap = Map.Make(
@@ -538,6 +543,14 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
       PApp (s,
 	    List.map (fun (p, n) -> leveled_shift_pattern p level delta, n) args,
 	    leveled_shift_term ty level delta)
+
+
+(* rewrite: map from bound variable to  *)
+type rewrite = term IndexMap.t;;
+
+(* substitution *)
+let rec term_rewrite (r: rewrite) (te: term) : term =
+  raise (Failure ("term_rewriting: NYI"))
 
 (********************************)
 (*      defs/context/frame      *)
@@ -736,6 +749,11 @@ let unification_strat : reduction_strategy = {
   zeta = true;
   eta = true;
 }
+
+(* unification pattern to term: returns a rewrite scheme, for reduction *)
+let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : rewrite =
+  raise (Failure "unification_pattern_term: NYI")
+
 
 (* a special exception for the reduction which 
    signals that an underlying iota reduction fails
@@ -997,14 +1015,16 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
     (* Application: the big part *)
     | App _ when strat.beta -> (
-      let _ = raise (Failure "reduction App _: NYI") in
+
+      (* we do a case analysis ... *)
+
       match te with
 	  
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
 	| App (Cste c1, args) when strat.deltaiotaweak -> (
 	  (* first we save the context *)
-	  let saved_ctxt = ! ctxt in
+	  let saved_ctxt = !ctxt in
 	  (* we unfold the constante *)
 	  let te1 = unfold_constante defs c1 in
 	  try 
@@ -1015,9 +1035,45 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      ctxt := saved_ctxt;
 	      App (Cste c1, args)
 	)
+	  
+	(* App is right associative ... *)
+	| App (App (te1, args1), arg2) ->
+	  reduction defs ctxt strat (App (te1, args1 @ arg2))
+
+	(* the real stuffs: application on a destruct with *)
+	| App (DestructWith eqs, arg::args) -> 
+	  (
+	    let (argte, argn) = arg in
+	    (* we reduce the term *)
+	    let argte = reduction defs ctxt strat argte in
+	    (* we try all the equation until finding one that unify with arg *)
+	    let match_pattern = fold_stop (fun () ((p, n), body) ->
+	      (* we could check that n = argn, but it should have been already checked *)
+	      (* can we unify the pattern ? *)
+	      try 
+		Right (unification_pattern_term !ctxt p argte, body)
+	      with
+		| DoudouException (NoMatchingPattern _) -> Left ()
+	    ) () eqs in
+	    match match_pattern with
+	      | Left () ->
+		(* no pattern were unifiable: return the term as it 
+		   except if deltaiotaweak and ..._armed are set
+		*)
+		if strat.deltaiotaweak && strat.deltaiotaweak_armed then
+		  raise IotaReductionFailed
+		else
+		  App (DestructWith eqs, (argte, argn)::args)
+	      (* we have one pattern that is ok *)
+	      | Right (r, body) ->
+		(* we rewrite the bound variables from the unification *)
+		let body = term_rewrite r body in
+		(* we can now shift the term by the size of the rewrite *)
+		shift_term body (IndexMap.cardinal r)	    
+
+	  )
+
     )
-
-
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
   raise (Failure "typecheck: NYI")
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
