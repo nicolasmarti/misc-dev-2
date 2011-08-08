@@ -62,6 +62,7 @@ and pattern = PType
 	      | PApp of symbol * (pattern * nature) list * term
 
 (* context of a term *)
+(* N.B.: all terms are of the level in which they appear *)
 type frame = {
   (* the symbol of the frame *)
   symbol : symbol;
