@@ -274,13 +274,32 @@ let paren (p: 'a parsingrule) : 'a parsingrule =
   spaces >>> (
     fun pb ->
       let _ = applylexingrule (regexp "(", fun (s:string) -> ()) pb in
+      let _ = whitespaces pb in
       let res = 
 	try 
 	  p pb 
 	with 
 	  | _ -> raise NoMatch
       in
+      let _ = whitespaces pb in
       let _ = applylexingrule (regexp ")", fun (s:string) -> ()) pb in
+	res
+  )
+;;
+
+let bracket (p: 'a parsingrule) : 'a parsingrule =
+  spaces >>> (
+    fun pb ->
+      let _ = applylexingrule (regexp "{", fun (s:string) -> ()) pb in
+      let _ = whitespaces pb in
+      let res = 
+	try 
+	  p pb 
+	with 
+	  | _ -> raise NoMatch
+      in
+      let _ = whitespaces pb in
+      let _ = applylexingrule (regexp "}", fun (s:string) -> ()) pb in
 	res
   )
 ;;

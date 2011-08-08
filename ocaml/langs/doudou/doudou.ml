@@ -428,6 +428,9 @@ let error_pos (err: doudou_error) (pos: pos) =
     (* else ... *)
     | err -> ErrorPos (pos, err)
 
+(* build an implication: no shifting in types !!! *)
+let build_impl (names: name list) (ty: term) (nature: nature) (body: term) : term =
+  List.fold_right (fun n acc -> Impl ((Name n, ty, nature), acc)) names body
 
 (*************************************)
 (*      substitution/rewriting       *)
@@ -1469,6 +1472,115 @@ let name_parser : name parsingrule = applylexingrule (regexp "[a-zA-Z][a-zA-Z0-9
 let parse_avar : unit parsingrule = applylexingrule (regexp "_", 
 						     fun (s:string) -> ()
 )
+
+let create_opparser (defs: defs) (primary: term parsingrule) : term opparser =
+  let res = { primary = primary;
+	      prefixes = Hashtbl.create (List.length defs.hist);
+	      infixes = Hashtbl.create (List.length defs.hist);
+	      postfixes = Hashtbl.create (List.length defs.hist);
+	    } in
+  let _ = List.map (fun s -> 
+    match s with
+      | Name _ -> ()
+      | Symbol (n, NoFix) -> ()
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
+  ) defs.hist in
+  res
+
+(* these are the whole term set 
+   - term_lvlx "->" term
+*)
+let rec parse_term (defs: defs) (leftmost: pos) (pb: parserbuffer) : term = begin
+  tryrule (fun pb ->
+    let _ = whitespaces pb in
+    let (names, ty, nature) = parse_impl_lhs defs leftmost pb in
+    let _ = whitespaces pb in
+    let _ = keyword "->" pb in
+    let _ = whitespaces pb in
+    let body = parse_term defs leftmost pb in
+    let _ = whitespaces pb in
+    build_impl names ty nature body
+  ) 
+  <|> parse_term_lvl0 defs leftmost
+end pb
+
+and parse_impl_lhs (defs: defs) (leftmost: pos) (pb: parserbuffer) : (name list * term * nature) = begin
+  (* first case 
+     with paren
+  *)
+  tryrule (paren (fun pb ->
+    let names = separatedBy name_parser whitespaces pb in
+    let _ = whitespaces pb in
+    let _ = keyword "::" pb in
+    let _ = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    (names, ty, Explicit)
+   )
+  )
+  (* or the same but with bracket *)
+  <|> tryrule (bracket (fun pb ->
+    let names = separatedBy name_parser whitespaces pb in
+    let _ = whitespaces pb in
+    let _ = keyword "::" pb in
+    let _ = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    (names, ty, Implicit)
+  )
+  )
+  (* or just a type -> anonymous arguments *)
+  <|> (fun pb -> 
+    let ty = parse_term_lvl0 defs leftmost pb in
+    (["_"], ty, Explicit)        
+  )
+  <|> (fun pb -> 
+    let ty = paren (parse_term_lvl0 defs leftmost) pb in
+    (["_"], ty, Explicit)        
+  )
+  <|> (fun pb -> 
+    let ty = bracket (parse_term_lvl0 defs leftmost) pb in
+    (["_"], ty, Implicit)        
+  )
+end pb
+
+(* this is operator-ed terms with term_lvl1 as primary
+*)
+and parse_term_lvl0 (defs: defs) (leftmost: pos) (pb: parserbuffer) : term = begin
+  let myp = create_opparser defs (parse_term_lvl1 defs leftmost) in
+  opparse myp
+end pb
+
+(* this is term resulting for the application of term_lvl2 *)
+and parse_term_lvl1 (defs: defs) (leftmost: pos) (pb: parserbuffer) : term = begin
+  fun pb -> 
+    (* first we parse the application head *)
+    let head = parse_term_lvl2 defs leftmost pb in
+    let _ = whitespaces pb in
+    (* then we parse the arguments *)
+    let args = separatedBy (parse_arguments defs leftmost) whitespaces pb in
+    match args with
+      | [] -> head
+      | _ -> App (head, args)
+end pb
+
+(* arguments: term_lvl2 with possibly brackets *)
+and parse_arguments (defs: defs) (leftmost: pos) (pb: parserbuffer) : (term * nature) = begin
+  (fun pb -> 
+    let te = parse_term_lvl2 defs leftmost pb in
+    (te, Explicit)
+  )
+  <|> (fun pb -> 
+    let te = bracket (parse_term_lvl2 defs leftmost) pb in
+    (te, Implicit)
+  )
+end pb
+
+(* these are the most basic terms + top-level terms in parenthesis *)
+and parse_term_lvl2 (defs: defs) (leftmost: pos) (pb: parserbuffer) : term = begin
+  fun pb -> 
+    raise (Failure "NYI")
+end pb
   
 (******************************)
 (*        tests               *)
