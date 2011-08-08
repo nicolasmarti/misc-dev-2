@@ -726,13 +726,13 @@ let rec pop_frames (ctxt: context) (nb: int) : context =
   
 *)
 
+(* for now only eager is implemented !!!*)
 type strategy = 
   | Lazy 
   | Eager
 
 type reduction_strategy = {
-  strat: strategy;
-  beta: bool;
+  beta: strategy;
   betastrong: bool;
   delta: bool;
   iota: bool;
@@ -743,8 +743,7 @@ type reduction_strategy = {
 }
 
 let unification_strat : reduction_strategy = {
-  strat = Lazy;
-  beta = true;
+  beta = Eager;
   betastrong = false;
   delta = true;
   iota = true;
@@ -1059,7 +1058,8 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
       DestructWith eqs
 
     (* Application: the big part *)
-    | App _ when strat.beta -> (
+    (* for no only Eager is implemented *)
+    | App _ when strat.beta = Eager -> (
 
       (* we do a case analysis ... *)
 
@@ -1089,8 +1089,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	| App (DestructWith eqs, arg::args) -> 
 	  (
 	    let (argte, argn) = arg in
-	    (* we reduce the term *)
+	    (* we reduce the arguments *)
 	    let argte = reduction defs ctxt strat argte in
+	    let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
 	    (* we try all the equation until finding one that unify with arg *)
 	    let match_pattern = fold_stop (fun () ((p, n), body) ->
 	      (* we could check that n = argn, but it should have been already checked *)
