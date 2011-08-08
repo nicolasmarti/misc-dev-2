@@ -658,11 +658,35 @@ let bvar_value (ctxt: context) (i: index) : term =
     | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
     | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
 
+(* grab the type of a bound var *)
+let bvar_type (ctxt: context) (i: index) : term =
+  try (
+    let frame = List.nth ctxt i in
+    let ty = frame.ty in
+    shift_term ty i
+  ) with
+    | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
+    | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
+
 (* grab the value of a free var *)
 let fvar_value (ctxt: context) (i: index) : term =
   let lookup = fold_stop (fun level frame ->
     let lookup = fold_stop (fun () (index, ty, value) -> 
       if index = i then Right value else Left ()
+    ) () frame.fvs in
+    match lookup with
+      | Left () -> Left (level + 1)
+      | Right res -> Right (shift_term res level)
+  ) 0 ctxt in
+  match lookup with
+    | Left _ -> raise (DoudouException (UnknownFVar (i, ctxt)))
+    | Right res -> res
+
+(* grab the type of a free var *)
+let fvar_type (ctxt: context) (i: index) : term =
+  let lookup = fold_stop (fun level frame ->
+    let lookup = fold_stop (fun () (index, ty, value) -> 
+      if index = i then Right ty else Left ()
     ) () frame.fvs in
     match lookup with
       | Left () -> Left (level + 1)
@@ -700,6 +724,13 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
 let unfold_constante (defs: defs) (s: symbol) : term =
   try 
     snd (Hashtbl.find defs.store (symbol2string s))
+  with
+    | Not_found -> raise (DoudouException (UnknownCste s))
+
+(* grab the type of a constante *)
+let constante_type (defs: defs) (s: symbol) : term =
+  try 
+    fst (Hashtbl.find defs.store (symbol2string s))
   with
     | Not_found -> raise (DoudouException (UnknownCste s))
 
@@ -1133,7 +1164,31 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
   raise (Failure "typecheck: NYI")
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
-  raise (Failure "typeinfer: NYI")
+  match te with
+    | SrcInfo (pos, te) ->
+      let te, ty = typeinfer defs ctxt te in
+      SrcInfo (pos, te), ty
+
+    | TyAnnotation (te, ty) -> 
+      let ty, _ = typecheck defs ctxt ty Type in
+      let te, ty = typecheck defs ctxt te ty in
+      TyAnnotation (te, ty), ty
+
+    | Type -> Type, Type
+
+    | Cste c1 -> Cste c1, constante_type defs c1
+
+    | Obj o -> Obj o, o#get_type
+
+    | TVar i when i >= 0 -> TVar i, bvar_type !ctxt i
+    | TVar i when i < 0 -> TVar i, fvar_type !ctxt i
+
+    | AVar -> raise (Failure "typeinfer: Case not yet supported, AVar")
+    | TName _ -> raise (Failure "typeinfer: Case not yet supported, TName")
+    | App _ -> raise (Failure "typeinfer: Case not yet supported, App")
+    | Impl _ -> raise (Failure "typeinfer: Case not yet supported, Impl")
+    | DestructWith _ -> raise (Failure "typeinfer: Case not yet supported, DestructWith")
+      
 
       
 (******************)
@@ -1793,16 +1848,21 @@ let _ = printf "%s\n" (term2string empty_context (
 
 open Stream
 
-let process_term (defs: defs) (ctxt: context) (s: string) : unit =
+let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
     let lines = stream_of_string s in
     let pb = build_parserbuffer lines in
     let pos = cur_pos pb in
     try
       let te = parse_term defs pos pb in
-      printf "%s\n" (term2string empty_context te)
+      let te, ty = typeinfer defs ctxt te in
+      printf "%s::%s\n" (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
 
-let _ = process_term empty_defs empty_context "Type -> Type"
+let ctxt = ref empty_context
+
+let _ = process_term empty_defs ctxt "Type"
+
+let _ = process_term empty_defs ctxt "\\ x -> x | y -> y | z -> z"
 
