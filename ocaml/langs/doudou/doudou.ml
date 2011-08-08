@@ -604,14 +604,14 @@ let push_pattern_bvars (ctxt: context) (l: (name * term * term) list) : context 
 let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
   match p with
     | PType -> [], Type
-    | PVar (n, ty) -> [n, ty, TVar 0], TVar 0
-    | PAVar ty -> ["_", ty, TVar 0], TVar 0
+    | PVar (n, ty) -> [n, shift_term ty 1, TVar 0], TVar 0
+    | PAVar ty -> ["_", shift_term ty 1, TVar 0], TVar 0
     | PCste s -> [] , Cste s
     | PAlias (n, p, ty) -> 
       let l, te = pattern_bvars p in
       (* the value is shift by one (under the alias-introduced var) *)
       let te = shift_term te 1 in
-	(l @ [n, ty, te], te)
+	(l @ [n, shift_term ty (1 + List.length l), te], te)
     | PApp (s, args, ty) -> 
       let (delta, l, rev_values) = 
 	(* for sake of optimization the value list is in reverse order *)
@@ -1013,7 +1013,7 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
 	(* we unify the types *)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
 	(* we push a frame *)
-	let frame = build_new_frame s1 ty in
+	let frame = build_new_frame s1 (shift_term ty 1) in
 	ctxt := frame::!ctxt;
 	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	let s = context2substitution !ctxt in
@@ -1070,7 +1070,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
       let ty = reduction defs ctxt strat ty in
       if strat.betastrong then (
 	(* we push a frame *)
-	let frame = build_new_frame s ty in
+	let frame = build_new_frame s (shift_term ty 1) in
 	ctxt := frame::!ctxt;
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
@@ -1354,7 +1354,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
 	  in 
 	  (* for computing the r.h.s, we need to push a new frame *)
-	  let newframe = build_new_frame s ty in
+	  let newframe = build_new_frame s (shift_term ty 1) in
 	  let rhs = term2token (newframe::ctxt) te Alone in
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
