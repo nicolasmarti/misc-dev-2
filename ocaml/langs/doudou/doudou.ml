@@ -107,7 +107,7 @@ let empty_context = empty_frame::[]
 type defs = {
   (* here we store all id in a string *)
   (* id -> (type * value) *)
-  store : (string, (term * term)) Hashtbl.t;
+  store : (string, (term * term option)) Hashtbl.t;
   hist : symbol list;
 }
 
@@ -439,6 +439,9 @@ let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) :
 let build_destructwith (patterns: (pattern * nature) list) (body: term) : term =
   List.fold_right (fun p acc -> DestructWith ([p, acc])) patterns body
 
+let fromSome (e: 'a option) : 'a =
+  let Some e = e in e
+
 (*************************************)
 (*      substitution/rewriting       *)
 (*************************************)
@@ -722,7 +725,7 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
   take sz hd.termstack
 
 (* unfold a constante *)
-let unfold_constante (defs: defs) (s: symbol) : term =
+let unfold_constante (defs: defs) (s: symbol) : term option =
   try 
     snd (Hashtbl.find defs.store (symbol2string s))
   with
@@ -904,8 +907,8 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
     | Obj o1, Obj o2 when o1 = o2 -> Obj o1
     | Cste c1, Cste c2 when c1 = c2 -> Cste c1
     (* when a term is a constant we just unfold it *)
-    | Cste c1, _ -> unification_term_term defs ctxt (unfold_constante defs c1) te2
-    | _, Cste c2 -> unification_term_term defs ctxt te1 (unfold_constante defs c2)
+    | Cste c1, _ when unfold_constante defs c1 != None -> unification_term_term defs ctxt (fromSome (unfold_constante defs c1)) te2
+    | _, Cste c2 when unfold_constante defs c2 != None -> unification_term_term defs ctxt te1 (fromSome (unfold_constante defs c2))
 
     (* the trivial case for variable *)
     | TVar i1, TVar i2 when i1 = i2 -> TVar i1
@@ -1054,7 +1057,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     (* without delta reduction we do unfold *)
     | Cste c1 when not strat.delta -> te
     (* with delta reduction we unfold *)
-    | Cste c1 when strat.delta -> unfold_constante defs c1
+    | Cste c1 when strat.delta && unfold_constante defs c1 != None -> fromSome (unfold_constante defs c1)
 
     | Obj o -> te
 
@@ -1108,11 +1111,11 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	  
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
-	| App (Cste c1, args) when strat.deltaiotaweak -> (
+	| App (Cste c1, args) when strat.deltaiotaweak && unfold_constante defs c1 != None -> (
 	  (* first we save the context *)
 	  let saved_ctxt = !ctxt in
 	  (* we unfold the constante *)
-	  let te1 = unfold_constante defs c1 in
+	  let te1 = fromSome (unfold_constante defs c1) in
 	  try 
 	    reduction defs ctxt {strat with deltaiotaweak_armed = true} (App (te1, args))
 	  with
@@ -1121,7 +1124,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      ctxt := saved_ctxt;
 	      App (Cste c1, args)
 	)
-	  
+
 	(* App is right associative ... *)
 	| App (App (te1, args1), arg2) ->
 	  reduction defs ctxt strat (App (te1, args1 @ arg2))
@@ -1160,6 +1163,8 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 		shift_term body (IndexMap.cardinal r)	    
 
 	  )
+	| App (hd, args) ->
+	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args)
 
     )
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
@@ -1789,6 +1794,8 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
   <|> (paren (parse_pattern defs leftmost))
 end pb
 
+let rec parse_definition (defs: defs) (leftmost: int * int) =
+  raise (Failure "NYI")
 
 (******************************)
 (*        tests               *)
