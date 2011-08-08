@@ -123,7 +123,7 @@ type doudou_error = NegativeIndexBVar of index
 		    | UnknownUnification of context * term * term
 		    | NoUnification of context * term * term
 
-		    | NoMatchingPattern of context * pattern * term
+		    | NoMatchingPattern of pattern * term
 
 		    | PoppingNonEmptyFrame of frame
 
@@ -433,8 +433,8 @@ let error_pos (err: doudou_error) (pos: pos) =
 (*      substitution/rewriting       *)
 (*************************************)
 
-(* substitution = replace free variables by terms (used for typechecking/inference) *)
-(* rewriting = replacing bound variable by terms (used for reduction) *)
+(* substitution = replace variables (free or bound) by terms (used for typechecking/inference with free variables, and for reduction with bound variable) *)
+
 
 
 module IndexMap = Map.Make(
@@ -447,17 +447,22 @@ module IndexMap = Map.Make(
 (* substitution: from free variables to term *) 
 type substitution = term IndexMap.t;;
 
+(*
+  N.B.: rather than duplicating the code for rewriting
+*)
+
 (* substitution *)
 let rec term_substitution (s: substitution) (te: term) : term =
   match te with
     | Type | Cste _ | Obj _ -> te
-    | TVar i as v when i < 0 -> 
+    (* generalization for free AND bound variables *)
+    | TVar i as v (*when i < 0*) -> 
       (
 	try IndexMap.find i s 
 	with
 	  | Not_found -> v
       )
-    | TVar i as v when i >= 0 -> v
+    (* | TVar i as v when i >= 0 -> v*)
     | AVar -> raise (Failure "term_substitution catastrophic: AVar")
     | TName _ -> raise (Failure "term_substitution catastrophic: TName")
     | App (te, args) ->
@@ -484,15 +489,20 @@ and pattern_substitution (s: substitution) (p: pattern) : pattern =
 	    List.map (fun (p, n) -> pattern_substitution s p, n) args,
 	    term_substitution s ty)
 
-(* shift bvar index in a substitution *)
+(* shift vars index in a substitution 
+   only bound variable of the l.h.s. of the map are shifted too
+*)
 and shift_substitution (s: substitution) (delta: int) : substitution =
   IndexMap.fold (fun key value acc -> 
     try 
+      let key = if key < 0 then key else 
+	  if delta < 0 then raise (Failure "shift_substitution: catastrophic, negative shifting of bound variables") else key + delta 
+	    in
       IndexMap.add key (shift_term value delta) acc
     with
       | DoudouException (Unshiftable_term _) -> acc
   ) s IndexMap.empty
-
+      
 (* shift bvar index in a term *)
 and shift_term (te: term) (delta: int) : term =
   leveled_shift_term te 0 delta
@@ -545,13 +555,6 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 	    leveled_shift_term ty level delta)
 
 
-(* rewrite: map from bound variable to  *)
-type rewrite = term IndexMap.t;;
-
-(* substitution *)
-let rec term_rewrite (r: rewrite) (te: term) : term =
-  raise (Failure ("term_rewriting: NYI"))
-
 (********************************)
 (*      defs/context/frame      *)
 (********************************)
@@ -598,7 +601,8 @@ let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
     | PAlias (n, p, ty) -> 
       let l, te = pattern_bvars p in
       (* the value is shift by one (under the alias-introduced var) *)
-      (l, shift_term te 1)
+      let te = shift_term te 1 in
+	(l @ [n, ty, te], te)
     | PApp (s, args, ty) -> 
       let (delta, l, rev_values) = 
 	(* for sake of optimization the value list is in reverse order *)
@@ -750,10 +754,51 @@ let unification_strat : reduction_strategy = {
   eta = true;
 }
 
-(* unification pattern to term: returns a rewrite scheme, for reduction *)
-let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : rewrite =
-  raise (Failure "unification_pattern_term: NYI")
 
+
+(* unification pattern to term *)
+(*
+  this is quite conservative:
+  - we do not "reformat" application. so the unification is not modulo right associativity of applicatino
+  - we ask for equality of symbol for constant, rather than looking for possible alias
+*)
+let rec unification_pattern_term (p: pattern) (te:term) : substitution =
+  match p, te with
+    | PType, Type -> IndexMap.empty
+    | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
+    | PAVar _, te -> IndexMap.empty
+    | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
+    | PCste s1, Cste s2 when s1 != s2 -> raise (DoudouException (NoMatchingPattern (p, te)))
+    | PAlias (n, p, ty), te ->
+      (* grab the substitution *)
+      let s = unification_pattern_term p te in
+      (* shift it by one (for the n of the alias) *)
+      let s = shift_substitution s 1 in
+      (* we put in the substitution the shifting of te by |s| + 1 at index 0 *)
+      IndexMap.add 0 (shift_term te (IndexMap.cardinal s + 1)) s
+    (* for the application, we only accept same constante as head and same number of arguments 
+       this is really conservatives .. we could implement the same mechanism as in subtitution_term_term
+    *)
+    | PApp (s1, args1, ty), App (Cste s2, args2) when List.length args1 = List.length args2 && s1 = s2 ->
+      (* we unify arguments one by one (with proper shifting) *)
+      List.fold_left (fun s ((arg1, n1), (arg2, n2)) -> 
+	(* first we unify both args *)
+	let s12 = unification_pattern_term p te in
+	(* we need to shift the accumulator by the number of introduced free variable == caridnality of s12 *)
+	let s = shift_substitution s12 (IndexMap.cardinal s12) in
+	(* and we just return the union (making sure no key are duplicated)
+	   merge : (key -> 'a option -> 'b option -> 'c option) ->
+	   'a t -> 'b t -> 'c t
+	*)
+	IndexMap.merge (fun k val1 val2 ->
+	  match val1, val2 with
+	    | None, None -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are None")
+	    | Some _, Some _ -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are Some ==> it means that a bound variable is duplicated, and thus the shifting in substitution is not properly done!")
+	    | Some v, None -> Some v
+	    | None, Some v -> Some v
+	)  s s12
+      ) IndexMap.empty (List.combine args1 args2)
+      
 
 (* a special exception for the reduction which 
    signals that an underlying iota reduction fails
@@ -1051,7 +1096,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
 	      try 
-		Right (unification_pattern_term !ctxt p argte, body)
+		Right (unification_pattern_term p argte, body)
 	      with
 		| DoudouException (NoMatchingPattern _) -> Left ()
 	    ) () eqs in
@@ -1067,7 +1112,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* we have one pattern that is ok *)
 	      | Right (r, body) ->
 		(* we rewrite the bound variables from the unification *)
-		let body = term_rewrite r body in
+		let body = term_substitution r body in
 		(* we can now shift the term by the size of the rewrite *)
 		shift_term body (IndexMap.cardinal r)	    
 
