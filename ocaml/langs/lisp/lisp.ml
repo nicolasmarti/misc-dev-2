@@ -1406,7 +1406,7 @@ let interp_stdin ctxt =
 	    (* we evaluate the term *)
 	    let res' = eval res ctxt in
 	    (* we save it *)
-	    terms := res'::!terms;
+	    terms := res::!terms;
 	    (* and show the result *)	    
 	    printf "\nresult:\n";
 	    printbox (token2box (expr2token res') 400 2);
