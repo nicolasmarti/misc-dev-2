@@ -43,7 +43,7 @@ type term = Type
 		
 	    (* these constructors are only valide after parsing, and removed by typechecking *)
 	    | AVar
-	    | TName of name
+	    | TName of symbol
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
@@ -88,9 +88,9 @@ type frame = {
 }
 
 let empty_frame = {
-  symbol = Name "not name";
-  ty = TName "no type";
-  value = TName "no value";
+  symbol = Symbol ("_", Nofix);
+  ty = Type;
+  value = TVar 0;
   fvs = [];
   termstack = [];
   naturestack = [];
@@ -106,8 +106,8 @@ let empty_context = empty_frame::[]
 (* definitions *)
 type defs = {
   (* here we store all id in a string *)
-  (* id -> (type * value) *)
-  store : (string, (term * term option)) Hashtbl.t;
+  (* id -> (symbol * type * value) *)
+  store : (string, (symbol * term * term option)) Hashtbl.t;
   hist : symbol list;
 }
 
@@ -652,6 +652,18 @@ let context_substitution (s: substitution) (ctxt: context) : context =
   ) s ctxt
   )
 
+(* retrieve the debruijn index of a bound var through its symbol *)
+let bvar_lookup (ctxt: context) (s: symbol) : index option =
+  let res = fold_stop (fun level frame ->
+    if symbol2string frame.symbol = symbol2string s then
+      Right level
+    else
+      Left (level + 1)
+  ) 0 ctxt in
+  match res with
+    | Left _ -> None
+    | Right level -> Some level
+
 (* grab the value of a bound var *)
 let bvar_value (ctxt: context) (i: index) : term =
   try (
@@ -727,14 +739,21 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
 (* unfold a constante *)
 let unfold_constante (defs: defs) (s: symbol) : term option =
   try 
-    snd (Hashtbl.find defs.store (symbol2string s))
+    (fun (_, _, value) -> value) (Hashtbl.find defs.store (symbol2string s))
   with
     | Not_found -> raise (DoudouException (UnknownCste s))
 
 (* grab the type of a constante *)
 let constante_type (defs: defs) (s: symbol) : term =
   try 
-    fst (Hashtbl.find defs.store (symbol2string s))
+    (fun (_, ty, _) -> ty) (Hashtbl.find defs.store (symbol2string s))
+  with
+    | Not_found -> raise (DoudouException (UnknownCste s))
+
+(* grab the real symbol of a constante *)
+let constante_symbol (defs: defs) (s: symbol) : symbol =
+  try 
+    (fun (s, _, _) -> s) (Hashtbl.find defs.store (symbol2string s))
   with
     | Not_found -> raise (DoudouException (UnknownCste s))
 
@@ -1181,13 +1200,29 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       let te, ty = typecheck defs ctxt te ty in
       TyAnnotation (te, ty), ty
 
-    | Type, Type -> Type, Type
+    | Type, _ -> 
+      let _ = unification_term_term defs ctxt ty Type in
+      Type, Type
 
+    | TName s, _ -> (
+      (* we first look for a bound variable *)
+      match bvar_lookup !ctxt s with
+	| Some i -> 
+	  let te = TVar i in
+	  let ty' = bvar_type !ctxt i in
+	  let ty = unification_term_term defs ctxt ty' ty in
+	  te, ty
+	| None -> 
+	  (* we look for a constante *)
+	  let te = Cste (constante_symbol defs s) in
+	  let ty' = constante_type defs s in
+	  let ty = unification_term_term defs ctxt ty' ty in
+	  te, ty
+    )
     | Cste c1, _ -> raise (Failure "typecheck: Case not yet supported, Cste")
     | Obj o, _ -> raise (Failure "typecheck: Case not yet supported, Obj")
     | TVar i, _ -> raise (Failure "typecheck: Case not yet supported, TVar")
     | AVar, _ -> raise (Failure "typecheck: Case not yet supported, AVar")
-    | TName _, _ -> raise (Failure "typecheck: Case not yet supported, TName")
     | App _, _ -> raise (Failure "typecheck: Case not yet supported, App")
     | Impl _, _ -> raise (Failure "typecheck: Case not yet supported, Impl")
     | DestructWith _, _ -> raise (Failure "typecheck: Case not yet supported, DestructWith")
@@ -1794,9 +1829,9 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
   ) 
   <|> (fun pb -> 
     let () =  whitespaces pb in
-    let name, pos = with_pos name_parser pb in
+    let s, pos = with_pos parse_symbol_name pb in
     let () =  whitespaces pb in    
-    SrcInfo (pos, TName name)
+    SrcInfo (pos, TName s)
   )
   <|> (paren (parse_term defs leftmost))
 end pb
@@ -1972,7 +2007,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
       match def with
 	| Signature (s, ty) ->
 	  let ty, _ = typecheck !defs ctxt ty Type in
-	  Hashtbl.add !defs.store (symbol2string s) (ty, None);
+	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
 	  defs := {!defs with hist = s::!defs.hist  };
 	  printf "%s :: %s\n" (symbol2string s) (term2string !ctxt ty)
     with
@@ -1980,3 +2015,5 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	printf "parsing error:\n%s\n" (errors2string pb)
 
 let _ = process_definition defs ctxt "Bool :: Type"
+let _ = process_definition defs ctxt "True :: Bool"
+let _ = process_definition defs ctxt "False :: Bool"
