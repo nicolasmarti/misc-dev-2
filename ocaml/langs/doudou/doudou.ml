@@ -434,6 +434,10 @@ let error_pos (err: doudou_error) (pos: pos) =
 let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun s acc -> Impl ((s, ty, nature), acc)) symbols body
 
+(* build a destruct with: no shifting in types !!! *)
+let build_destructwith (patterns: (pattern * nature) list) (body: term) : term =
+  List.fold_right (fun p acc -> DestructWith ([p, acc])) patterns body
+
 (*************************************)
 (*      substitution/rewriting       *)
 (*************************************)
@@ -1482,7 +1486,21 @@ let parse_avar : unit parsingrule = applylexingrule (regexp "_",
 						     fun (s:string) -> ()
 )
 
-let create_opparser (defs: defs) (primary: term parsingrule) : term opparser =
+let parse_symbol (defs: defs) : symbol parsingrule =
+  fun pb -> 
+    let res = fold_stop (fun () s ->
+      try
+	let () = tryrule (word (symbol2string s)) pb in
+	Right s
+      with
+	| NoMatch -> Left ()
+    ) () defs.hist in
+    match res with
+      | Left () -> raise NoMatch
+      | Right s -> s
+	
+
+let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparser =
   let res = { primary = primary;
 	      prefixes = Hashtbl.create (List.length defs.hist);
 	      infixes = Hashtbl.create (List.length defs.hist);
@@ -1495,6 +1513,22 @@ let create_opparser (defs: defs) (primary: term parsingrule) : term opparser =
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
+  ) defs.hist in
+  res
+
+let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : pattern opparser =
+  let res = { primary = primary;
+	      prefixes = Hashtbl.create (List.length defs.hist);
+	      infixes = Hashtbl.create (List.length defs.hist);
+	      postfixes = Hashtbl.create (List.length defs.hist);
+	    } in
+  let _ = List.map (fun s -> 
+    match s with
+      | Name _ -> ()
+      | Symbol (n, NoFix) -> ()
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> PApp (s, [te1, Explicit; te2, Explicit], AVar))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
   ) defs.hist in
   res
 
@@ -1558,7 +1592,7 @@ end pb
 (* this is operator-ed terms with term_lvl1 as primary
 *)
 and parse_term_lvl0 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  let myp = create_opparser defs (parse_term_lvl1 defs leftmost) in
+  let myp = create_opparser_term defs (parse_term_lvl1 defs leftmost) in
   opparse myp
 end pb
 
@@ -1601,9 +1635,105 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
     let () = whitespaces pb in
     SrcInfo (pos, Type)
   ) 
+  <|> (fun pb ->
+    let () =  whitespaces pb in
+    let (), pos = with_pos parse_avar pb in
+    let () =  whitespaces pb in
+    SrcInfo (pos, AVar)
+  ) 
+  <|> (fun pb ->
+    let () = whitespaces pb in
+    let () = word "\\" pb in    
+    let eqs = separatedBy (fun pb ->
+      let () = whitespaces pb in
+      let patterns = separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb in
+      let () =  whitespaces pb in
+      let () = word "->" pb in
+      let () =  whitespaces pb in
+      let body = parse_term defs leftmost pb in
+      let () =  whitespaces pb in
+      build_destructwith patterns body
+    ) (word "|") pb in
+    List.fold_left (fun (DestructWith acc) (DestructWith eqs) ->
+      DestructWith (acc @ eqs)
+    ) (DestructWith []) eqs    
+  ) 
+  <|> (fun pb -> 
+    let () =  whitespaces pb in
+    let name, pos = with_pos name_parser pb in
+    let () =  whitespaces pb in    
+    SrcInfo (pos, TName name)
+  )
   <|> (paren (parse_term defs leftmost))
 end pb
+
+and parse_pattern (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  let myp = create_opparser_pattern defs (parse_pattern_lvl1 defs leftmost) in
+  opparse myp
+end pb
+
+and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  fun pb -> 
+    (* first we parse the application head *)
+    let s = parse_symbol defs pb in    
+    let () = whitespaces pb in
+    (* then we parse the arguments *)
+    let args = separatedBy (
+      fun pb ->
+	parse_pattern_arguments defs leftmost pb
+    ) whitespaces pb in
+    match args with
+      | [] -> PCste s
+      | _ -> PApp (s, args, AVar)	  
+end pb
+
+and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern * nature = begin
+  (fun pb -> 
+    let te = bracket (parse_pattern_lvl2 defs leftmost) pb in
+    (te, Implicit)
+  )
+  <|> (fun pb -> 
+    let te = parse_pattern_lvl2 defs leftmost pb in
+    (te, Explicit)
+  )
+end pb
   
+and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  (fun pb -> 
+    let () = whitespaces pb in
+    let () = word "Type" pb in
+    let () = whitespaces pb in
+    PType
+  ) 
+  <|> (fun pb ->
+    let () =  whitespaces pb in
+    let () = parse_avar pb in
+    let () =  whitespaces pb in
+    PAVar AVar
+  ) 
+  <|> tryrule (fun pb ->
+    let () =  whitespaces pb in
+    let s = parse_symbol defs pb in
+    let () =  whitespaces pb in
+    PCste s
+  )
+  <|> tryrule (fun pb ->
+    let () =  whitespaces pb in
+    let name = name_parser pb in
+    let () = word "@" pb in
+    let p = parse_pattern defs leftmost pb in
+    PAlias (name, p, AVar)
+  )
+  <|> (fun pb -> 
+    let () =  whitespaces pb in
+    let name = name_parser pb in
+    let () =  whitespaces pb in    
+    PVar (name, AVar)
+  )
+  <|> (paren (parse_pattern defs leftmost))
+end pb
+
+
 (******************************)
 (*        tests               *)
 (******************************)
@@ -1675,3 +1805,4 @@ let process_term (defs: defs) (ctxt: context) (s: string) : unit =
 	printf "parsing error:\n%s\n" (errors2string pb)
 
 let _ = process_term empty_defs empty_context "Type -> Type"
+
