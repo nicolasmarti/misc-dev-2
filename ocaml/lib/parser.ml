@@ -270,6 +270,9 @@ let keyword (s: string) (v: 'a) : 'a parsingrule =
    (spaces >> (applylexingrule (regexp_string s, (fun _ -> v)))) pb
 ;;
  
+let word (s: string) : unit parsingrule =
+  (applylexingrule (regexp_string s, (fun _ -> ())))
+
 let paren (p: 'a parsingrule) : 'a parsingrule =
   spaces >>> (
     fun pb ->
@@ -279,7 +282,7 @@ let paren (p: 'a parsingrule) : 'a parsingrule =
 	try 
 	  p pb 
 	with 
-	  | _ -> raise NoMatch
+	  | NoMatch -> raise NoMatch
       in
       let _ = whitespaces pb in
       let _ = applylexingrule (regexp ")", fun (s:string) -> ()) pb in
@@ -290,13 +293,14 @@ let paren (p: 'a parsingrule) : 'a parsingrule =
 let bracket (p: 'a parsingrule) : 'a parsingrule =
   spaces >>> (
     fun pb ->
+      let _ = whitespaces pb in
       let _ = applylexingrule (regexp "{", fun (s:string) -> ()) pb in
       let _ = whitespaces pb in
       let res = 
 	try 
 	  p pb 
 	with 
-	  | _ -> raise NoMatch
+	  | NoMatch -> raise NoMatch
       in
       let _ = whitespaces pb in
       let _ = applylexingrule (regexp "}", fun (s:string) -> ()) pb in
@@ -364,12 +368,12 @@ let rec fixpoint (p: 'a -> 'a parsingrule) (a: 'a) (pb: parserbuffer) : 'a =
 let (|>) v p = (parsecste v) >> p
 ;;
 
-let separatedBy (elem: 'a parsingrule) (sep: 'b parsingrule) (pb: parserbuffer) : ('a list) =
+let rec separatedBy (elem: 'a parsingrule) (sep: 'b parsingrule) (pb: parserbuffer) : 'a list =
     (
       (tryrule
 	 (
 	   ((fun x l -> x::l) |> 
-		elem) >> (many (sep >>> elem))
+		elem) >> (separatedBy elem sep)
 	 )
       ) <|> (parsecste [])
     ) pb
@@ -921,7 +925,7 @@ let parse_primary (p: 'a parsingrule) : 'a parsetree -> ('a parsetree) parsingru
           try
             insert_primary res t
           with
-            | _ -> raise NoMatch
+            | NoMatch -> raise NoMatch
    )
 ;;
  
@@ -1027,7 +1031,7 @@ let rec opparse (op: 'a opparser) : 'a parsingrule =
    let final_tree = (try 
 		       zip_up_parsetree_until_root (fixpoint total_parser init_tree pb)
 		     with
-		       | _ -> printf "couille dans le potage\n"; raise NoMatch	 
+		       | _ -> (*printf "couille dans le potage\n";*) raise NoMatch	 
 		    )
    in
      try
@@ -1037,3 +1041,15 @@ let rec opparse (op: 'a opparser) : 'a parsingrule =
  ) <!> "not a primary/infix/prefix formula"
 ;;
 
+let line_stream_of_channel channel =
+  Stream.from
+    (fun _ ->
+       try Some (input_line channel) with End_of_file -> None)
+
+let stream_of_string s =
+  Stream.from
+    (fun x ->
+       match x with
+	 | 0 -> Some s
+	 | _ -> None
+    )
