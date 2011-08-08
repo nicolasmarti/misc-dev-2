@@ -1091,7 +1091,8 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	    let (argte, argn) = arg in
 	    (* we reduce the arguments *)
 	    let argte = reduction defs ctxt strat argte in
-	    let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
+	    (* yet it means that the arguments are reduce a lots of times .... so remove the next line, such that only the arg needed will be reduce *)
+	    (*let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in*)
 	    (* we try all the equation until finding one that unify with arg *)
 	    let match_pattern = fold_stop (fun () ((p, n), body) ->
 	      (* we could check that n = argn, but it should have been already checked *)
