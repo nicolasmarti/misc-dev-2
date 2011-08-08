@@ -12,7 +12,7 @@ open Printf
 
 type name = string
 
-type op = NoFix
+type op = Nofix
 	  | Prefix of int
 	  | Infix of int * associativity
 	  | Postfix of int
@@ -337,7 +337,7 @@ let symbol2string (s: symbol) =
     | Symbol (n, o) ->
       let (pre, post) = 
 	match o with
-	  | NoFix -> "", ""
+	  | Nofix -> "", ""
 	  | Prefix _ -> "[", ")"
 	  | Infix _ -> "(", ")"
 	  | Postfix _ -> "(", "]"
@@ -355,11 +355,11 @@ let get_bvar_frame (ctxt: context) (i: index) : frame =
 (*
   the priority of operators
   the greater, the more strongly binding
-  NoFix have 0
+  Nofix have 0
 *)
 let op_priority (o: op) : int =
   match o with
-    | NoFix -> 0
+    | Nofix -> 0
     | Prefix i -> i
     | Infix (i, _) -> i
     | Postfix i -> i
@@ -1168,7 +1168,30 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
     )
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
-  raise (Failure "typecheck: NYI")
+  match te, ty with
+    | SrcInfo (pos, te), _ ->
+      let te, ty = typecheck defs ctxt te ty in
+      SrcInfo (pos, te), ty
+
+    | TyAnnotation (te, ty'), _ -> 
+      let ty, _ = typecheck defs ctxt ty Type in
+      push_terms ctxt [te];
+      let ty = unification_term_term defs ctxt ty' ty in
+      let [te] = pop_terms ctxt 1 in
+      let te, ty = typecheck defs ctxt te ty in
+      TyAnnotation (te, ty), ty
+
+    | Type, Type -> Type, Type
+
+    | Cste c1, _ -> raise (Failure "typecheck: Case not yet supported, Cste")
+    | Obj o, _ -> raise (Failure "typecheck: Case not yet supported, Obj")
+    | TVar i, _ -> raise (Failure "typecheck: Case not yet supported, TVar")
+    | AVar, _ -> raise (Failure "typecheck: Case not yet supported, AVar")
+    | TName _, _ -> raise (Failure "typecheck: Case not yet supported, TName")
+    | App _, _ -> raise (Failure "typecheck: Case not yet supported, App")
+    | Impl _, _ -> raise (Failure "typecheck: Case not yet supported, Impl")
+    | DestructWith _, _ -> raise (Failure "typecheck: Case not yet supported, DestructWith")
+
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
   match te with
     | SrcInfo (pos, te) ->
@@ -1347,10 +1370,10 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	(
 	  (* the lhs of the ->*)
 	  let lhs = 
-	    (* if the symbol is NoFix _ -> we skip the symbol *)
-	    (* IMPORTANT: it means that Symbol ("_", NoFix)  as a special meaning !!!! *)
+	    (* if the symbol is Nofix _ -> we skip the symbol *)
+	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
 	    match s with
-	      | Symbol ("_", NoFix) ->
+	      | Symbol ("_", Nofix) ->
 		(* we only put brackets if implicit *)
 		(if nature = Implicit then withBracket else fun x -> x)
 		  (term2token ctxt ty (InArg nature))
@@ -1547,6 +1570,56 @@ let parse_avar : unit parsingrule = applylexingrule (regexp "_",
 						     fun (s:string) -> ()
 )
 
+let parse_symbol_name : symbol parsingrule = 
+  let f = 
+    applylexingrule (regexp "+|-|*|/|&|@", 
+		     fun (s:string) -> s)
+  in 
+  (* no fix *)
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "[" pb in
+    let s = f pb in
+    let () = word "]" pb in
+    let () = whitespaces pb in
+    Symbol (s, Nofix)
+  )
+  (* prefix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "[" pb in
+    let s = f pb in
+    let () = word ")" pb in
+    let () = whitespaces pb in
+    Symbol (s, Prefix 0)
+  )
+  (* infix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "(" pb in
+    let s = f pb in
+    let () = word ")" pb in
+    let () = whitespaces pb in
+    Symbol (s, Infix (0, NoAssoc))
+  )
+  (* postfix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "(" pb in
+    let s = f pb in
+    let () = word "]" pb in
+    let () = whitespaces pb in
+    Symbol (s, Postfix 0)
+  )
+  (* just a name *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let n = name_parser pb in
+    let () = whitespaces pb in
+    Name n
+  )
+
+
 let parse_symbol (defs: defs) : symbol parsingrule =
   fun pb -> 
     let res = fold_stop (fun () s ->
@@ -1570,7 +1643,7 @@ let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparse
   let _ = List.map (fun s -> 
     match s with
       | Name _ -> ()
-      | Symbol (n, NoFix) -> ()
+      | Symbol (n, Nofix) -> ()
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
@@ -1586,7 +1659,7 @@ let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : patter
   let _ = List.map (fun s -> 
     match s with
       | Name _ -> ()
-      | Symbol (n, NoFix) -> ()
+      | Symbol (n, Nofix) -> ()
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> PApp (s, [te1, Explicit; te2, Explicit], AVar))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
@@ -1638,15 +1711,15 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (sy
   (* or just a type -> anonymous arguments *)
   <|> (fun pb -> 
     let ty = parse_term_lvl0 defs leftmost pb in
-    ([Symbol ("_", NoFix)], ty, Explicit)        
+    ([Symbol ("_", Nofix)], ty, Explicit)        
   )
   <|> (fun pb -> 
     let ty = paren (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", NoFix)], ty, Explicit)        
+    ([Symbol ("_", Nofix)], ty, Explicit)        
   )
   <|> (fun pb -> 
     let ty = bracket (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", NoFix)], ty, Implicit)        
+    ([Symbol ("_", Nofix)], ty, Implicit)        
   )
 end pb
 
@@ -1794,8 +1867,22 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
   <|> (paren (parse_pattern defs leftmost))
 end pb
 
-let rec parse_definition (defs: defs) (leftmost: int * int) =
-  raise (Failure "NYI")
+type definition = Signature of symbol * term
+		  | Equation of symbol * (pattern * nature list) * term
+
+let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = parse_symbol_name pb in
+    let () = whitespaces pb in
+    (* here we should have the property *)
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    Signature (s, ty)
+  )
+  
 
 (******************************)
 (*        tests               *)
@@ -1815,7 +1902,7 @@ let neg = Cste (Symbol ("-", Prefix 50))
 
 let nat = (Cste (Name "nat"))
 
-let asymb = Symbol ("_", NoFix)
+let asymb = Symbol ("_", Nofix)
 
 let avar = Cste asymb
 
@@ -1872,5 +1959,24 @@ let ctxt = ref empty_context
 
 let _ = process_term empty_defs ctxt "Type"
 
-let _ = process_term empty_defs ctxt "\\ x -> x | y -> y | z -> z"
+(*let _ = process_term empty_defs ctxt "\\ x -> x | y -> y | z -> z"*)
 
+let defs = ref empty_defs
+
+let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
+    let lines = stream_of_string s in
+    let pb = build_parserbuffer lines in
+    let pos = cur_pos pb in
+    try
+      let def = parse_definition !defs pos pb in
+      match def with
+	| Signature (s, ty) ->
+	  let ty, _ = typecheck !defs ctxt ty Type in
+	  Hashtbl.add !defs.store (symbol2string s) (ty, None);
+	  defs := {!defs with hist = s::!defs.hist  };
+	  printf "%s :: %s\n" (symbol2string s) (term2string !ctxt ty)
+    with
+      | NoMatch -> 
+	printf "parsing error:\n%s\n" (errors2string pb)
+
+let _ = process_definition defs ctxt "Bool :: Type"
