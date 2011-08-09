@@ -1208,7 +1208,6 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       let ty', _ = typecheck defs ctxt ty' Type in
       let ty = unification_term_term defs ctxt ty ty' in
       te, ty
-
   ) with
     | DoudouException ((CannotTypeCheck _) as err) ->
       raise (DoudouException err)
@@ -1254,10 +1253,21 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	  te, ty
     )
 
-
+    | Impl ((s, ty, n), te) -> 
+      (* first let's be sure that ty :: Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* then we push the frame for s *)
+      let frame = build_new_frame s (shift_term ty 1) in
+      ctxt := frame::!ctxt;
+      (* we typecheck te :: Type *)
+      let te, _ = typecheck defs ctxt te Type in
+      (* we pop the frame for s *)
+      ctxt := pop_frame !ctxt;
+      (* and we returns the term with type Type *)
+      Impl ((s, ty, n), te), Type
+    
     | AVar -> raise (Failure "typeinfer: Case not yet supported, AVar")
     | App _ -> raise (Failure "typeinfer: Case not yet supported, App")
-    | Impl _ -> raise (Failure "typeinfer: Case not yet supported, Impl")
     | DestructWith _ -> raise (Failure "typeinfer: Case not yet supported, DestructWith")
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -1698,43 +1708,40 @@ let parse_avar : unit parsingrule = applylexingrule (regexp "_",
 )
 
 let parse_symbol_name : symbol parsingrule = 
-  let f = 
-    applylexingrule (regexp "+|-|*|/|&|@", 
-		     fun (s:string) -> s)
-  in 
+  let symbols = "\\(\\+\\|-\\|\\*\\|/\\|&\\|@\\|\\[\\|\\]\\)*" in
+  let nofix = applylexingrule (regexp (String.concat "" ["\\["; symbols; "\\]"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let prefix = applylexingrule (regexp (String.concat "" ["\\["; symbols; ")"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let postfix = applylexingrule (regexp (String.concat "" ["("; symbols; "\\]"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let infix = applylexingrule (regexp (String.concat "" ["("; symbols; ")"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
   (* no fix *)
   tryrule (fun pb ->
     let () = whitespaces pb in
-    let () = word "[" pb in
-    let s = f pb in
-    let () = word "]" pb in
+    let s = nofix pb in
     let () = whitespaces pb in
     Symbol (s, Nofix)
   )
   (* prefix *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
-    let () = word "[" pb in
-    let s = f pb in
-    let () = word ")" pb in
+    let s = prefix pb in
     let () = whitespaces pb in
     Symbol (s, Prefix 0)
   )
   (* infix *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
-    let () = word "(" pb in
-    let s = f pb in
-    let () = word ")" pb in
+    let s = infix pb in
     let () = whitespaces pb in
     Symbol (s, Infix (0, NoAssoc))
   )
   (* postfix *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
-    let () = word "(" pb in
-    let s = f pb in
-    let () = word "]" pb in
+    let s = postfix pb in
     let () = whitespaces pb in
     Symbol (s, Postfix 0)
   )
@@ -2001,12 +2008,14 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
   tryrule (fun pb ->
     let () = whitespaces pb in
     let s = parse_symbol_name pb in
+    printf "parsed symbol (%s)... " (symbol2string s);
     let () = whitespaces pb in
     (* here we should have the property *)
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
     let ty = parse_term defs leftmost pb in
+    printf "parsed type \n";
     Signature (s, ty)
   )
   
@@ -2127,3 +2136,4 @@ let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
 let _ = process_definition defs ctxt "b :: True"
 let _ = process_definition defs ctxt "List :: Type -> Type"
+let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
