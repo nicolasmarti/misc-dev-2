@@ -126,7 +126,7 @@ type doudou_error = NegativeIndexBVar of index
 		    | UnknownUnification of context * term * term
 		    | NoUnification of context * term * term
 
-		    | NoMatchingPattern of pattern * term
+		    | NoMatchingPattern of context * pattern * term
 
 		    | PoppingNonEmptyFrame of frame
 
@@ -824,16 +824,16 @@ let unification_strat : reduction_strategy = {
   - we do not "reformat" application. so the unification is not modulo right associativity of applicatino
   - we ask for equality of symbol for constant, rather than looking for possible alias
 *)
-let rec unification_pattern_term (p: pattern) (te:term) : substitution =
+let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
   match p, te with
     | PType, Type -> IndexMap.empty
     | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
     | PAVar _, te -> IndexMap.empty
     | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
-    | PCste s1, Cste s2 when s1 != s2 -> raise (DoudouException (NoMatchingPattern (p, te)))
+    | PCste s1, Cste s2 when s1 != s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
     | PAlias (n, p, ty), te ->
       (* grab the substitution *)
-      let s = unification_pattern_term p te in
+      let s = unification_pattern_term ctxt p te in
       (* shift it by one (for the n of the alias) *)
       let s = shift_substitution s 1 in
       (* we put in the substitution the shifting of te by |s| + 1 at index 0 *)
@@ -845,7 +845,7 @@ let rec unification_pattern_term (p: pattern) (te:term) : substitution =
       (* we unify arguments one by one (with proper shifting) *)
       List.fold_left (fun s ((arg1, n1), (arg2, n2)) -> 
 	(* first we unify both args *)
-	let s12 = unification_pattern_term p te in
+	let s12 = unification_pattern_term ctxt p te in
 	(* we need to shift the accumulator by the number of introduced free variable == caridnality of s12 *)
 	let s = shift_substitution s12 (IndexMap.cardinal s12) in
 	(* and we just return the union (making sure no key are duplicated)
@@ -1051,12 +1051,12 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
 
     (* for now we do not allow unification of DestructWith *)
     | DestructWith eqs1, DestructWith eq2 ->
-      printf "unification_term_term: DestructWith\n";
+      printf "WARNING: unification_term_term: DestructWith\n";
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
     (* for all the rest: I do not know ! *)
     | _ -> 
-      printf "unification_term_term: case not explicitely defined\n";
+      printf "WARNING: unification_term_term: case not explicitely defined\n";
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
@@ -1161,7 +1161,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
 	      try 
-		Right (unification_pattern_term p argte, body)
+		Right (unification_pattern_term !ctxt p argte, body)
 	      with
 		| DoudouException (NoMatchingPattern _) -> Left ()
 	    ) () eqs in
@@ -1574,6 +1574,66 @@ let term2string (ctxt: context) (te: term) : string =
   let token = term2token ctxt te Alone in
   let box = token2box token 80 2 in
   box2string box
+
+(* pretty printing for errors *)
+let pos2token (p: pos) : token =
+  let startp, endp = p in
+  Box [Verbatim (string_of_int (fst startp)); 
+       Verbatim ":"; 
+       Verbatim (string_of_int (snd startp)); 
+       Verbatim "-"; 
+       Verbatim (string_of_int (fst endp)); 
+       Verbatim ":"; 
+       Verbatim (string_of_int (snd endp)); 
+      ]
+    
+
+let rec error2token (err: doudou_error) : token =
+  match err with
+    | NegativeIndexBVar i -> Verbatim "bvar as a negative index"
+    | Unshiftable_term (te, level, delta) -> Verbatim "Cannot shift a term"
+    | ErrorPosPair (Some pos1, Some pos2, err) ->
+      Box [
+	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (None, Some pos2, err) ->
+      Box [
+	pos2token pos2; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (Some pos1, None, err) ->
+      Box [
+	pos2token pos1; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (None, None, err) ->
+      error2token err
+    | ErrorPos (pos, err) ->
+      Box [
+	pos2token pos; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
+      Box [
+	Verbatim "Cannot unify:"; Newline;
+	term2token ctxt te1 Alone; Newline;
+	  term2token ctxt te2 Alone;
+      ]
+    | NoMatchingPattern (ctxt, p, te) ->
+      Box [
+	Verbatim "Cannot unify:"; Newline;
+	pattern2token ctxt p Alone; Newline;
+	  term2token ctxt te Alone;
+      ]
+    | _ -> Verbatim "Internal error"
+
+(* make a string from an error *)
+let error2string (err: doudou_error) : string =
+  let token = error2token err in
+  let box = token2box token 80 2 in
+  box2string box
+
 
 (**********************************)
 (* parser (lib/parser.ml version) *)
@@ -1989,6 +2049,8 @@ let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
     with
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
+      | DoudouException err -> 
+	printf "typechecking error:\n%s\n" (error2string err)
 
 let ctxt = ref empty_context
 
@@ -2013,7 +2075,10 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
     with
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
+      | DoudouException err -> 
+	printf "typechecking error:\n%s\n" (error2string err)
 
 let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
+let _ = process_definition defs ctxt "b :: True"
