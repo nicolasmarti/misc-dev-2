@@ -1194,44 +1194,21 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
   let saved_ctxt = !ctxt in
   try (
   match te, ty with
-    | SrcInfo (pos, te), _ ->
-      let te, ty = typecheck defs ctxt te ty in
-      SrcInfo (pos, te), ty
+    (* one basic rule, Type :: Type *)
+    | Type, Type -> Type, Type
 
-    | TyAnnotation (te, ty'), _ -> 
-      let ty, _ = typecheck defs ctxt ty Type in
-      push_terms ctxt [te];
-      let ty = unification_term_term defs ctxt ty' ty in
-      let [te] = pop_terms ctxt 1 in
-      let te, ty = typecheck defs ctxt te ty in
-      TyAnnotation (te, ty), ty
+    (* here we should have the case for which you cannot rely on the inference *)
 
-    | Type, _ -> 
-      let _ = unification_term_term defs ctxt ty Type in
-      Type, Type
 
-    | TName s, _ -> (
-      (* we first look for a bound variable *)
-      match bvar_lookup !ctxt s with
-	| Some i -> 
-	  let te = TVar i in
-	  let ty' = bvar_type !ctxt i in
-	  let ty = unification_term_term defs ctxt ty' ty in
-	  te, ty
-	| None -> 
-	  (* we look for a constante *)
-	  let te = Cste (constante_symbol defs s) in
-	  let ty' = constante_type defs s in
-	  let ty = unification_term_term defs ctxt ty' ty in
-	  te, ty
-    )
-    | Cste c1, _ -> raise (Failure "typecheck: Case not yet supported, Cste")
-    | Obj o, _ -> raise (Failure "typecheck: Case not yet supported, Obj")
-    | TVar i, _ -> raise (Failure "typecheck: Case not yet supported, TVar")
-    | AVar, _ -> raise (Failure "typecheck: Case not yet supported, AVar")
-    | App _, _ -> raise (Failure "typecheck: Case not yet supported, App")
-    | Impl _, _ -> raise (Failure "typecheck: Case not yet supported, Impl")
-    | DestructWith _, _ -> raise (Failure "typecheck: Case not yet supported, DestructWith")
+    (* the most basic typechecking strategy, 
+       infer the type ty', typecheck it with Type (really needed ??) and unify with ty    
+    *)
+    | _, _ ->
+      let te, ty' = typeinfer defs ctxt te in
+      let ty', _ = typecheck defs ctxt ty' Type in
+      let ty = unification_term_term defs ctxt ty ty' in
+      te, ty
+
   ) with
     | DoudouException ((CannotTypeCheck _) as err) ->
       raise (DoudouException err)
@@ -2149,3 +2126,4 @@ let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
 let _ = process_definition defs ctxt "b :: True"
+let _ = process_definition defs ctxt "List :: Type -> Type"
