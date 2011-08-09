@@ -130,6 +130,9 @@ type doudou_error = NegativeIndexBVar of index
 
 		    | PoppingNonEmptyFrame of frame
 
+		    | CannotInfer of context * term * doudou_error
+		    | CannotTypeCheck of context * term * term * term * doudou_error
+
 exception DoudouException of doudou_error
 
 (********************************************)
@@ -1187,6 +1190,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
     )
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
+  (* save the context *)
+  let saved_ctxt = !ctxt in
+  try (
   match te, ty with
     | SrcInfo (pos, te), _ ->
       let te, ty = typecheck defs ctxt te ty in
@@ -1226,8 +1232,18 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
     | App _, _ -> raise (Failure "typecheck: Case not yet supported, App")
     | Impl _, _ -> raise (Failure "typecheck: Case not yet supported, Impl")
     | DestructWith _, _ -> raise (Failure "typecheck: Case not yet supported, DestructWith")
-
+  ) with
+    | DoudouException ((CannotTypeCheck _) as err) ->
+      raise (DoudouException err)
+    | DoudouException err ->
+      ctxt := saved_ctxt;
+      let te, inferedty = typeinfer defs ctxt te in
+      raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
+      
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
+  (* save the context *)
+  let saved_ctxt = !ctxt in
+  try (
   match te with
     | SrcInfo (pos, te) ->
       let te, ty = typeinfer defs ctxt te in
@@ -1247,12 +1263,32 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     | TVar i when i >= 0 -> TVar i, bvar_type !ctxt i
     | TVar i when i < 0 -> TVar i, fvar_type !ctxt i
 
+    | TName s -> (
+      (* we first look for a bound variable *)
+      match bvar_lookup !ctxt s with
+	| Some i -> 
+	  let te = TVar i in
+	  let ty = bvar_type !ctxt i in
+	  te, ty
+	| None -> 
+	  (* we look for a constante *)
+	  let te = Cste (constante_symbol defs s) in
+	  let ty = constante_type defs s in
+	  te, ty
+    )
+
+
     | AVar -> raise (Failure "typeinfer: Case not yet supported, AVar")
-    | TName _ -> raise (Failure "typeinfer: Case not yet supported, TName")
     | App _ -> raise (Failure "typeinfer: Case not yet supported, App")
     | Impl _ -> raise (Failure "typeinfer: Case not yet supported, Impl")
     | DestructWith _ -> raise (Failure "typeinfer: Case not yet supported, DestructWith")
-      
+  ) with
+    | DoudouException ((CannotInfer _) as err) ->
+      raise (DoudouException err)
+    | DoudouException err ->
+      ctxt := saved_ctxt;
+      raise (DoudouException (CannotInfer (!ctxt, te, err)))
+          
 
       
 (******************)
@@ -1626,6 +1662,25 @@ let rec error2token (err: doudou_error) : token =
 	pattern2token ctxt p Alone; Newline;
 	  term2token ctxt te Alone;
       ]
+    | CannotInfer (ctxt, te, err) ->
+      Box [
+	Verbatim "cannot infer type for:"; Space 1;
+	term2token ctxt te Alone; Newline;
+	Verbatim "reason:"; Newline;
+	error2token err
+      ]
+    | CannotTypeCheck (ctxt, te, inferedty, ty, err) ->
+      Box [
+	Verbatim "the term:"; Space 1;
+	term2token ctxt te Alone; Newline;
+	Verbatim "of infered type:"; Space 1;
+	term2token ctxt inferedty Alone; Newline;
+	Verbatim "cannot be typecheck with type:"; Space 1;
+	term2token ctxt ty Alone; Newline;
+	Verbatim "reason:"; Newline;
+	error2token err
+      ]
+
     | _ -> Verbatim "Internal error"
 
 (* make a string from an error *)
@@ -2039,9 +2094,12 @@ let _ = printf "%s\n" (term2string empty_context (
 open Stream
 
 let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
+    (* we set the parser *)
     let lines = stream_of_string s in
     let pb = build_parserbuffer lines in
     let pos = cur_pos pb in
+    (* we save the context *)
+    let saved_ctxt = !ctxt in
     try
       let te = parse_term defs pos pb in
       let te, ty = typeinfer defs ctxt te in
@@ -2050,6 +2108,8 @@ let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
       | DoudouException err -> 
+	(* we restore the context *)
+	ctxt := saved_ctxt;
 	printf "typechecking error:\n%s\n" (error2string err)
 
 let ctxt = ref empty_context
@@ -2061,9 +2121,13 @@ let _ = process_term empty_defs ctxt "Type"
 let defs = ref empty_defs
 
 let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
+    (* we set the parser *)
     let lines = stream_of_string s in
     let pb = build_parserbuffer lines in
     let pos = cur_pos pb in
+    (* we save the context and the defs *)
+    let saved_ctxt = !ctxt in
+    let saved_defs = !defs in
     try
       let def = parse_definition !defs pos pb in
       match def with
@@ -2076,6 +2140,9 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
       | DoudouException err -> 
+	(* we restore the context and defs *)
+	ctxt := saved_ctxt;
+	defs := saved_defs;
 	printf "typechecking error:\n%s\n" (error2string err)
 
 let _ = process_definition defs ctxt "Bool :: Type"
