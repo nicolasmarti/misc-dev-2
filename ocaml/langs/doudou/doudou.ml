@@ -911,10 +911,10 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	(* or another infix with higher priority *)
 	| InNotation (Infix (i, _), _) when i > myprio -> withParen
 	(* or another infix with same priority depending on the associativity and position *)
-	(* I am the first argument and its left associative *)
-	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
-	(* I am the second argument and its right associative *)
-	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
+	(* I am the second argument and its left associative *)
+	| InNotation (Infix (i, LeftAssoc), 2) when i = myprio -> withParen
+	(* I am the first argument and its right associative *)
+	| InNotation (Infix (i, RightAssoc), 1) when i = myprio -> withParen
 
 	(* else we do not need parenthesis *)
 	| _ -> fun x -> x
@@ -1317,6 +1317,28 @@ let parse_symbol_name (defs: defs) : symbol parsingrule =
       | _ -> Some (tryrule (fun pb -> let () = word (symbol2string s) pb in s))
   ) defs.hist)
 
+let parseint = applylexingrule (regexp "[0-9]+", fun (s:string) -> int_of_string s)
+;;
+
+let parseassoc : associativity parsingrule =
+  foldp [
+    tryrule (fun pb -> let () = whitespaces pb in 
+		       let () = word "right" pb in 
+		       let () = whitespaces pb in
+		       RightAssoc
+    );
+    tryrule (fun pb -> let () = whitespaces pb in 
+		       let () = word "left" pb in 
+		       let () = whitespaces pb in
+		       LeftAssoc
+    );
+    tryrule (fun pb -> let () = whitespaces pb in 
+		       let () = word "no" pb in 
+		       let () = whitespaces pb in
+		       NoAssoc
+    )
+  ]
+
 
 let parse_symbol_name_def : symbol parsingrule = 
   let symbols = ["\\+"; "\\*"; "\\["; "\\]";
@@ -1346,21 +1368,52 @@ let parse_symbol_name_def : symbol parsingrule =
     let () = whitespaces pb in
     let s = prefix pb in
     let () = whitespaces pb in
-    Symbol (s, Prefix 0)
+    (* we might have the priority *)
+    match mayberule (fun pb -> 
+      let () = word ":" pb in
+      let () = whitespaces pb in
+      let i = parseint pb in
+      let () = whitespaces pb in
+      i
+    ) pb with
+      | None -> Symbol (s, Prefix 0)
+      | Some i -> Symbol (s, Prefix i)
   )
   (* infix *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let s = infix pb in
     let () = whitespaces pb in
-    Symbol (s, Infix (0, NoAssoc))
+    (* we might have the priority *)
+    match mayberule (fun pb -> 
+      let () = word ":" pb in
+      let () = whitespaces pb in
+      let a = parseassoc pb in
+      let () = whitespaces pb in
+      let () = word "," pb in
+      let () = whitespaces pb in
+      let i = parseint pb in
+      let () = whitespaces pb in
+      (a, i)
+    ) pb with
+      | None -> Symbol (s, Infix (0, NoAssoc))
+      | Some (a, i) -> Symbol (s, Infix (i, a))	
   )
   (* postfix *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let s = postfix pb in
     let () = whitespaces pb in
-    Symbol (s, Postfix 0)
+    (* we might have the priority *)
+    match mayberule (fun pb -> 
+      let () = word ":" pb in
+      let () = whitespaces pb in
+      let i = parseint pb in
+      let () = whitespaces pb in
+      i
+    ) pb with
+      | None -> Symbol (s, Postfix 0)
+      | Some i -> Symbol (s, Postfix i)
   )
   (* just a name *)
   <|> tryrule (fun pb ->
@@ -2350,6 +2403,7 @@ let _ = process_definition defs ctxt "b :: True"
 
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
-let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
+let _ = process_definition defs ctxt "(:) : right, 10 :: {A :: Type} -> A -> List A -> List A"
 let _ = process_definition defs ctxt "Type : ([] {Type})"
 let _ = process_definition defs ctxt "Type : []"
+let _ = process_definition defs ctxt "Type:Type:[]"
