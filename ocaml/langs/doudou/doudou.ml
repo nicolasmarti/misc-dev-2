@@ -494,7 +494,7 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	   List.map (fun (te, n) -> term_substitution s te, n) args)
     | Impl ((symb, ty, n), te) ->
       Impl ((symb, term_substitution s ty, n),
-	    term_substitution s te)
+	    term_substitution (shift_substitution s 1) te)
     | DestructWith eqs ->
       DestructWith (List.map (equation_substitution s) eqs)
     | TyAnnotation (te, ty) -> TyAnnotation (term_substitution s te, term_substitution s ty)
@@ -537,10 +537,13 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | Type -> Type
     | Cste s -> Cste s
     | Obj o -> Obj o
-    | TVar i as v ->
+    | TVar i when i < 0 -> te
+    | TVar i as v when i >= 0 ->
       if i >= level then
-	if i + delta < level then
+	if i + delta < level then (
+	  printf "%d + %d < %d\n" i delta level;
 	  raise (DoudouException (Unshiftable_term (te, level, delta)))
+	)
 	else
 	  TVar (i + delta)
       else
@@ -780,6 +783,22 @@ let pop_frame (ctxt: context) : context =
 let rec pop_frames (ctxt: context) (nb: int) : context =
   if nb <= 0 then ctxt else pop_frames (pop_frame ctxt) (nb - 1)
 
+(* we add a free variable *)
+let add_fvar (ctxt: context ref) (ty: term) : int =
+  let next_fvar_index = 
+    match (fold_stop (fun acc frame ->
+      match frame.fvs with
+	| [] -> Left acc
+	| (i, _, _)::_ -> Right (i - 1)
+    ) (-1) !ctxt)
+    with
+      | Left i -> i
+      | Right i -> i
+  in
+  let frame = List.hd !ctxt in
+  ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar next_fvar_index)::frame.fvs})::List.tl !ctxt;
+  next_fvar_index
+
 (******************)
 (* pretty printer *)
 (******************)
@@ -818,6 +837,12 @@ type place = InNotation of op * int (* in the sndth place of the application to 
    - source info
 *)
 
+type pp_option = {
+  show_implicit : bool
+}
+
+let pp_option = ref {show_implicit = true}
+
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
   match te with
@@ -832,7 +857,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 
     (* we need to split App depending on the head *)
     (* the case for notation Infix *)
-    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when List.length (filter_explicit args) = 2->
+    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -852,7 +877,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	(* else we do not need parenthesis *)
 	| _ -> fun x -> x
       )	(
-	match filter_explicit args with
+	match (if !pp_option.show_implicit then List.map fst args else filter_explicit args) with
 	  | arg1::arg2::[] ->
 	    let arg1 = term2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
 	    let arg2 = term2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
@@ -861,7 +886,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -881,7 +906,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
        )
 
     (* the case for Postfix *)
-    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -911,7 +936,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	| InNotation _ -> withParen
 	| _ -> fun x -> x
       ) (
-	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (filter_explicit args) in
+	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (if !pp_option.show_implicit then List.map fst args else filter_explicit args) in
 	let te = term2token ctxt te InApp in
 	Box (intercalate (Space 1) (te::args))
        )
@@ -1201,7 +1226,7 @@ let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
     let endp = cur_pos pb in
     (res, (startp, endp))
 
-let doudou_keywords = ["Type"]
+let doudou_keywords = ["Type"; "::"]
 
 open Str;;
 
@@ -1214,7 +1239,15 @@ let parse_avar : unit parsingrule = applylexingrule (regexp "_",
 						     fun (s:string) -> ()
 )
 
-let parse_symbol_name : symbol parsingrule = 
+let parse_symbol_name (defs: defs) : symbol parsingrule =
+  foldp (skipmap (fun s ->
+    match s with
+      | Name _ -> None
+      | _ -> Some (tryrule (fun pb -> let () = word (symbol2string s) pb in s))
+  ) defs.hist)
+
+
+let parse_symbol_name_def : symbol parsingrule = 
   let symbols = ["\\+"; "\\*"; "\\["; "\\]";
 		 "@"; "-"; ":"
 		] in
@@ -1439,11 +1472,17 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
       DestructWith (acc @ eqs)
     ) (DestructWith []) eqs    
   ) 
-  <|> (fun pb -> 
+  <|> tryrule (fun pb -> 
     let () =  whitespaces pb in
-    let s, pos = with_pos parse_symbol_name pb in
+    let s, pos = with_pos (parse_symbol_name defs) pb in
     let () =  whitespaces pb in    
     SrcInfo (pos, TName s)
+  )
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let n, pos = with_pos name_parser pb in
+    let () = whitespaces pb in
+    SrcInfo (pos, TName (Name n))
   )
   <|> (paren (parse_term defs leftmost))
 end pb
@@ -1516,11 +1555,13 @@ end pb
 
 type definition = Signature of symbol * term
 		  | Equation of symbol * (pattern * nature list) * term
+		  | Term of term
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
+  (* a signature *)
   tryrule (fun pb ->
     let () = whitespaces pb in
-    let s = parse_symbol_name pb in
+    let s = parse_symbol_name_def pb in
     let () = whitespaces pb in
     (* here we should have the property *)
     let () = whitespaces pb in
@@ -1529,6 +1570,12 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let ty = parse_term defs leftmost pb in
     Signature (s, ty)
   )
+  (* here we should have the Equation parser *)
+  (* finally a free term *)
+  <|> tryrule (fun pb ->
+    Term (parse_term defs leftmost pb)
+  )
+    
 
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
@@ -1958,8 +2005,7 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
     | SrcInfo (pos, Type), Type -> SrcInfo (pos, Type), Type
 
     (* here we should have the case for which you cannot rely on the inference *)
-
-
+      
     (* the most basic typechecking strategy, 
        infer the type ty', typecheck it with Type (really needed ??) and unify with ty    
     *)
@@ -2034,6 +2080,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       push_terms ctxt [te];
       push_terms ctxt [ty];
       (* ty is in the state *)
+      (*printf "(typeinfer Arg) %s\n" (judgment2string !ctxt te ty);*)
       let args = fold_cont (fun processed_args args ->
 	(* first pop the type *)
 	let [ty] = pop_terms ctxt 1 in
@@ -2043,21 +2090,35 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	    | Impl _ -> ty
 	    | _ -> reduction defs ctxt unification_strat ty
 	) in
+	(*printf "(typeinfer Arg in loop) %s\n" (judgment2string !ctxt (App (te, processed_args)) ty);*)
 	let new_arg, remaining_args, ty = (
 	  match args, ty with
 	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
 	    (* lots of cases here *)
+	    (* both nature are the same: this is our arguments *)
 	    | (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
-	      (* both nature are the same: this is our arguments *)
 	      (* first let see if hd has the proper type *)
 	      let hd, ty = typecheck defs ctxt hd ty in
 	      (* we compute the type of the application:
 		 we substitute the bound var 0 (s) by shifting of 1 of hd, and then reshift the whole term by - 1
 	      *)
-	      let ty = shift_term (term_substitution (IndexMap.singleton 0 (shift_term hd 1)) ty) (-1) in
+	      let ty = term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te in
+	      let ty = shift_term ty (-1) in
 	      (* and we returns the information *)
 	      (hd, n1), tl, ty
-	    | _, _ -> 
+	    (* the argument is explicit, but the type want an implicit arguments: we add free variable *)
+	    | (hd, Explicit)::tl, Impl ((s, ty, Implicit), te) -> 
+	    (* we add a free variable of the proper type *)
+	      let fv = add_fvar ctxt ty in
+	      (* we compute the type of the application:
+		 we substitute the bound var 0 (s) by the free variable, and then reshift the whole term by - 1
+	      *)
+	      let ty = term_substitution (IndexMap.singleton 0 (TVar fv)) te in
+	      let ty = shift_term ty (-1) in
+	      (TVar fv, Implicit), args, ty
+	    | (hd, n)::_, _ -> 
+	      
+	      printf "%s (%s), %s\n" (term2string !ctxt hd) (match n with | Explicit -> "Explicit" | Implicit -> "Implicit") (term2string !ctxt ty);
 	      raise Exit
 	) in
 	(* before returning we need to repush the (new) type *)
@@ -2152,7 +2213,7 @@ let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
       printf "%s::%s\n" (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
-	printf "parsing error:\n%s\n" (errors2string pb)
+	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
       | DoudouException err -> 
 	(* we restore the context *)
 	ctxt := saved_ctxt;
@@ -2182,9 +2243,13 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
 	  defs := {!defs with hist = s::!defs.hist  };
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
+	| Term te ->
+	  printf "%s :?: \n" (term2string !ctxt te);
+	  let te, ty = typeinfer !defs ctxt te in
+	  printf "%s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
-	printf "parsing error:\n%s\n" (errors2string pb)
+	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
       | DoudouException err -> 
 	(* we restore the context and defs *)
 	ctxt := saved_ctxt;
@@ -2198,3 +2263,4 @@ let _ = process_definition defs ctxt "b :: True"
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
 let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
+let _ = process_definition defs ctxt "Type : []"

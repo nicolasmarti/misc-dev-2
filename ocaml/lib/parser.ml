@@ -908,7 +908,7 @@ let rec tree_semantics (t: 'a parsetree) : 'a =
        printf "InfixNode without left child\n"; raise Failure
    | Node (InfixNode (_, _, _, f, _, None), _) ->
        printf "InfixNode without right child\n"; raise Failure
-   | Leaf _ -> printf "there is a leaf ...\n"; raise Failure
+   | Leaf _ -> (*printf "there is a leaf ...\n";*) raise Failure
 
 
 ;;
@@ -1037,7 +1037,7 @@ let rec opparse (op: 'a opparser) : 'a parsingrule =
      try
        tree_semantics final_tree
      with
-        | _ -> printf "couille dans le potage .. le retour\n"; raise NoMatch
+        | _ -> (*printf "couille dans le potage .. le retour\n";*) raise NoMatch
  ) <!> "not a primary/infix/prefix formula"
 ;;
 
