@@ -1244,7 +1244,7 @@ let parseassoc : associativity parsingrule =
 
 let parse_symbol_name_def : symbol parsingrule = 
   let symbols = ["\\+"; "\\*"; "\\["; "\\]";
-		 "@"; "-"; ":"
+		 "@"; "-"; ":"; "|"; "\\&"
 		] in
   let format_symbols = String.concat "" ["\\("; 
 					 String.concat "\\|" symbols;
@@ -2233,7 +2233,8 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
-let _ = process_definition defs ctxt "b :: True"
+let _ = process_definition defs ctxt "(||) : left, 20 :: Bool -> Bool -> Bool"
+let _ = process_definition defs ctxt "(&&) : left, 30 :: Bool -> Bool -> Bool"
 
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
