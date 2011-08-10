@@ -134,104 +134,6 @@ type doudou_error = NegativeIndexBVar of index
 
 exception DoudouException of doudou_error
 
-(********************************************)
-(* example of source that should be process *)
-(********************************************)
-
-let example = "
-Bool :: Type
-True :: Bool
-False :: Bool
-
-(||) :: Bool -> Bool -> Bool
-(&&) :: Bool -> Bool -> Bool
-
-True || _ := True
-_ || True := True
-False || False := False
-
-False && _ := False
-_ && False := False
-True && True := True
-
-List :: Type -> Type
-[[]] :: {A :: Type} -> List A
-(:) :: {A :: Type} -> A -> List A -> List A
-
-String :: Type
-
-plusType :: Type -> Type -> Type
-(+) :: {A B :: Type} -> A -> B -> plusType A B
-
-multType :: Type -> Type -> Type
-(*) :: {A B :: Type} -> A -> B -> multType A B
-
-plusType Bool Bool := Bool
-(+) {Bool} {Bool} := (||)
-
-multType Bool Bool := Bool
-(+) {Bool} {Bool} := (&&)
-
-String :: Type
-
-List :: Type -> Type
-[[]] :: {A :: Type} -> List A
-(:) :: {A :: Type} -> A -> List A -> List A
-
-(@) :: {A :: Type} -> List A -> List A
-[] @ l := l
-l @ [] := l
-(hd:tl) @ l := hd:(tl @ [])
-
-map :: {A B :: Type} -> (A -> B) -> List A -> List B
-map f [] := []
-map f (hd:tl) := (f hd):(map f tl)
-
-plusType (List A) (List A) := List a
-(+) {List A} {List A} := (@)
-
-multType Type Type := Type
-(,) :: {A B :: Type} -> A -> B -> A * B
-
-multType (List A) (List B) := List (List (A * B))
-
-_ * [] := []
-[] * _ := []
-(hd1:tl1) * l := (map ( x := (x, hd1)) l) : (tl1 * l)
-
-foldl :: {A B :: Type} -> (B -> A -> B) -> B -> List A -> B
-foldl f acc [] := acc
-foldl f acc (hd:tl) := foldl f (f acc hd) tl
-
-foldr :: {A B :: Type} -> (A -> B -> B) -> List A -> B -> B
-foldr f [] acc := acc
-foldr f (hd:tl) acc := f hd (foldr f tl acc)
-
-Nat :: Type
-O :: Nat
-S :: Nat -> Nat
-
-T :: Type -> Type -> Nat -> Type
-T _ B O := B
-T A B (S n) := A -> T A B n
-
-depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n
-depfold f acc O := acc
-depfold f acc (S n) := (x := depfold f (f acc x) n)
-
-NatPlus :: Nat -> Nat -> Nat 
-NatPlus O x := x
-NatPlus x O := x
-NatPlus (S x) y := S (NatPlus x y)
-
-plusType Nat Nat := Nat
-(+) {Nat] {Nat} := NatPlus
-
-depfold {Nat} (+) O (S (S 0)) :?: 
-(* :?: Nat -> Nat -> Nat *)
-"
-
-
 
 (******************)
 (*      misc      *)
@@ -1494,7 +1396,12 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (sy
      with paren
   *)
   tryrule (paren (fun pb ->
-    let names = separatedBy name_parser whitespaces pb in
+    let names = many1 (fun pb ->
+      let () = whitespaces pb in
+      let n = name_parser pb in
+      let () = whitespaces pb in
+      n
+    ) pb in
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
@@ -1504,7 +1411,12 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (sy
   )
   (* or the same but with bracket *)
   <|> tryrule (bracket (fun pb ->
-    let names = separatedBy name_parser whitespaces pb in
+    let names = many1 (fun pb ->
+    let () = whitespaces pb in
+    let n = name_parser pb in
+    let () = whitespaces pb in
+    n
+    ) pb in
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
@@ -2269,91 +2181,13 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := saved_ctxt;
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
           
-
-      
-(******************************)
-(*        tests               *)
-(******************************)
-
-(* pretty printer *)
-(*
-let zero = Cste (Name "0")
-let splus = (Symbol ("+", Infix (30, LeftAssoc)))
-let plus = Cste splus
-let minus = Cste (Symbol ("-", Infix (30, LeftAssoc)))
-let mult = Cste (Symbol ("*", Infix (40, LeftAssoc)))
-let div = Cste (Symbol ("/", Infix (40, LeftAssoc)))
-let colon = Cste (Symbol (";", Infix (20, RightAssoc)))
-let andc = Cste (Symbol ("&", Postfix 20))
-let neg = Cste (Symbol ("-", Prefix 50))
-
-let nat = (Cste (Name "nat"))
-
-let asymb = Symbol ("_", Nofix)
-
-let avar = Cste asymb
-
-let _ = printf "%s\n" (term2string empty_context zero)
-let _ = printf "%s\n" (term2string empty_context plus)
-let _ = printf "%s\n" (term2string empty_context andc)
-let _ = printf "%s\n" (term2string empty_context neg)
-let _ = printf "%s\n" (term2string empty_context (App (andc, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
-let _ = printf "%s\n" (term2string empty_context (App (neg, [App (mult, [zero, Explicit; zero, Explicit]), Explicit])))
-
-let _ = printf "%s\n" (term2string empty_context (
-  Impl ((asymb, Impl ((asymb, nat, Explicit), Impl ((asymb, nat, Implicit), nat)), Implicit), Impl ((Name "prout", nat, Explicit), nat))
-)
-)
-
-let _ = printf "%s\n" (term2string empty_context (
-  DestructWith [((PVar ("x", avar), Explicit), DestructWith [((PVar ("y", avar), Implicit), App (plus, [TVar 0, Explicit; TVar 1, Explicit]))])]
-)
-)
-
-let _ = printf "%s\n" (term2string empty_context (
-  DestructWith [
-    (
-      (PApp (splus, [PVar ("x", avar), Explicit; PVar ("z", avar), Explicit], Cste asymb), Explicit), 
-      DestructWith [
-	((PVar ("y", avar), Implicit), 
-	 App (plus, [TVar 0, Explicit; TVar 1, Explicit])
-	)
-      ]
-    )
-  ]
-)
-)
-*)
 (******************************************)
 (*        tests with parser               *)
 (******************************************)
 
 open Stream
 
-let process_term (defs: defs) (ctxt: context ref) (s: string) : unit =
-    (* we set the parser *)
-    let lines = stream_of_string s in
-    let pb = build_parserbuffer lines in
-    let pos = cur_pos pb in
-    (* we save the context *)
-    let saved_ctxt = !ctxt in
-    try
-      let te = parse_term defs pos pb in
-      let te, ty = typeinfer defs ctxt te in
-      printf "%s::%s\n" (term2string !ctxt te) (term2string !ctxt ty)
-    with
-      | NoMatch -> 
-	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
-      | DoudouException err -> 
-	(* we restore the context *)
-	ctxt := saved_ctxt;
-	printf "typechecking error:\n%s\n" (error2string err)
-
 let ctxt = ref empty_context
-
-let _ = process_term empty_defs ctxt "Type"
-
-(*let _ = process_term empty_defs ctxt "\\ x -> x | y -> y | z -> z"*)
 
 let defs = ref empty_defs
 
@@ -2386,7 +2220,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (*let [te; ty] = flush_fvars ctxt [te; ty] in*)
 	  (* N.B.: here we should assert that there is not more free variables *)
 	  (* just print the result *)
-	  printf "%s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)
+	  printf "%s |- %s :: %s \n" (*(context2string !ctxt)*) "" (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
 	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
@@ -2407,3 +2241,104 @@ let _ = process_definition defs ctxt "(:) : right, 10 :: {A :: Type} -> A -> Lis
 let _ = process_definition defs ctxt "Type : ([] {Type})"
 let _ = process_definition defs ctxt "Type : []"
 let _ = process_definition defs ctxt "Type:Type:[]"
+let _ = process_definition defs ctxt "plusType :: Type -> Type -> Type"
+let _ = process_definition defs ctxt "(+) : left, 20 :: {A B :: Type} -> A -> B -> plusType A B"
+
+(********************************************)
+(* example of source that should be process *)
+(********************************************)
+
+let example = "
+Bool :: Type
+True :: Bool
+False :: Bool
+
+(||) :: Bool -> Bool -> Bool
+(&&) :: Bool -> Bool -> Bool
+
+True || _ := True
+_ || True := True
+False || False := False
+
+False && _ := False
+_ && False := False
+True && True := True
+
+List :: Type -> Type
+[[]] :: {A :: Type} -> List A
+(:) :: {A :: Type} -> A -> List A -> List A
+
+String :: Type
+
+plusType :: Type -> Type -> Type
+(+) :: {A B :: Type} -> A -> B -> plusType A B
+
+multType :: Type -> Type -> Type
+(*) :: {A B :: Type} -> A -> B -> multType A B
+
+plusType Bool Bool := Bool
+(+) {Bool} {Bool} := (||)
+
+multType Bool Bool := Bool
+(+) {Bool} {Bool} := (&&)
+
+String :: Type
+
+List :: Type -> Type
+[[]] :: {A :: Type} -> List A
+(:) :: {A :: Type} -> A -> List A -> List A
+
+(@) :: {A :: Type} -> List A -> List A
+[] @ l := l
+l @ [] := l
+(hd:tl) @ l := hd:(tl @ [])
+
+map :: {A B :: Type} -> (A -> B) -> List A -> List B
+map f [] := []
+map f (hd:tl) := (f hd):(map f tl)
+
+plusType (List A) (List A) := List a
+(+) {List A} {List A} := (@)
+
+multType Type Type := Type
+(,) :: {A B :: Type} -> A -> B -> A * B
+
+multType (List A) (List B) := List (List (A * B))
+
+_ * [] := []
+[] * _ := []
+(hd1:tl1) * l := (map ( x := (x, hd1)) l) : (tl1 * l)
+
+foldl :: {A B :: Type} -> (B -> A -> B) -> B -> List A -> B
+foldl f acc [] := acc
+foldl f acc (hd:tl) := foldl f (f acc hd) tl
+
+foldr :: {A B :: Type} -> (A -> B -> B) -> List A -> B -> B
+foldr f [] acc := acc
+foldr f (hd:tl) acc := f hd (foldr f tl acc)
+
+Nat :: Type
+O :: Nat
+S :: Nat -> Nat
+
+T :: Type -> Type -> Nat -> Type
+T _ B O := B
+T A B (S n) := A -> T A B n
+
+depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n
+depfold f acc O := acc
+depfold f acc (S n) := (x := depfold f (f acc x) n)
+
+NatPlus :: Nat -> Nat -> Nat 
+NatPlus O x := x
+NatPlus x O := x
+NatPlus (S x) y := S (NatPlus x y)
+
+plusType Nat Nat := Nat
+(+) {Nat] {Nat} := NatPlus
+
+depfold {Nat} (+) O (S (S 0)) :?: 
+(* :?: Nat -> Nat -> Nat *)
+"
+
+
