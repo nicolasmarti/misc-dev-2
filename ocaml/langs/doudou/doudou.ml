@@ -1186,6 +1186,7 @@ let rec error2token (err: doudou_error) : token =
   match err with
     | NegativeIndexBVar i -> Verbatim "bvar as a negative index"
     | Unshiftable_term (te, level, delta) -> Verbatim "Cannot shift a term"
+    | UnknownCste c -> Box [Verbatim "unknown constante:"; Space 1; Verbatim (symbol2string c)]
     | ErrorPosPair (Some pos1, Some pos2, err) ->
       Box [
 	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
@@ -1738,7 +1739,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
 	    | None, Some v -> Some v
 	)  s s12
       ) IndexMap.empty (List.combine args1 args2)
-      
+
 
 (* a special exception for the reduction which 
    signals that an underlying iota reduction fails
@@ -1923,6 +1924,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | Cste c1 when not strat.delta -> te
     (* with delta reduction we unfold *)
     | Cste c1 when strat.delta && unfold_constante defs c1 != None -> fromSome (unfold_constante defs c1)
+    | Cste c1 when strat.delta && unfold_constante defs c1 = None -> te
 
     | Obj o -> te
 
@@ -2032,6 +2034,17 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args)
 
     )
+
+(*
+  helper function that detect if the number of explicit arguments
+  N.B.: no modulo reduction ....
+*)      
+and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
+  match reduction defs ctxt unification_strat te with
+    | SrcInfo (pos, te) -> nb_explicite_arguments defs ctxt te
+    | Impl ((_, _, Implicit), te) -> 1 + nb_explicite_arguments defs ctxt te
+    | _ -> 0
+
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
   (*printf "(typecheck) %s\n" (judgment2string !ctxt te ty);*)
   (* save the context *)
@@ -2050,8 +2063,19 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
     *)
     | _, _ ->
       let te, ty' = typeinfer defs ctxt te in
-      let ty = unification_term_term defs ctxt ty ty' in
-      te, ty
+      (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
+      if nb_explicite_arguments defs ctxt ty' > nb_explicite_arguments defs ctxt ty then (
+	(* yes, we need to apply the term to a free variable *)
+	let fvty = add_fvar ctxt Type in
+	let fvte = add_fvar ctxt (TVar fvty) in
+	let te = App (te, [TVar fvte, Implicit]) in
+	(* and we retypecheck *)
+	typecheck defs ctxt te ty
+      ) else (
+	(* no: we typecheck normally *)
+	let ty = unification_term_term defs ctxt ty ty' in
+	te, ty
+      )
   ) with
     | DoudouException ((CannotTypeCheck _) as err) ->
       raise (DoudouException err)
@@ -2323,6 +2347,7 @@ let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
 let _ = process_definition defs ctxt "b :: True"
+
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
 let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
