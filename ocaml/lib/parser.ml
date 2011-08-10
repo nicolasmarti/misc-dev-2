@@ -36,6 +36,10 @@ let build_parserbuffer stream = {
  beginpointer = 0;
  error = [];
 };;
+
+let current_buffer (pb: parserbuffer) =
+  let s = Buffer.contents pb.bufferstr in
+  String.sub s (pb.beginpointer) (String.length s - pb.beginpointer)
  
 (* test if we reach the end of the buffer *)
 let endofbuffer (pb:parserbuffer) = 
