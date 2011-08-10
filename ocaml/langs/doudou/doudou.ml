@@ -278,6 +278,14 @@ let rec fold_stop (f: 'b -> 'a -> ('b, 'c) either) (acc: 'b) (l: 'a list) : ('b,
 	| Left acc -> fold_stop f acc tl
 	| Right res -> Right res
 
+(* a fold that returns an update of the traversed list *)
+let rec fold_cont (f: 'b -> 'a list -> 'a list * 'b) (acc: 'b) (l: 'a list): 'b =
+  match l with
+    | [] -> acc
+    | _ -> 
+      let l', acc = f acc l in
+      fold_cont f acc l'
+
 (* assert that pos1 contains pos2 *)
 let pos_in (pos1: pos) (pos2: pos) : bool =
   let ((begin_line1, begin_col1), (end_line1, end_col1)) = pos1 in
@@ -772,6 +780,756 @@ let pop_frame (ctxt: context) : context =
 let rec pop_frames (ctxt: context) (nb: int) : context =
   if nb <= 0 then ctxt else pop_frames (pop_frame ctxt) (nb - 1)
 
+(******************)
+(* pretty printer *)
+(******************)
+
+(*
+  helper functions
+*)
+let rec intercalate (inter: 'a) (l: 'a list) : 'a list =
+  match l with
+    | hd1::hd2::tl ->
+      hd1::inter::(intercalate inter (hd2::tl))
+    | _ -> l
+
+let rec intercalates (inter: 'a list) (l: 'a list) : 'a list =
+  match l with
+    | hd1::hd2::tl ->
+      hd1::inter @ intercalates inter (hd2::tl)
+    | _ -> l
+
+let rec withParen (t: token) : token =
+  Box [Verbatim "("; t; Verbatim ")"]
+
+let rec withBracket (t: token) : token =
+  Box [Verbatim "{"; t; Verbatim "}"]
+
+(* a data structure to mark the place where the term/pattern is *)
+type place = InNotation of op * int (* in the sndth place of the application to the notation with op *)
+	     | InApp (* in the head of application *)
+	     | InArg of nature (* as an argument (Explicit) *)
+	     | InAlias  (* in an alias pattern *)
+	     | Alone (* standalone *)
+
+(* TODO: add options for 
+   - printing implicit terms 
+   - printing type annotation
+   - source info
+*)
+
+(* transform a term into a box *)
+let rec term2token (ctxt: context) (te: term) (p: place): token =
+  match te with
+    | Type -> Verbatim "Type"
+    | Cste s -> Verbatim (symbol2string s)
+    | Obj o -> o#pprint ()
+    | TVar i when i >= 0 -> 
+      let frame = get_bvar_frame ctxt i in
+      Verbatim (symbol2string (frame.symbol))
+    | TVar i when i < 0 -> 
+      Verbatim (String.concat "" ["["; string_of_int i;"]"])
+
+    (* we need to split App depending on the head *)
+    (* the case for notation Infix *)
+    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when List.length (filter_explicit args) = 2->
+      (* we should put parenthesis in the following condition: *)
+      (match p with
+	(* if we are an argument *)
+	| InArg Explicit -> withParen
+	(* if we are in a notation such that *)
+	(* a prefix or postfix binding more  than us *)
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	(* or another infix with higher priority *)
+	| InNotation (Infix (i, _), _) when i > myprio -> withParen
+	(* or another infix with same priority depending on the associativity and position *)
+	(* I am the first argument and its left associative *)
+	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
+	(* I am the second argument and its right associative *)
+	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
+
+	(* else we do not need parenthesis *)
+	| _ -> fun x -> x
+      )	(
+	match filter_explicit args with
+	  | arg1::arg2::[] ->
+	    let arg1 = term2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
+	    let arg2 = term2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg1; te; arg2])
+	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
+       )
+    (* the case for Prefix *)
+    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a postfix notation more binding than us
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = term2token ctxt arg (InNotation (Prefix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [te; arg])
+	  | _ -> raise (Failure "term2token, App prefix case: irrefutable patten")
+       )
+
+    (* the case for Postfix *)
+    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a prefix notation more binding than us
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = term2token ctxt arg (InNotation (Postfix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg; te])
+	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+       )
+
+    (* general case *)
+    | App (te, args) ->
+      (* we only embed in parenthesis if
+	 - we are an argument of an application
+	 - we are in a notation
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InNotation _ -> withParen
+	| _ -> fun x -> x
+      ) (
+	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (filter_explicit args) in
+	let te = term2token ctxt te InApp in
+	Box (intercalate (Space 1) (te::args))
+       )
+
+    (* implication *)
+    | Impl ((s, ty, nature), te) ->
+      (* we embed in parenthesis if 
+	 - embed as some arg 
+	 - ??
+      *)
+      (
+	match p with
+	  | InArg Explicit -> withParen
+	  | _ -> fun x -> x
+      )
+	(
+	  (* the lhs of the ->*)
+	  let lhs = 
+	    (* if the symbol is Nofix _ -> we skip the symbol *)
+	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
+	    match s with
+	      | Symbol ("_", Nofix) ->
+		(* we only put brackets if implicit *)
+		(if nature = Implicit then withBracket else fun x -> x)
+		  (term2token ctxt ty (InArg nature))
+	      | _ -> 
+		(* here we put the nature marker *)
+		(if nature = Implicit then withBracket else withParen)
+		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
+	  in 
+	  (* for computing the r.h.s, we need to push a new frame *)
+	  let newframe = build_new_frame s (shift_term ty 1) in
+	  let rhs = term2token (newframe::ctxt) te Alone in
+	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
+	)
+
+    | DestructWith eqs ->
+      (* we do not put parenthesis only when
+	 - we are alone
+      *)
+      (
+	match p with
+	  | Alone -> (fun x -> x)
+	  | _ -> withParen
+      )
+      (
+	(* we extract the accumulation of destructwith *)
+	let (ps, te) = accumulate_pattern_destructwith te in
+	match ps with
+	  (* if ps is empty -> do something basic *)
+	  | [] ->
+	    let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
+	    Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
+	  (* else we do more prettty printing *)
+	  | _ ->
+	    let (ps, ctxt) = List.fold_left (fun (ps, ctxt) (p, nature)  -> 
+
+	      (* N.B.: we are printing even the implicit arguments ... is it always a good thing ? *)
+
+	      (* we print the pattern *)
+	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (InArg nature)) in
+	      (* grab the underlying context *)
+	      let ctxt = push_pattern ctxt p in
+	      (* we return the whole thing *)
+	      (* NB: for sake of optimization we return a reversed list of pattern, which are reversed in the final box *)
+	      ((pattern::ps), ctxt)
+	    ) ([], ctxt) ps in
+	      let te = term2token ctxt te Alone in
+	      Box (intercalate (Space 1) (List.rev ps) @ [Space 1; Verbatim ":="; Space 1; te])
+      )
+    | TyAnnotation (te, _) | SrcInfo (_, te) ->
+      term2token ctxt te p      
+
+    | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
+    (*| TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")*)
+    | TName s -> Box [Verbatim "(TName"; Space 1; Verbatim (symbol2string s); Verbatim ")"]
+
+
+and equation2token (ctxt: context) (eq: equation) : token =
+  (* here we simply print the DestructWith with only one equation *)
+  term2token ctxt (DestructWith [eq]) Alone
+
+and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
+  match pattern with
+    | PType -> Verbatim "Type"
+    | PVar (n, _) -> Verbatim n
+    | PAVar _ -> Verbatim "_"
+    | PCste s -> Verbatim (symbol2string s)
+    | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
+
+    (* for the append we have several implementation that mimics the ones for terms *)
+    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (filter_explicit args) = 2->
+      (* we should put parenthesis in the following condition: *)
+      (match p with
+	(* if we are an argument *)
+	| InArg Explicit -> withParen
+	(* if we are in a notation such that *)
+	(* a prefix or postfix binding more  than us *)
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	(* or another infix with higher priority *)
+	| InNotation (Infix (i, _), _) when i > myprio -> withParen
+	(* or another infix with same priority depending on the associativity and position *)
+	(* I am the first argument and its left associative *)
+	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
+	(* I am the second argument and its right associative *)
+	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
+	(* if we are in an alias *)
+	| InAlias -> withParen
+
+	(* else we do not need parenthesis *)
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg1::arg2::[] ->
+	    let arg1 = pattern2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
+	    let arg2 = pattern2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg1; te; arg2])
+	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
+       )
+    (* the case for Prefix *)
+    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a postfix notation more binding than us
+	 - in an alias
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InAlias -> withParen
+	| InNotation (Postfix i, _) when i > myprio -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = pattern2token ctxt arg (InNotation (Prefix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [te; arg])
+	  | _ -> raise (Failure "pattern2token, App prefix case: irrefutable patten")
+       )
+
+    (* the case for Postfix *)
+    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+      (* we put parenthesis when
+	 - as the head or argument of an application
+	 - in a prefix notation more binding than us
+	 - in an alias
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InNotation (Prefix i, _) when i > myprio -> withParen
+	| InAlias -> withParen
+	| _ -> fun x -> x
+      ) (
+	match filter_explicit args with
+	  | arg::[] ->
+	    let arg = pattern2token ctxt arg (InNotation (Postfix myprio, 1)) in
+	    let te = Verbatim s in
+	    Box (intercalate (Space 1) [arg; te])
+	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+       )
+
+    (* general case *)
+    | PApp (s, args, _) ->
+      (* we only embed in parenthesis if
+	 - we are an argument of an application
+	 - we are in a notation
+      *)
+      (match p with
+	| InArg Explicit -> withParen
+	| InNotation _ -> withParen
+	| InAlias -> withParen
+	| _ -> fun x -> x
+      ) (
+	let args = List.map (fun te -> pattern2token ctxt te (InArg Explicit)) (filter_explicit args) in
+	let s = symbol2string s in
+	Box (intercalate (Space 1) (Verbatim s::args))
+       )
+
+
+(* make a string from a term *)
+let term2string (ctxt: context) (te: term) : string =
+  let token = term2token ctxt te Alone in
+  let box = token2box token 80 2 in
+  box2string box
+
+(* pretty printing for errors *)
+let pos2token (p: pos) : token =
+  let startp, endp = p in
+  Box [Verbatim (string_of_int (fst startp)); 
+       Verbatim ":"; 
+       Verbatim (string_of_int (snd startp)); 
+       Verbatim "-"; 
+       Verbatim (string_of_int (fst endp)); 
+       Verbatim ":"; 
+       Verbatim (string_of_int (snd endp)); 
+      ]
+    
+
+let rec error2token (err: doudou_error) : token =
+  match err with
+    | NegativeIndexBVar i -> Verbatim "bvar as a negative index"
+    | Unshiftable_term (te, level, delta) -> Verbatim "Cannot shift a term"
+    | ErrorPosPair (Some pos1, Some pos2, err) ->
+      Box [
+	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (None, Some pos2, err) ->
+      Box [
+	pos2token pos2; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (Some pos1, None, err) ->
+      Box [
+	pos2token pos1; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | ErrorPosPair (None, None, err) ->
+      error2token err
+    | ErrorPos (pos, err) ->
+      Box [
+	pos2token pos; Space 1; Verbatim ":"; Newline;
+	error2token err
+      ]
+    | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
+      Box [
+	Verbatim "Cannot unify:"; Newline;
+	term2token ctxt te1 Alone; Newline;
+	  term2token ctxt te2 Alone;
+      ]
+    | NoMatchingPattern (ctxt, p, te) ->
+      Box [
+	Verbatim "Cannot unify:"; Newline;
+	pattern2token ctxt p Alone; Newline;
+	  term2token ctxt te Alone;
+      ]
+    | CannotInfer (ctxt, te, err) ->
+      Box [
+	Verbatim "cannot infer type for:"; Space 1;
+	term2token ctxt te Alone; Newline;
+	Verbatim "reason:"; Newline;
+	error2token err
+      ]
+    | CannotTypeCheck (ctxt, te, inferedty, ty, err) ->
+      Box [
+	Verbatim "the term:"; Space 1;
+	term2token ctxt te Alone; Newline;
+	Verbatim "of infered type:"; Space 1;
+	term2token ctxt inferedty Alone; Newline;
+	Verbatim "cannot be typecheck with type:"; Space 1;
+	term2token ctxt ty Alone; Newline;
+	Verbatim "reason:"; Newline;
+	error2token err
+      ]
+
+    | _ -> Verbatim "Internal error"
+
+(* make a string from an error *)
+let error2string (err: doudou_error) : string =
+  let token = error2token err in
+  let box = token2box token 80 2 in
+  box2string box
+
+let judgment2string (ctxt: context) (te: term) (ty: term) : string =
+  let token = Box [Verbatim "|-"; Space 1; term2token ctxt te Alone; Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone] in
+  let box = token2box token 80 2 in
+  box2string box
+
+(**********************************)
+(* parser (lib/parser.ml version) *)
+(**********************************)
+
+let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
+  fun pb ->
+    let curp = cur_pos pb in
+    if (snd startp <= snd curp) then raise NoMatch;
+    p pb
+
+let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
+  fun pb ->
+    let startp = cur_pos pb in
+    let res = p pb in
+    let endp = cur_pos pb in
+    (res, (startp, endp))
+
+let doudou_keywords = ["Type"]
+
+open Str;;
+
+let name_parser : name parsingrule = applylexingrule (regexp "[a-zA-Z][a-zA-Z0-9]*", 
+						      fun (s:string) -> 
+							if List.mem s doudou_keywords then raise NoMatch else s
+)
+
+let parse_avar : unit parsingrule = applylexingrule (regexp "_", 
+						     fun (s:string) -> ()
+)
+
+let parse_symbol_name : symbol parsingrule = 
+  let symbols = ["\\+"; "\\*"; "\\["; "\\]";
+		 "@"; "-"; ":"
+		] in
+  let format_symbols = String.concat "" ["\\("; 
+					 String.concat "\\|" symbols;
+					 "\\)*"
+					] in
+  let nofix = applylexingrule (regexp (String.concat "" ["\\["; format_symbols; "\\]"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let prefix = applylexingrule (regexp (String.concat "" ["\\["; format_symbols; ")"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let postfix = applylexingrule (regexp (String.concat "" ["("; format_symbols; "\\]"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  let infix = applylexingrule (regexp (String.concat "" ["("; format_symbols; ")"]), 
+			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
+  (* no fix *)
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = nofix pb in
+    let () = whitespaces pb in
+    Symbol (s, Nofix)
+  )
+  (* prefix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = prefix pb in
+    let () = whitespaces pb in
+    Symbol (s, Prefix 0)
+  )
+  (* infix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = infix pb in
+    let () = whitespaces pb in
+    Symbol (s, Infix (0, NoAssoc))
+  )
+  (* postfix *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = postfix pb in
+    let () = whitespaces pb in
+    Symbol (s, Postfix 0)
+  )
+  (* just a name *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let n = name_parser pb in
+    let () = whitespaces pb in
+    Name n
+  )
+
+
+let parse_symbol (defs: defs) : symbol parsingrule =
+  fun pb -> 
+    let res = fold_stop (fun () s ->
+      try
+	let () = tryrule (word (symbol2string s)) pb in
+	Right s
+      with
+	| NoMatch -> Left ()
+    ) () defs.hist in
+    match res with
+      | Left () -> raise NoMatch
+      | Right s -> s
+	
+
+let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparser =
+  let res = { primary = primary;
+	      prefixes = Hashtbl.create (List.length defs.hist);
+	      infixes = Hashtbl.create (List.length defs.hist);
+	      postfixes = Hashtbl.create (List.length defs.hist);
+	    } in
+  let _ = List.map (fun s -> 
+    match s with
+      | Name _ -> ()
+      | Symbol (n, Nofix) -> ()
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
+  ) defs.hist in
+  res
+
+let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : pattern opparser =
+  let res = { primary = primary;
+	      prefixes = Hashtbl.create (List.length defs.hist);
+	      infixes = Hashtbl.create (List.length defs.hist);
+	      postfixes = Hashtbl.create (List.length defs.hist);
+	    } in
+  let _ = List.map (fun s -> 
+    match s with
+      | Name _ -> ()
+      | Symbol (n, Nofix) -> ()
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> PApp (s, [te1, Explicit; te2, Explicit], AVar))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
+  ) defs.hist in
+  res
+
+(* these are the whole term set 
+   - term_lvlx "->" term
+*)
+let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let startpos = cur_pos pb in
+    let (names, ty, nature) = parse_impl_lhs defs leftmost pb in
+    let () = whitespaces pb in
+    let () = word "->" pb in
+    let () = whitespaces pb in
+    let body = parse_term defs leftmost pb in
+    let endpos = cur_pos pb in
+    let () = whitespaces pb in
+    SrcInfo ((startpos, endpos), build_impl names ty nature body)
+  ) 
+  <|> parse_term_lvl0 defs leftmost
+end pb
+
+and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (symbol list * term * nature) = begin
+  (* first case 
+     with paren
+  *)
+  tryrule (paren (fun pb ->
+    let names = separatedBy name_parser whitespaces pb in
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    (List.map (fun n -> Name n) names, ty, Explicit)
+   )
+  )
+  (* or the same but with bracket *)
+  <|> tryrule (bracket (fun pb ->
+    let names = separatedBy name_parser whitespaces pb in
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    (List.map (fun n -> Name n) names, ty, Implicit)
+  )
+  )
+  (* or just a type -> anonymous arguments *)
+  <|> (fun pb -> 
+    let ty = parse_term_lvl0 defs leftmost pb in
+    ([Symbol ("_", Nofix)], ty, Explicit)        
+  )
+  <|> (fun pb -> 
+    let ty = paren (parse_term_lvl0 defs leftmost) pb in
+    ([Symbol ("_", Nofix)], ty, Explicit)        
+  )
+  <|> (fun pb -> 
+    let ty = bracket (parse_term_lvl0 defs leftmost) pb in
+    ([Symbol ("_", Nofix)], ty, Implicit)        
+  )
+end pb
+
+(* this is operator-ed terms with term_lvl1 as primary
+*)
+and parse_term_lvl0 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
+  let myp = create_opparser_term defs (parse_term_lvl1 defs leftmost) in
+  opparse myp
+end pb
+
+(* this is term resulting for the application of term_lvl2 *)
+and parse_term_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
+  fun pb -> 
+    (* first we parse the application head *)
+    let startpos = cur_pos pb in
+    let head = parse_term_lvl2 defs leftmost pb in    
+    let () = whitespaces pb in
+    (* then we parse the arguments *)
+    let args = separatedBy (
+      fun pb ->
+      parse_arguments defs leftmost pb
+    ) whitespaces pb in
+    let endpos = cur_pos pb in
+    match args with
+      | [] -> head
+      | _ -> 
+	SrcInfo ((startpos, endpos), App (head, args))
+end pb
+
+(* arguments: term_lvl2 with possibly brackets *)
+and parse_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (term * nature) = begin
+  (fun pb -> 
+    let te = bracket (parse_term_lvl2 defs leftmost) pb in
+    (te, Implicit)
+  )
+  <|> (fun pb -> 
+    let te = parse_term_lvl2 defs leftmost pb in
+    (te, Explicit)
+  )
+end pb
+
+(* these are the most basic terms + top-level terms in parenthesis *)
+and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
+  (fun pb -> 
+    let () = whitespaces pb in
+    let (), pos = with_pos (word "Type") pb in
+    let () = whitespaces pb in
+    SrcInfo (pos, Type)
+  ) 
+  <|> (fun pb ->
+    let () =  whitespaces pb in
+    let (), pos = with_pos parse_avar pb in
+    let () =  whitespaces pb in
+    SrcInfo (pos, AVar)
+  ) 
+  <|> (fun pb ->
+    let () = whitespaces pb in
+    let () = word "\\" pb in    
+    let eqs = separatedBy (fun pb ->
+      let () = whitespaces pb in
+      let patterns = separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb in
+      let () =  whitespaces pb in
+      let () = word "->" pb in
+      let () =  whitespaces pb in
+      let body = parse_term defs leftmost pb in
+      let () =  whitespaces pb in
+      build_destructwith patterns body
+    ) (word "|") pb in
+    List.fold_left (fun (DestructWith acc) (DestructWith eqs) ->
+      DestructWith (acc @ eqs)
+    ) (DestructWith []) eqs    
+  ) 
+  <|> (fun pb -> 
+    let () =  whitespaces pb in
+    let s, pos = with_pos parse_symbol_name pb in
+    let () =  whitespaces pb in    
+    SrcInfo (pos, TName s)
+  )
+  <|> (paren (parse_term defs leftmost))
+end pb
+
+and parse_pattern (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  let myp = create_opparser_pattern defs (parse_pattern_lvl1 defs leftmost) in
+  opparse myp
+end pb
+
+and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  fun pb -> 
+    (* first we parse the application head *)
+    let s = parse_symbol defs pb in    
+    let () = whitespaces pb in
+    (* then we parse the arguments *)
+    let args = separatedBy (
+      fun pb ->
+	parse_pattern_arguments defs leftmost pb
+    ) whitespaces pb in
+    match args with
+      | [] -> PCste s
+      | _ -> PApp (s, args, AVar)	  
+end pb
+
+and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern * nature = begin
+  (fun pb -> 
+    let te = bracket (parse_pattern_lvl2 defs leftmost) pb in
+    (te, Implicit)
+  )
+  <|> (fun pb -> 
+    let te = parse_pattern_lvl2 defs leftmost pb in
+    (te, Explicit)
+  )
+end pb
+  
+and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
+  (fun pb -> 
+    let () = whitespaces pb in
+    let () = word "Type" pb in
+    let () = whitespaces pb in
+    PType
+  ) 
+  <|> (fun pb ->
+    let () =  whitespaces pb in
+    let () = parse_avar pb in
+    let () =  whitespaces pb in
+    PAVar AVar
+  ) 
+  <|> tryrule (fun pb ->
+    let () =  whitespaces pb in
+    let s = parse_symbol defs pb in
+    let () =  whitespaces pb in
+    PCste s
+  )
+  <|> tryrule (fun pb ->
+    let () =  whitespaces pb in
+    let name = name_parser pb in
+    let () = word "@" pb in
+    let p = parse_pattern defs leftmost pb in
+    PAlias (name, p, AVar)
+  )
+  <|> (fun pb -> 
+    let () =  whitespaces pb in
+    let name = name_parser pb in
+    let () =  whitespaces pb in    
+    PVar (name, AVar)
+  )
+  <|> (paren (parse_pattern defs leftmost))
+end pb
+
+type definition = Signature of symbol * term
+		  | Equation of symbol * (pattern * nature list) * term
+
+let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = parse_symbol_name pb in
+    let () = whitespaces pb in
+    (* here we should have the property *)
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    Signature (s, ty)
+  )
+
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
 (*************************************************************)
@@ -1190,12 +1948,14 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
     )
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
+  (*printf "(typecheck) %s\n" (judgment2string !ctxt te ty);*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
   match te, ty with
     (* one basic rule, Type :: Type *)
     | Type, Type -> Type, Type
+    | SrcInfo (pos, Type), Type -> SrcInfo (pos, Type), Type
 
     (* here we should have the case for which you cannot rely on the inference *)
 
@@ -1217,6 +1977,7 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
       
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
+  (*printf "(typeinfer) %s\n" (judgment2string !ctxt te (TName (Name "???")));*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -1265,9 +2026,50 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := pop_frame !ctxt;
       (* and we returns the term with type Type *)
       Impl ((s, ty, n), te), Type
+
+    (* app will have another version in typecheck that might force more unification or creation of free variables *)
+    | App (te, args) -> 
+      let te, ty = typeinfer defs ctxt te in
+      (* we push the term te, and its type *)
+      push_terms ctxt [te];
+      push_terms ctxt [ty];
+      (* ty is in the state *)
+      let args = fold_cont (fun processed_args args ->
+	(* first pop the type *)
+	let [ty] = pop_terms ctxt 1 in
+	(* ty is well typed ... we should be able to reduce it just in case *)
+	let ty = (
+	  match ty with
+	    | Impl _ -> ty
+	    | _ -> reduction defs ctxt unification_strat ty
+	) in
+	let new_arg, remaining_args, ty = (
+	  match args, ty with
+	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
+	    (* lots of cases here *)
+	    | (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
+	      (* both nature are the same: this is our arguments *)
+	      (* first let see if hd has the proper type *)
+	      let hd, ty = typecheck defs ctxt hd ty in
+	      (* we compute the type of the application:
+		 we substitute the bound var 0 (s) by shifting of 1 of hd, and then reshift the whole term by - 1
+	      *)
+	      let ty = shift_term (term_substitution (IndexMap.singleton 0 (shift_term hd 1)) ty) (-1) in
+	      (* and we returns the information *)
+	      (hd, n1), tl, ty
+	    | _, _ -> 
+	      raise Exit
+	) in
+	(* before returning we need to repush the (new) type *)
+	push_terms ctxt [ty];
+	(* and returns the arguments *)
+	(remaining_args, processed_args @ [new_arg])
+      ) [] args in
+      (* we pop the ty and te *)
+      let [ty; te] = pop_terms ctxt 2 in
+      App (te, args), ty
     
     | AVar -> raise (Failure "typeinfer: Case not yet supported, AVar")
-    | App _ -> raise (Failure "typeinfer: Case not yet supported, App")
     | DestructWith _ -> raise (Failure "typeinfer: Case not yet supported, DestructWith")
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -1278,748 +2080,6 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
           
 
       
-(******************)
-(* pretty printer *)
-(******************)
-
-(*
-  helper functions
-*)
-let rec intercalate (inter: 'a) (l: 'a list) : 'a list =
-  match l with
-    | hd1::hd2::tl ->
-      hd1::inter::(intercalate inter (hd2::tl))
-    | _ -> l
-
-let rec intercalates (inter: 'a list) (l: 'a list) : 'a list =
-  match l with
-    | hd1::hd2::tl ->
-      hd1::inter @ intercalates inter (hd2::tl)
-    | _ -> l
-
-let rec withParen (t: token) : token =
-  Box [Verbatim "("; t; Verbatim ")"]
-
-let rec withBracket (t: token) : token =
-  Box [Verbatim "{"; t; Verbatim "}"]
-
-(* a data structure to mark the place where the term/pattern is *)
-type place = InNotation of op * int (* in the sndth place of the application to the notation with op *)
-	     | InApp (* in the head of application *)
-	     | InArg of nature (* as an argument (Explicit) *)
-	     | InAlias  (* in an alias pattern *)
-	     | Alone (* standalone *)
-
-(* TODO: add options for 
-   - printing implicit terms 
-   - printing type annotation
-   - source info
-*)
-
-(* transform a term into a box *)
-let rec term2token (ctxt: context) (te: term) (p: place): token =
-  match te with
-    | Type -> Verbatim "Type"
-    | Cste s -> Verbatim (symbol2string s)
-    | Obj o -> o#pprint ()
-    | TVar i when i >= 0 -> 
-      let frame = get_bvar_frame ctxt i in
-      Verbatim (symbol2string (frame.symbol))
-    | TVar i when i < 0 -> 
-      Verbatim (String.concat "" ["["; string_of_int i;"]"])
-
-    (* we need to split App depending on the head *)
-    (* the case for notation Infix *)
-    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when List.length (filter_explicit args) = 2->
-      (* we should put parenthesis in the following condition: *)
-      (match p with
-	(* if we are an argument *)
-	| InArg Explicit -> withParen
-	(* if we are in a notation such that *)
-	(* a prefix or postfix binding more  than us *)
-	| InNotation (Prefix i, _) when i > myprio -> withParen
-	| InNotation (Postfix i, _) when i > myprio -> withParen
-	(* or another infix with higher priority *)
-	| InNotation (Infix (i, _), _) when i > myprio -> withParen
-	(* or another infix with same priority depending on the associativity and position *)
-	(* I am the first argument and its left associative *)
-	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
-	(* I am the second argument and its right associative *)
-	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
-
-	(* else we do not need parenthesis *)
-	| _ -> fun x -> x
-      )	(
-	match filter_explicit args with
-	  | arg1::arg2::[] ->
-	    let arg1 = term2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
-	    let arg2 = term2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [arg1; te; arg2])
-	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
-       )
-    (* the case for Prefix *)
-    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (filter_explicit args) = 1 ->
-      (* we put parenthesis when
-	 - as the head or argument of an application
-	 - in a postfix notation more binding than us
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InApp -> withParen
-	| InNotation (Postfix i, _) when i > myprio -> withParen
-	| _ -> fun x -> x
-      ) (
-	match filter_explicit args with
-	  | arg::[] ->
-	    let arg = term2token ctxt arg (InNotation (Prefix myprio, 1)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [te; arg])
-	  | _ -> raise (Failure "term2token, App prefix case: irrefutable patten")
-       )
-
-    (* the case for Postfix *)
-    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (filter_explicit args) = 1 ->
-      (* we put parenthesis when
-	 - as the head or argument of an application
-	 - in a prefix notation more binding than us
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InApp -> withParen
-	| InNotation (Prefix i, _) when i > myprio -> withParen
-	| _ -> fun x -> x
-      ) (
-	match filter_explicit args with
-	  | arg::[] ->
-	    let arg = term2token ctxt arg (InNotation (Postfix myprio, 1)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [arg; te])
-	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
-       )
-
-    (* general case *)
-    | App (te, args) ->
-      (* we only embed in parenthesis if
-	 - we are an argument of an application
-	 - we are in a notation
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InNotation _ -> withParen
-	| _ -> fun x -> x
-      ) (
-	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (filter_explicit args) in
-	let te = term2token ctxt te InApp in
-	Box (intercalate (Space 1) (te::args))
-       )
-
-    (* implication *)
-    | Impl ((s, ty, nature), te) ->
-      (* we embed in parenthesis if 
-	 - embed as some arg 
-	 - ??
-      *)
-      (
-	match p with
-	  | InArg Explicit -> withParen
-	  | _ -> fun x -> x
-      )
-	(
-	  (* the lhs of the ->*)
-	  let lhs = 
-	    (* if the symbol is Nofix _ -> we skip the symbol *)
-	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
-	    match s with
-	      | Symbol ("_", Nofix) ->
-		(* we only put brackets if implicit *)
-		(if nature = Implicit then withBracket else fun x -> x)
-		  (term2token ctxt ty (InArg nature))
-	      | _ -> 
-		(* here we put the nature marker *)
-		(if nature = Implicit then withBracket else withParen)
-		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
-	  in 
-	  (* for computing the r.h.s, we need to push a new frame *)
-	  let newframe = build_new_frame s (shift_term ty 1) in
-	  let rhs = term2token (newframe::ctxt) te Alone in
-	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
-	)
-
-    | DestructWith eqs ->
-      (* we do not put parenthesis only when
-	 - we are alone
-      *)
-      (
-	match p with
-	  | Alone -> (fun x -> x)
-	  | _ -> withParen
-      )
-      (
-	(* we extract the accumulation of destructwith *)
-	let (ps, te) = accumulate_pattern_destructwith te in
-	match ps with
-	  (* if ps is empty -> do something basic *)
-	  | [] ->
-	    let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
-	    Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
-	  (* else we do more prettty printing *)
-	  | _ ->
-	    let (ps, ctxt) = List.fold_left (fun (ps, ctxt) (p, nature)  -> 
-
-	      (* N.B.: we are printing even the implicit arguments ... is it always a good thing ? *)
-
-	      (* we print the pattern *)
-	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (InArg nature)) in
-	      (* grab the underlying context *)
-	      let ctxt = push_pattern ctxt p in
-	      (* we return the whole thing *)
-	      (* NB: for sake of optimization we return a reversed list of pattern, which are reversed in the final box *)
-	      ((pattern::ps), ctxt)
-	    ) ([], ctxt) ps in
-	      let te = term2token ctxt te Alone in
-	      Box (intercalate (Space 1) (List.rev ps) @ [Space 1; Verbatim ":="; Space 1; te])
-      )
-    | TyAnnotation (te, _) | SrcInfo (_, te) ->
-      term2token ctxt te p      
-
-    | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
-    | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
-
-
-and equation2token (ctxt: context) (eq: equation) : token =
-  (* here we simply print the DestructWith with only one equation *)
-  term2token ctxt (DestructWith [eq]) Alone
-
-and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
-  match pattern with
-    | PType -> Verbatim "Type"
-    | PVar (n, _) -> Verbatim n
-    | PAVar _ -> Verbatim "_"
-    | PCste s -> Verbatim (symbol2string s)
-    | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
-
-    (* for the append we have several implementation that mimics the ones for terms *)
-    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (filter_explicit args) = 2->
-      (* we should put parenthesis in the following condition: *)
-      (match p with
-	(* if we are an argument *)
-	| InArg Explicit -> withParen
-	(* if we are in a notation such that *)
-	(* a prefix or postfix binding more  than us *)
-	| InNotation (Prefix i, _) when i > myprio -> withParen
-	| InNotation (Postfix i, _) when i > myprio -> withParen
-	(* or another infix with higher priority *)
-	| InNotation (Infix (i, _), _) when i > myprio -> withParen
-	(* or another infix with same priority depending on the associativity and position *)
-	(* I am the first argument and its left associative *)
-	| InNotation (Infix (i, LeftAssoc), 1) when i = myprio -> withParen
-	(* I am the second argument and its right associative *)
-	| InNotation (Infix (i, RightAssoc), 2) when i = myprio -> withParen
-	(* if we are in an alias *)
-	| InAlias -> withParen
-
-	(* else we do not need parenthesis *)
-	| _ -> fun x -> x
-      ) (
-	match filter_explicit args with
-	  | arg1::arg2::[] ->
-	    let arg1 = pattern2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
-	    let arg2 = pattern2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [arg1; te; arg2])
-	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
-       )
-    (* the case for Prefix *)
-    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
-      (* we put parenthesis when
-	 - as the head or argument of an application
-	 - in a postfix notation more binding than us
-	 - in an alias
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InApp -> withParen
-	| InAlias -> withParen
-	| InNotation (Postfix i, _) when i > myprio -> withParen
-	| _ -> fun x -> x
-      ) (
-	match filter_explicit args with
-	  | arg::[] ->
-	    let arg = pattern2token ctxt arg (InNotation (Prefix myprio, 1)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [te; arg])
-	  | _ -> raise (Failure "pattern2token, App prefix case: irrefutable patten")
-       )
-
-    (* the case for Postfix *)
-    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
-      (* we put parenthesis when
-	 - as the head or argument of an application
-	 - in a prefix notation more binding than us
-	 - in an alias
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InApp -> withParen
-	| InNotation (Prefix i, _) when i > myprio -> withParen
-	| InAlias -> withParen
-	| _ -> fun x -> x
-      ) (
-	match filter_explicit args with
-	  | arg::[] ->
-	    let arg = pattern2token ctxt arg (InNotation (Postfix myprio, 1)) in
-	    let te = Verbatim s in
-	    Box (intercalate (Space 1) [arg; te])
-	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
-       )
-
-    (* general case *)
-    | PApp (s, args, _) ->
-      (* we only embed in parenthesis if
-	 - we are an argument of an application
-	 - we are in a notation
-      *)
-      (match p with
-	| InArg Explicit -> withParen
-	| InNotation _ -> withParen
-	| InAlias -> withParen
-	| _ -> fun x -> x
-      ) (
-	let args = List.map (fun te -> pattern2token ctxt te (InArg Explicit)) (filter_explicit args) in
-	let s = symbol2string s in
-	Box (intercalate (Space 1) (Verbatim s::args))
-       )
-
-
-(* make a string from a term *)
-let term2string (ctxt: context) (te: term) : string =
-  let token = term2token ctxt te Alone in
-  let box = token2box token 80 2 in
-  box2string box
-
-(* pretty printing for errors *)
-let pos2token (p: pos) : token =
-  let startp, endp = p in
-  Box [Verbatim (string_of_int (fst startp)); 
-       Verbatim ":"; 
-       Verbatim (string_of_int (snd startp)); 
-       Verbatim "-"; 
-       Verbatim (string_of_int (fst endp)); 
-       Verbatim ":"; 
-       Verbatim (string_of_int (snd endp)); 
-      ]
-    
-
-let rec error2token (err: doudou_error) : token =
-  match err with
-    | NegativeIndexBVar i -> Verbatim "bvar as a negative index"
-    | Unshiftable_term (te, level, delta) -> Verbatim "Cannot shift a term"
-    | ErrorPosPair (Some pos1, Some pos2, err) ->
-      Box [
-	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (None, Some pos2, err) ->
-      Box [
-	pos2token pos2; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (Some pos1, None, err) ->
-      Box [
-	pos2token pos1; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (None, None, err) ->
-      error2token err
-    | ErrorPos (pos, err) ->
-      Box [
-	pos2token pos; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
-      Box [
-	Verbatim "Cannot unify:"; Newline;
-	term2token ctxt te1 Alone; Newline;
-	  term2token ctxt te2 Alone;
-      ]
-    | NoMatchingPattern (ctxt, p, te) ->
-      Box [
-	Verbatim "Cannot unify:"; Newline;
-	pattern2token ctxt p Alone; Newline;
-	  term2token ctxt te Alone;
-      ]
-    | CannotInfer (ctxt, te, err) ->
-      Box [
-	Verbatim "cannot infer type for:"; Space 1;
-	term2token ctxt te Alone; Newline;
-	Verbatim "reason:"; Newline;
-	error2token err
-      ]
-    | CannotTypeCheck (ctxt, te, inferedty, ty, err) ->
-      Box [
-	Verbatim "the term:"; Space 1;
-	term2token ctxt te Alone; Newline;
-	Verbatim "of infered type:"; Space 1;
-	term2token ctxt inferedty Alone; Newline;
-	Verbatim "cannot be typecheck with type:"; Space 1;
-	term2token ctxt ty Alone; Newline;
-	Verbatim "reason:"; Newline;
-	error2token err
-      ]
-
-    | _ -> Verbatim "Internal error"
-
-(* make a string from an error *)
-let error2string (err: doudou_error) : string =
-  let token = error2token err in
-  let box = token2box token 80 2 in
-  box2string box
-
-
-(**********************************)
-(* parser (lib/parser.ml version) *)
-(**********************************)
-
-let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
-  fun pb ->
-    let curp = cur_pos pb in
-    if (snd startp <= snd curp) then raise NoMatch;
-    p pb
-
-let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
-  fun pb ->
-    let startp = cur_pos pb in
-    let res = p pb in
-    let endp = cur_pos pb in
-    (res, (startp, endp))
-
-let doudou_keywords = ["Type"]
-
-open Str;;
-
-let name_parser : name parsingrule = applylexingrule (regexp "[a-zA-Z][a-zA-Z0-9]*", 
-						      fun (s:string) -> 
-							if List.mem s doudou_keywords then raise NoMatch else s
-)
-
-let parse_avar : unit parsingrule = applylexingrule (regexp "_", 
-						     fun (s:string) -> ()
-)
-
-let parse_symbol_name : symbol parsingrule = 
-  let symbols = "\\(\\+\\|-\\|\\*\\|/\\|&\\|@\\|\\[\\|\\]\\)*" in
-  let nofix = applylexingrule (regexp (String.concat "" ["\\["; symbols; "\\]"]), 
-			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
-  let prefix = applylexingrule (regexp (String.concat "" ["\\["; symbols; ")"]), 
-			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
-  let postfix = applylexingrule (regexp (String.concat "" ["("; symbols; "\\]"]), 
-			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
-  let infix = applylexingrule (regexp (String.concat "" ["("; symbols; ")"]), 
-			       fun (s:string) -> String.sub s 1 (String.length s - 2)) in 
-  (* no fix *)
-  tryrule (fun pb ->
-    let () = whitespaces pb in
-    let s = nofix pb in
-    let () = whitespaces pb in
-    Symbol (s, Nofix)
-  )
-  (* prefix *)
-  <|> tryrule (fun pb ->
-    let () = whitespaces pb in
-    let s = prefix pb in
-    let () = whitespaces pb in
-    Symbol (s, Prefix 0)
-  )
-  (* infix *)
-  <|> tryrule (fun pb ->
-    let () = whitespaces pb in
-    let s = infix pb in
-    let () = whitespaces pb in
-    Symbol (s, Infix (0, NoAssoc))
-  )
-  (* postfix *)
-  <|> tryrule (fun pb ->
-    let () = whitespaces pb in
-    let s = postfix pb in
-    let () = whitespaces pb in
-    Symbol (s, Postfix 0)
-  )
-  (* just a name *)
-  <|> tryrule (fun pb ->
-    let () = whitespaces pb in
-    let n = name_parser pb in
-    let () = whitespaces pb in
-    Name n
-  )
-
-
-let parse_symbol (defs: defs) : symbol parsingrule =
-  fun pb -> 
-    let res = fold_stop (fun () s ->
-      try
-	let () = tryrule (word (symbol2string s)) pb in
-	Right s
-      with
-	| NoMatch -> Left ()
-    ) () defs.hist in
-    match res with
-      | Left () -> raise NoMatch
-      | Right s -> s
-	
-
-let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparser =
-  let res = { primary = primary;
-	      prefixes = Hashtbl.create (List.length defs.hist);
-	      infixes = Hashtbl.create (List.length defs.hist);
-	      postfixes = Hashtbl.create (List.length defs.hist);
-	    } in
-  let _ = List.map (fun s -> 
-    match s with
-      | Name _ -> ()
-      | Symbol (n, Nofix) -> ()
-      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
-      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
-      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
-  ) defs.hist in
-  res
-
-let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : pattern opparser =
-  let res = { primary = primary;
-	      prefixes = Hashtbl.create (List.length defs.hist);
-	      infixes = Hashtbl.create (List.length defs.hist);
-	      postfixes = Hashtbl.create (List.length defs.hist);
-	    } in
-  let _ = List.map (fun s -> 
-    match s with
-      | Name _ -> ()
-      | Symbol (n, Nofix) -> ()
-      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
-      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> PApp (s, [te1, Explicit; te2, Explicit], AVar))
-      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
-  ) defs.hist in
-  res
-
-(* these are the whole term set 
-   - term_lvlx "->" term
-*)
-let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  tryrule (fun pb ->
-    let () = whitespaces pb in
-    let startpos = cur_pos pb in
-    let (names, ty, nature) = parse_impl_lhs defs leftmost pb in
-    let () = whitespaces pb in
-    let () = word "->" pb in
-    let () = whitespaces pb in
-    let body = parse_term defs leftmost pb in
-    let endpos = cur_pos pb in
-    let () = whitespaces pb in
-    SrcInfo ((startpos, endpos), build_impl names ty nature body)
-  ) 
-  <|> parse_term_lvl0 defs leftmost
-end pb
-
-and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (symbol list * term * nature) = begin
-  (* first case 
-     with paren
-  *)
-  tryrule (paren (fun pb ->
-    let names = separatedBy name_parser whitespaces pb in
-    let () = whitespaces pb in
-    let () = word "::" pb in
-    let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
-    (List.map (fun n -> Name n) names, ty, Explicit)
-   )
-  )
-  (* or the same but with bracket *)
-  <|> tryrule (bracket (fun pb ->
-    let names = separatedBy name_parser whitespaces pb in
-    let () = whitespaces pb in
-    let () = word "::" pb in
-    let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
-    (List.map (fun n -> Name n) names, ty, Implicit)
-  )
-  )
-  (* or just a type -> anonymous arguments *)
-  <|> (fun pb -> 
-    let ty = parse_term_lvl0 defs leftmost pb in
-    ([Symbol ("_", Nofix)], ty, Explicit)        
-  )
-  <|> (fun pb -> 
-    let ty = paren (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", Nofix)], ty, Explicit)        
-  )
-  <|> (fun pb -> 
-    let ty = bracket (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", Nofix)], ty, Implicit)        
-  )
-end pb
-
-(* this is operator-ed terms with term_lvl1 as primary
-*)
-and parse_term_lvl0 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  let myp = create_opparser_term defs (parse_term_lvl1 defs leftmost) in
-  opparse myp
-end pb
-
-(* this is term resulting for the application of term_lvl2 *)
-and parse_term_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  fun pb -> 
-    (* first we parse the application head *)
-    let startpos = cur_pos pb in
-    let head = parse_term_lvl2 defs leftmost pb in    
-    let () = whitespaces pb in
-    (* then we parse the arguments *)
-    let args = separatedBy (
-      fun pb ->
-      parse_arguments defs leftmost pb
-    ) whitespaces pb in
-    let endpos = cur_pos pb in
-    match args with
-      | [] -> head
-      | _ -> 
-	SrcInfo ((startpos, endpos), App (head, args))
-end pb
-
-(* arguments: term_lvl2 with possibly brackets *)
-and parse_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (term * nature) = begin
-  (fun pb -> 
-    let te = bracket (parse_term_lvl2 defs leftmost) pb in
-    (te, Implicit)
-  )
-  <|> (fun pb -> 
-    let te = parse_term_lvl2 defs leftmost pb in
-    (te, Explicit)
-  )
-end pb
-
-(* these are the most basic terms + top-level terms in parenthesis *)
-and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  (fun pb -> 
-    let () = whitespaces pb in
-    let (), pos = with_pos (word "Type") pb in
-    let () = whitespaces pb in
-    SrcInfo (pos, Type)
-  ) 
-  <|> (fun pb ->
-    let () =  whitespaces pb in
-    let (), pos = with_pos parse_avar pb in
-    let () =  whitespaces pb in
-    SrcInfo (pos, AVar)
-  ) 
-  <|> (fun pb ->
-    let () = whitespaces pb in
-    let () = word "\\" pb in    
-    let eqs = separatedBy (fun pb ->
-      let () = whitespaces pb in
-      let patterns = separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb in
-      let () =  whitespaces pb in
-      let () = word "->" pb in
-      let () =  whitespaces pb in
-      let body = parse_term defs leftmost pb in
-      let () =  whitespaces pb in
-      build_destructwith patterns body
-    ) (word "|") pb in
-    List.fold_left (fun (DestructWith acc) (DestructWith eqs) ->
-      DestructWith (acc @ eqs)
-    ) (DestructWith []) eqs    
-  ) 
-  <|> (fun pb -> 
-    let () =  whitespaces pb in
-    let s, pos = with_pos parse_symbol_name pb in
-    let () =  whitespaces pb in    
-    SrcInfo (pos, TName s)
-  )
-  <|> (paren (parse_term defs leftmost))
-end pb
-
-and parse_pattern (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  let myp = create_opparser_pattern defs (parse_pattern_lvl1 defs leftmost) in
-  opparse myp
-end pb
-
-and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  fun pb -> 
-    (* first we parse the application head *)
-    let s = parse_symbol defs pb in    
-    let () = whitespaces pb in
-    (* then we parse the arguments *)
-    let args = separatedBy (
-      fun pb ->
-	parse_pattern_arguments defs leftmost pb
-    ) whitespaces pb in
-    match args with
-      | [] -> PCste s
-      | _ -> PApp (s, args, AVar)	  
-end pb
-
-and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern * nature = begin
-  (fun pb -> 
-    let te = bracket (parse_pattern_lvl2 defs leftmost) pb in
-    (te, Implicit)
-  )
-  <|> (fun pb -> 
-    let te = parse_pattern_lvl2 defs leftmost pb in
-    (te, Explicit)
-  )
-end pb
-  
-and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  (fun pb -> 
-    let () = whitespaces pb in
-    let () = word "Type" pb in
-    let () = whitespaces pb in
-    PType
-  ) 
-  <|> (fun pb ->
-    let () =  whitespaces pb in
-    let () = parse_avar pb in
-    let () =  whitespaces pb in
-    PAVar AVar
-  ) 
-  <|> tryrule (fun pb ->
-    let () =  whitespaces pb in
-    let s = parse_symbol defs pb in
-    let () =  whitespaces pb in
-    PCste s
-  )
-  <|> tryrule (fun pb ->
-    let () =  whitespaces pb in
-    let name = name_parser pb in
-    let () = word "@" pb in
-    let p = parse_pattern defs leftmost pb in
-    PAlias (name, p, AVar)
-  )
-  <|> (fun pb -> 
-    let () =  whitespaces pb in
-    let name = name_parser pb in
-    let () =  whitespaces pb in    
-    PVar (name, AVar)
-  )
-  <|> (paren (parse_pattern defs leftmost))
-end pb
-
-type definition = Signature of symbol * term
-		  | Equation of symbol * (pattern * nature list) * term
-
-let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
-  tryrule (fun pb ->
-    let () = whitespaces pb in
-    let s = parse_symbol_name pb in
-    printf "parsed symbol (%s)... " (symbol2string s);
-    let () = whitespaces pb in
-    (* here we should have the property *)
-    let () = whitespaces pb in
-    let () = word "::" pb in
-    let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
-    printf "parsed type \n";
-    Signature (s, ty)
-  )
-  
-
 (******************************)
 (*        tests               *)
 (******************************)
@@ -2121,7 +2181,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  let ty, _ = typecheck !defs ctxt ty Type in
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
 	  defs := {!defs with hist = s::!defs.hist  };
-	  printf "%s :: %s\n" (symbol2string s) (term2string !ctxt ty)
+	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
     with
       | NoMatch -> 
 	printf "parsing error:\n%s\n" (errors2string pb)
@@ -2137,3 +2197,4 @@ let _ = process_definition defs ctxt "False :: Bool"
 let _ = process_definition defs ctxt "b :: True"
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
+let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
