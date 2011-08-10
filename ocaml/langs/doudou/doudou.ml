@@ -49,7 +49,6 @@ type term = Type
 	    | Impl of (symbol * term * nature) * term
 	    | DestructWith of equation list
 
-	    | TyAnnotation of term * term
 	    | SrcInfo of pos * term
 
 and equation = (pattern * nature) * term
@@ -334,7 +333,6 @@ let rec fv_term (te: term) : IndexSet.t =
       IndexSet.union (fv_term ty) (fv_term te)
     | DestructWith eqs ->
       List.fold_left (fun acc eq -> IndexSet.union acc (fv_equation eq)) IndexSet.empty eqs
-    | TyAnnotation (te, ty) -> IndexSet.union (fv_term ty) (fv_term te)
     | SrcInfo (pos, term) -> (fv_term te)
 
 and fv_equation (eq: equation) : IndexSet.t = 
@@ -515,7 +513,6 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	    term_substitution (shift_substitution s 1) te)
     | DestructWith eqs ->
       DestructWith (List.map (equation_substitution s) eqs)
-    | TyAnnotation (te, ty) -> TyAnnotation (term_substitution s te, term_substitution s ty)
     | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
 and equation_substitution (s: substitution) (eq: equation) : equation =
   let (p, n), te = eq in
@@ -579,8 +576,6 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 
     | DestructWith eqs ->
       DestructWith (List.map (fun eq -> leveled_shift_equation eq level delta) eqs)
-
-    | TyAnnotation (te, ty) -> TyAnnotation (leveled_shift_term te level delta, leveled_shift_term ty level delta)
 
     | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
 
@@ -891,6 +886,8 @@ let pp_option = ref {show_implicit = false}
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
   match te with
+    | SrcInfo (_, te) ->
+      term2token ctxt te p      
     | Type -> Verbatim "Type"
     | Cste s -> Verbatim (symbol2string s)
     | Obj o -> o#pprint ()
@@ -1056,9 +1053,6 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	      let te = term2token ctxt te Alone in
 	      Box (intercalate (Space 1) (List.rev ps) @ [Space 1; Verbatim ":="; Space 1; te])
       )
-    | TyAnnotation (te, _) | SrcInfo (_, te) ->
-      term2token ctxt te p      
-
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
     (*| TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")*)
     | TName s -> Box [Verbatim "(TName"; Space 1; Verbatim (symbol2string s); Verbatim ")"]
@@ -1754,7 +1748,7 @@ exception IotaReductionFailed
 let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
 
-    (* first the cases for SrcInfo and TyAnnotation *)
+    (* first the cases for SrcInfo *)
 
     | SrcInfo (pos, te1), _ -> (
       try 
@@ -1769,34 +1763,6 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
       with
 	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
     )
-
-    | TyAnnotation (te1, ty1), TyAnnotation (te2, ty2) ->
-      (* we push ty1 and ty2, so that they will be substituted with the result of the substitution of te1 te2 *)
-      push_terms ctxt [ty1; ty2];
-      let te = unification_term_term defs ctxt te1 te2 in
-      (* we pop back ty1 and ty2 *)
-      let [ty1; ty2] = pop_terms ctxt 2 in
-      let ty = unification_term_term defs ctxt ty1 ty2 in
-      TyAnnotation (te, ty)
-
-    (* and the two cases above, we need to unify the annotated type with the infered type 
-       not sure this is really needed ... but 
-    *)
-    | TyAnnotation (te1, ty1), _ ->
-      (* pushing ty1 *)
-      push_terms ctxt [ty1];
-      let (te2, ty2) = typeinfer defs ctxt te2 in
-      (* poping ty1 *)
-      let [ty1] = pop_terms ctxt 1 in
-      unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
-
-    | _, TyAnnotation (te2, ty2) ->
-      (* pushing ty1 *)
-      push_terms ctxt [ty2];
-      let (te1, ty1) = typeinfer defs ctxt te1 in
-      (* poping ty2 *)
-      let [ty2] = pop_terms ctxt 1 in
-      unification_term_term defs ctxt (TyAnnotation (te1, ty1)) (TyAnnotation (te2, ty2))
 
     (* the error cases for AVar and TName *)
     | AVar, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
@@ -1951,10 +1917,6 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
       with
 	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
     )
-    | TyAnnotation (te, ty) ->
-      let te = reduction defs ctxt strat te in
-      let ty = reduction defs ctxt strat ty in
-      TyAnnotation (te, ty)
 
     | Type -> Type
     (* without delta reduction we do unfold *)
@@ -2085,13 +2047,9 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
     (* the most basic typechecking strategy, 
        infer the type ty', typecheck it with Type (really needed ??) and unify with ty    
 
-       NB: there is a special case where we want to type check a term (not an app) with explicit arguments
-       against a type without explicit arguments ...
-
     *)
     | _, _ ->
       let te, ty' = typeinfer defs ctxt te in
-      let ty', _ = typecheck defs ctxt ty' Type in
       let ty = unification_term_term defs ctxt ty ty' in
       te, ty
   ) with
@@ -2111,11 +2069,6 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     | SrcInfo (pos, te) ->
       let te, ty = typeinfer defs ctxt te in
       SrcInfo (pos, te), ty
-
-    | TyAnnotation (te, ty) -> 
-      let ty, _ = typecheck defs ctxt ty Type in
-      let te, ty = typecheck defs ctxt te ty in
-      TyAnnotation (te, ty), ty
 
     | Type -> Type, Type
 
@@ -2246,7 +2199,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 (******************************)
 
 (* pretty printer *)
-
+(*
 let zero = Cste (Name "0")
 let splus = (Symbol ("+", Infix (30, LeftAssoc)))
 let plus = Cste splus
@@ -2293,7 +2246,7 @@ let _ = printf "%s\n" (term2string empty_context (
   ]
 )
 )
-
+*)
 (******************************************)
 (*        tests with parser               *)
 (******************************************)
@@ -2374,3 +2327,4 @@ let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
 let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
 let _ = process_definition defs ctxt "Type : ([] {Type})"
+let _ = process_definition defs ctxt "Type : []"
