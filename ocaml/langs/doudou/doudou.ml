@@ -265,6 +265,15 @@ let mapacc (f: 'b -> 'a -> ('c * 'b)) (acc: 'b) (l: 'a list) : 'c list * 'b =
 		       acc := acc';
 		       hd) l, !acc)
 
+(* some map which also gives the remaining list *)
+let rec map_remain (f: 'a -> 'a list -> 'b) (l: 'a list) : 'b list =
+  match l with
+    | [] -> []
+    | hd::tl ->
+      let hd = f hd tl in
+      hd :: map_remain f tl
+
+
 type ('a, 'b) either = Left of 'a
 		       | Right of 'b
 ;;
@@ -799,6 +808,21 @@ let add_fvar (ctxt: context ref) (ty: term) : int =
   ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar next_fvar_index)::frame.fvs})::List.tl !ctxt;
   next_fvar_index
 
+(* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
+let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
+  let hd, tl = List.hd !ctxt, List.tl !ctxt in
+  let (terms, fvs) = List.fold_left (fun (terms, fvs) (i, te, ty) ->
+    if te = TVar i then
+      (* there is not value for this free variable -> keep it *)
+      terms, fvs @ [i, te, ty]
+    else
+      (* there is a value, we can get rid of the free var *)
+      let terms = List.map (fun hd -> term_substitution (IndexMap.singleton i te) hd) terms in
+      terms, fvs
+  ) (l, []) hd.fvs in
+  ctxt := ({hd with fvs = fvs})::tl;
+  terms
+
 (******************)
 (* pretty printer *)
 (******************)
@@ -841,7 +865,7 @@ type pp_option = {
   show_implicit : bool
 }
 
-let pp_option = ref {show_implicit = true}
+let pp_option = ref {show_implicit = false}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -924,6 +948,10 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    Box (intercalate (Space 1) [arg; te])
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
+
+    (* if we have only implicit argument (and if we don't want to print them, then we are not really considered as a App  *)
+    | App (te, args) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
+      term2token ctxt te p
 
     (* general case *)
     | App (te, args) ->
@@ -1208,6 +1236,33 @@ let judgment2string (ctxt: context) (te: term) (ty: term) : string =
   let token = Box [Verbatim "|-"; Space 1; term2token ctxt te Alone; Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone] in
   let box = token2box token 80 2 in
   box2string box
+
+let context2token (ctxt: context) : token =
+  Box ([Verbatim "{"] 
+       @ ( intercalates [Verbatim ";"; Newline]
+	     (map_remain (fun hd tl ->
+	       Box [Verbatim "(";
+		    Verbatim (symbol2string hd.symbol); Space 1; Verbatim ":="; Space 1; term2token (hd::tl) hd.value Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) hd.ty Alone; Newline;
+		    Box (intercalates [Verbatim ";"; Newline] (List.map (fun (i, ty, te) -> 
+		      Box [Verbatim "(";
+			   Verbatim (string_of_int i); Space 1; Verbatim "=>"; Space 1; term2token (hd::tl) te Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) ty Alone;
+			   Verbatim ")"
+			  ]
+		    ) hd.fvs)
+		    );
+		    Verbatim ")"		    
+		   ]
+	      ) ctxt
+	     )
+       )	  
+       @ [Verbatim "}"]
+  )
+
+let context2string (ctxt: context) : string =
+  let token = context2token ctxt in
+  let box = token2box token 80 2 in
+  box2string box
+
 
 (**********************************)
 (* parser (lib/parser.ml version) *)
@@ -2008,6 +2063,10 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       
     (* the most basic typechecking strategy, 
        infer the type ty', typecheck it with Type (really needed ??) and unify with ty    
+
+       NB: there is a special case where we want to type check a term (not an app) with explicit arguments
+       against a type without explicit arguments ...
+
     *)
     | _, _ ->
       let te, ty' = typeinfer defs ctxt te in
@@ -2239,14 +2298,24 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
       let def = parse_definition !defs pos pb in
       match def with
 	| Signature (s, ty) ->
-	  let ty, _ = typecheck !defs ctxt ty Type in
+	  (* we typecheck the type against Type *)
+	  let ty, _ = typecheck !defs ctxt ty Type in	  
+	  (* we flush the free vars so far *)
+	  let [ty] = flush_fvars ctxt [ty] in
+	  (* N.B.: here we should assert that there is not more free variables *)
+	  (* update the definitions *)
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
-	  defs := {!defs with hist = s::!defs.hist  };
+	  defs := {!defs with hist = s::!defs.hist };
+	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 	| Term te ->
-	  printf "%s :?: \n" (term2string !ctxt te);
+	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
-	  printf "%s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
+	  (* we flush the free vars so far *)
+	  let [te; ty] = flush_fvars ctxt [te; ty] in
+	  (* N.B.: here we should assert that there is not more free variables *)
+	  (* just print the result *)
+	  printf "%s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
 	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
@@ -2263,4 +2332,4 @@ let _ = process_definition defs ctxt "b :: True"
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
 let _ = process_definition defs ctxt "(:) :: {A :: Type} -> A -> List A -> List A"
-let _ = process_definition defs ctxt "Type : []"
+let _ = process_definition defs ctxt "Type : ([] {Type})"
