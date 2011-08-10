@@ -295,6 +295,15 @@ let rec fold_cont (f: 'b -> 'a list -> 'a list * 'b) (acc: 'b) (l: 'a list): 'b 
       let l', acc = f acc l in
       fold_cont f acc l'
 
+(* a function called n times with arguments pushed in a list *)
+let rec map_nth (f: int -> 'a) (n: int) : 'a list =
+  match n with
+    | i when i < 0 -> []
+    | 0 -> []
+    | _ ->
+      let res = f n in
+      res::map_nth f (n - 1)
+
 (* assert that pos1 contains pos2 *)
 let pos_in (pos1: pos) (pos2: pos) : bool =
   let ((begin_line1, begin_col1), (end_line1, end_col1)) = pos1 in
@@ -758,6 +767,18 @@ let pop_terms (ctxt: context ref) (sz: int) : term list =
   let (hd::tl) = !ctxt in  
   ctxt := ({hd with termstack = drop sz hd.termstack})::tl;
   take sz hd.termstack
+
+(* pushing and poping natures in the nature stack 
+   N.B.: with side effect
+*)
+let push_nature (ctxt: context ref) (n: nature) : unit =
+  let (hd::tl) = !ctxt in
+  ctxt := ({hd with naturestack = n :: hd.naturestack})::tl
+
+let pop_nature (ctxt: context ref) : nature =
+  let (hd::tl) = !ctxt in  
+  ctxt := ({hd with naturestack = List.tl hd.naturestack})::tl;
+  List.hd hd.naturestack
 
 (* unfold a constante *)
 let unfold_constante (defs: defs) (s: symbol) : term option =
@@ -2140,7 +2161,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       push_terms ctxt [ty];
       (* ty is in the state *)
       (*printf "(typeinfer Arg) %s\n" (judgment2string !ctxt te ty);*)
-      let args = fold_cont (fun processed_args args ->
+      let nb_args = fold_cont (fun nb_processed_args args ->
 	(* first pop the type *)
 	let [ty] = pop_terms ctxt 1 in
 	(* ty is well typed ... we should be able to reduce it just in case *)
@@ -2149,44 +2170,64 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	    | Impl _ -> ty
 	    | _ -> reduction defs ctxt unification_strat ty
 	) in
+	(* we should push the args with there nature ... *)
 	(*printf "(typeinfer Arg in loop) %s\n" (judgment2string !ctxt (App (te, processed_args)) ty);*)
-	let new_arg, remaining_args, ty = (
+	let remaining_args, ty = (
 	  match args, ty with
 	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
 	    (* lots of cases here *)
 	    (* both nature are the same: this is our arguments *)
 	    | (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
+	      (* we push an image of the impl, so that we can grab a body which may have been changed by typechecking *)
+	      push_terms ctxt [Impl ((s, ty, n2), te)];
 	      (* first let see if hd has the proper type *)
 	      let hd, ty = typecheck defs ctxt hd ty in
 	      (* we compute the type of the application:
-		 we substitute the bound var 0 (s) by shifting of 1 of hd, and then reshift the whole term by - 1
+		 we grab back from the term stack the te terms
+		 we substitute the bound var 0 (s) by shifting of 1 of hd, and then reshift the whole term by - 1		 
 	      *)
+	      let [Impl (_, te)] = pop_terms ctxt 1 in
 	      let ty = term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te in
 	      let ty = shift_term ty (-1) in
+	      (* we push the arg and its nature *)
+	      push_terms ctxt [hd];
+	      push_nature ctxt n1;
 	      (* and we returns the information *)
-	      (hd, n1), tl, ty
+	      tl, ty
 	    (* the argument is explicit, but the type want an implicit arguments: we add free variable *)
 	    | (hd, Explicit)::tl, Impl ((s, ty, Implicit), te) -> 
 	    (* we add a free variable of the proper type *)
 	      let fv = add_fvar ctxt ty in
 	      (* we compute the type of the application:
 		 we substitute the bound var 0 (s) by the free variable, and then reshift the whole term by - 1
-	      *)
+	      *)	      
 	      let ty = term_substitution (IndexMap.singleton 0 (TVar fv)) te in
 	      let ty = shift_term ty (-1) in
-	      (TVar fv, Implicit), args, ty
-	    | (hd, n)::_, _ -> 
 	      
+	      (* we push the arg and its nature *)
+	      push_terms ctxt [TVar fv];
+	      push_nature ctxt Implicit;
+	      (* and we returns the information *)
+	      args, ty
+	    | (hd, n)::_, _ -> 	      
 	      printf "%s (%s), %s\n" (term2string !ctxt hd) (match n with | Explicit -> "Explicit" | Implicit -> "Implicit") (term2string !ctxt ty);
 	      raise Exit
 	) in
 	(* before returning we need to repush the (new) type *)
 	push_terms ctxt [ty];
-	(* and returns the arguments *)
-	(remaining_args, processed_args @ [new_arg])
-      ) [] args in
-      (* we pop the ty and te *)
-      let [ty; te] = pop_terms ctxt 2 in
+	(* and returns the information *)
+	remaining_args, nb_processed_args + 1
+      ) 0 args in
+      (* we pop the ty *)
+      let [ty] = pop_terms ctxt 1 in
+      (* then we pop the arguments *)
+      let args = List.rev (map_nth (fun i ->
+	let [arg] = pop_terms ctxt 1 in
+	let n = pop_nature ctxt in
+	(arg, n)
+      ) nb_args) in
+      (* finally we pop the application head *)
+      let [te] = pop_terms ctxt 1 in
       App (te, args), ty
     
     | AVar -> raise (Failure "typeinfer: Case not yet supported, AVar")
@@ -2301,7 +2342,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty Type in	  
 	  (* we flush the free vars so far *)
-	  let [ty] = flush_fvars ctxt [ty] in
+	  (*let [ty] = flush_fvars ctxt [ty] in*)
 	  (* N.B.: here we should assert that there is not more free variables *)
 	  (* update the definitions *)
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
@@ -2312,7 +2353,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
 	  (* we flush the free vars so far *)
-	  let [te; ty] = flush_fvars ctxt [te; ty] in
+	  (*let [te; ty] = flush_fvars ctxt [te; ty] in*)
 	  (* N.B.: here we should assert that there is not more free variables *)
 	  (* just print the result *)
 	  printf "%s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)
