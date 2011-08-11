@@ -2356,7 +2356,7 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
 		  (* how can we compute the type of the remaining ? 
 		     by the same trick as in typeinfer of typeinfer of DestructWith ?
 		  *)
-		  let ty = (fun x -> raise Exit) te in
+		  let ty = (fun x -> printf "hum 1 ..."; raise Exit) te in
 		  push_pattern ctxt hd;
 		  push_nature ctxt n1;
 		  (* and we returns the information *)
@@ -2366,7 +2366,7 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
 		  (* how can we compute the type of the remaining ? 
 		     by the same trick as in typeinfer of typeinfer of DestructWith ?
 		  *)
-		  let ty = raise Exit in
+		  let ty = printf "hum 2 ..."; raise Exit in
 		  (* we push the arg and its nature *)
 		  push_pattern ctxt p;
 		  push_nature ctxt Implicit;
@@ -2434,12 +2434,18 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 	| Equation (p, te) ->
-	  printf "Equation %s := %s\n\n" (pattern2string !ctxt p) (term2string !ctxt te)
+	  let te = DestructWith [((p, Explicit), te)] in
+	  let te, ty = typeinfer !defs ctxt te in
+	  let te = reduction !defs ctxt clean_term_strat te in
+	  let ty = reduction !defs ctxt clean_term_strat ty in
+	  printf "Equation %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
+	    
 	| Term te ->
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
 	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty);*)
+	  let te = reduction !defs ctxt clean_term_strat te in
 	  let ty = reduction !defs ctxt clean_term_strat ty in
 	  (* we flush the free vars so far *)
 	  (*let [te; ty] = flush_fvars ctxt [te; ty] in*)

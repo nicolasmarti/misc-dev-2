@@ -115,4 +115,4 @@ let _ = process_definition defs ctxt "(+) {_} {_} True False"
 
 let _ = process_definition defs ctxt "\\ {A::Type} (a :: A) -> a"
 
-let _ = process_definition defs ctxt "Type || Type := Type"
+let _ = process_definition defs ctxt "True || True := Type"
