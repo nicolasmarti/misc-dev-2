@@ -139,6 +139,15 @@ exception DoudouException of doudou_error
 (*      misc      *)
 (******************)
 
+(* set the outermost pattern type *)
+let set_pattern_type (p: pattern) (ty: term) : pattern =
+  match p with
+    | PVar (n, _) -> PVar (n, ty)
+    | PAVar _ -> PAVar ty
+    | PAlias (n, p, _) -> PAlias (n, p, ty)
+    | PApp (s, args, _) -> PApp (s, args, ty)
+    | _ -> p    
+
 (* take and drop as in haskell *)
 let rec take (n: int) (l: 'a list) :'a list =
   match n with
@@ -469,6 +478,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 	  TVar (i + delta)
       else
 	v
+
     | AVar -> raise (Failure "leveled_shift_term catastrophic: AVar")
     | TName _ -> raise (Failure "leveled_shift_term catastrophic: TName")
 
@@ -1521,17 +1531,13 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let () = word "\\" pb in    
-    printf "parsed \\\n";
     let () = whitespaces pb in
-    let patterns = separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb in
-    printf "parsed %d pattern_arguments\n" (List.length patterns);
+    let patterns = List.flatten (separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb) in
     let () =  whitespaces pb in
     let () = word "->" pb in
-    printf "parsed ->\n";
     let () =  whitespaces pb in
     let body = parse_term defs leftmost pb in
     let () =  whitespaces pb in
-    printf "parsed one eq\n";
     build_destructwith patterns body
   ) 
   <|> tryrule (fun pb -> 
@@ -1560,10 +1566,11 @@ and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrul
     let s = parse_symbol defs pb in    
     let () = whitespaces pb in
     (* then we parse the arguments *)
-    let args = separatedBy (
-      fun pb ->
-	parse_pattern_arguments defs leftmost pb
-    ) whitespaces pb in
+    let args = List.flatten (
+      separatedBy (
+	fun pb ->
+	  parse_pattern_arguments defs leftmost pb
+      ) whitespaces pb) in
     match args with
       | [] -> PCste s
       | _ -> PApp (s, args, AVar)	  
@@ -1571,14 +1578,43 @@ and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrul
   <|> tryrule (parse_pattern_lvl2 defs leftmost)
 
 
-and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern * nature = begin
-  (fun pb -> 
+and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (pattern * nature) list = begin
+  tryrule (paren (fun pb ->
+    let patterns = many1 (fun pb ->
+      let () = whitespaces pb in
+      let n = parse_pattern_lvl2 defs leftmost pb in
+      let () = whitespaces pb in
+      n
+    ) pb in
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    List.map (fun p -> set_pattern_type p ty, Explicit) patterns
+   )
+  )
+  (* or the same but with bracket *)
+  <|> tryrule (bracket (fun pb ->
+    let patterns = many1 (fun pb ->
+    let () = whitespaces pb in
+    let n =  parse_pattern_lvl2 defs leftmost pb in
+    let () = whitespaces pb in
+    n
+    ) pb in
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    List.map (fun p -> set_pattern_type p ty, Implicit) patterns
+  )
+  )
+  <|>(fun pb -> 
     let te = bracket (parse_pattern_lvl2 defs leftmost) pb in
-    (te, Implicit)
+    [te, Implicit]
   )
   <|> (fun pb -> 
     let te = parse_pattern_lvl2 defs leftmost pb in
-    (te, Explicit)
+    [te, Explicit]
   )
 end pb
   
@@ -2301,7 +2337,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	| Equation (p, te) ->
 	  printf "Equation %s := %s\n\n" (pattern2string !ctxt p) (term2string !ctxt te)
 	| Term te ->
-	  printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te);
+	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
 	  (* we flush the free vars so far *)
