@@ -111,8 +111,4 @@ let _ = process_definition defs ctxt "Type:Type:[]"
 let _ = process_definition defs ctxt "plusType :: Type -> Type -> Type"
 let _ = process_definition defs ctxt "(+) : left, 20 :: {A B :: Type} -> A -> B -> plusType A B"
 
-let _ = process_definition defs ctxt "True || True"
-
-(*let _ = process_definition defs ctxt "True || True := True"*)
-
-let _ = parse_pattern defs "_ && _"
+let _ = process_definition defs ctxt "Type || Type := Type"

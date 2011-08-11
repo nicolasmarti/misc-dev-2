@@ -1071,6 +1071,11 @@ let term2string (ctxt: context) (te: term) : string =
   let box = token2box token 80 2 in
   box2string box
 
+let pattern2string (ctxt: context) (p: pattern) : string =
+  let token = pattern2token ctxt p Alone in
+  let box = token2box token 80 2 in
+  box2string box
+
 (* pretty printing for errors *)
 let pos2token (p: pos) : token =
   let startp, endp = p in
@@ -1199,9 +1204,12 @@ let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
     let endp = cur_pos pb in
     (res, (startp, endp))
 
-let doudou_keywords = ["Type"; "::"]
+let doudou_keywords = ["Type"; "::"; ":="]
 
 open Str;;
+
+let parse_reserved : unit parsingrule =
+  foldp (List.map (fun x -> keyword x ()) doudou_keywords)
 
 let name_parser : name parsingrule = applylexingrule (regexp "[a-zA-Z][a-zA-Z0-9]*", 
 						      fun (s:string) -> 
@@ -1345,6 +1353,7 @@ let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparse
 	      prefixes = Hashtbl.create (List.length defs.hist);
 	      infixes = Hashtbl.create (List.length defs.hist);
 	      postfixes = Hashtbl.create (List.length defs.hist);
+	      reserved = parse_reserved;
 	    } in
   let _ = List.map (fun s -> 
     match s with
@@ -1361,6 +1370,7 @@ let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : patter
 	      prefixes = Hashtbl.create (List.length defs.hist);
 	      infixes = Hashtbl.create (List.length defs.hist);
 	      postfixes = Hashtbl.create (List.length defs.hist);
+	      reserved = parse_reserved;
 	    } in
   let _ = List.map (fun s -> 
     match s with
@@ -1528,8 +1538,8 @@ and parse_pattern (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : patt
   opparse myp
 end pb
 
-and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  fun pb -> 
+and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrule =
+  tryrule (fun pb -> 
     (* first we parse the application head *)
     let s = parse_symbol defs pb in    
     let () = whitespaces pb in
@@ -1541,7 +1551,9 @@ and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
     match args with
       | [] -> PCste s
       | _ -> PApp (s, args, AVar)	  
-end pb
+  )
+  <|> tryrule (parse_pattern_lvl2 defs leftmost)
+
 
 and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern * nature = begin
   (fun pb -> 
@@ -1590,7 +1602,7 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
 end pb
 
 type definition = Signature of symbol * term
-		  | Equation of symbol * (pattern * nature list) * term
+		  | Equation of pattern * term
 		  | Term of term
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
@@ -1599,14 +1611,21 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = whitespaces pb in
     let s = parse_symbol_name_def pb in
     let () = whitespaces pb in
-    (* here we should have the property *)
-    let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
     let ty = parse_term defs leftmost pb in
     Signature (s, ty)
   )
   (* here we should have the Equation parser *)
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let p = parse_pattern defs leftmost pb in
+    let () = whitespaces pb in
+    let () = word ":=" pb in
+    let () = whitespaces pb in
+    let te = parse_term defs leftmost pb in
+    Equation (p, te)
+  )
   (* finally a free term *)
   <|> tryrule (fun pb ->
     Term (parse_term defs leftmost pb)
@@ -2213,6 +2232,8 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  defs := {!defs with hist = s::!defs.hist };
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
+	| Equation (p, te) ->
+	  printf "Equation %s := %s\n\n" (pattern2string !ctxt p) (term2string !ctxt te)
 	| Term te ->
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
@@ -2229,117 +2250,4 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	ctxt := saved_ctxt;
 	defs := saved_defs;
 	printf "typechecking error:\n%s\n" (error2string err)
-
-let _ = process_definition defs ctxt "Bool :: Type"
-let _ = process_definition defs ctxt "True :: Bool"
-let _ = process_definition defs ctxt "False :: Bool"
-let _ = process_definition defs ctxt "(||) : left, 20 :: Bool -> Bool -> Bool"
-let _ = process_definition defs ctxt "(&&) : left, 30 :: Bool -> Bool -> Bool"
-
-let _ = process_definition defs ctxt "List :: Type -> Type"
-let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
-let _ = process_definition defs ctxt "(:) : right, 10 :: {A :: Type} -> A -> List A -> List A"
-let _ = process_definition defs ctxt "Type : ([] {Type})"
-let _ = process_definition defs ctxt "Type : []"
-let _ = process_definition defs ctxt "Type:Type:[]"
-let _ = process_definition defs ctxt "plusType :: Type -> Type -> Type"
-let _ = process_definition defs ctxt "(+) : left, 20 :: {A B :: Type} -> A -> B -> plusType A B"
-
-(********************************************)
-(* example of source that should be process *)
-(********************************************)
-
-let example = "
-Bool :: Type
-True :: Bool
-False :: Bool
-
-(||) :: Bool -> Bool -> Bool
-(&&) :: Bool -> Bool -> Bool
-
-True || _ := True
-_ || True := True
-False || False := False
-
-False && _ := False
-_ && False := False
-True && True := True
-
-List :: Type -> Type
-[[]] :: {A :: Type} -> List A
-(:) :: {A :: Type} -> A -> List A -> List A
-
-String :: Type
-
-plusType :: Type -> Type -> Type
-(+) :: {A B :: Type} -> A -> B -> plusType A B
-
-multType :: Type -> Type -> Type
-(*) :: {A B :: Type} -> A -> B -> multType A B
-
-plusType Bool Bool := Bool
-(+) {Bool} {Bool} := (||)
-
-multType Bool Bool := Bool
-(+) {Bool} {Bool} := (&&)
-
-String :: Type
-
-List :: Type -> Type
-[[]] :: {A :: Type} -> List A
-(:) :: {A :: Type} -> A -> List A -> List A
-
-(@) :: {A :: Type} -> List A -> List A
-[] @ l := l
-l @ [] := l
-(hd:tl) @ l := hd:(tl @ [])
-
-map :: {A B :: Type} -> (A -> B) -> List A -> List B
-map f [] := []
-map f (hd:tl) := (f hd):(map f tl)
-
-plusType (List A) (List A) := List a
-(+) {List A} {List A} := (@)
-
-multType Type Type := Type
-(,) :: {A B :: Type} -> A -> B -> A * B
-
-multType (List A) (List B) := List (List (A * B))
-
-_ * [] := []
-[] * _ := []
-(hd1:tl1) * l := (map ( x := (x, hd1)) l) : (tl1 * l)
-
-foldl :: {A B :: Type} -> (B -> A -> B) -> B -> List A -> B
-foldl f acc [] := acc
-foldl f acc (hd:tl) := foldl f (f acc hd) tl
-
-foldr :: {A B :: Type} -> (A -> B -> B) -> List A -> B -> B
-foldr f [] acc := acc
-foldr f (hd:tl) acc := f hd (foldr f tl acc)
-
-Nat :: Type
-O :: Nat
-S :: Nat -> Nat
-
-T :: Type -> Type -> Nat -> Type
-T _ B O := B
-T A B (S n) := A -> T A B n
-
-depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n
-depfold f acc O := acc
-depfold f acc (S n) := (x := depfold f (f acc x) n)
-
-NatPlus :: Nat -> Nat -> Nat 
-NatPlus O x := x
-NatPlus x O := x
-NatPlus (S x) y := S (NatPlus x y)
-
-plusType Nat Nat := Nat
-(+) {Nat] {Nat} := NatPlus
-
-depfold {Nat} (+) O (S (S 0)) :?: 
-(* :?: Nat -> Nat -> Nat *)
-"
-
 
