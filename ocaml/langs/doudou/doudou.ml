@@ -384,7 +384,12 @@ let fromSome (e: 'a option) : 'a =
 
 (* generate a name for a given pattern *)
 let pattern2symbol (p: pattern) : symbol =
-  Name "@pattern"
+  match p with
+    | PAlias (n, _, _) -> Name n
+    | PVar (n, _) -> Name n
+    | PAVar _ -> Symbol ("_", Nofix)
+    | _ -> Name "@pattern"
+  
 
 (*************************************)
 (*      substitution/rewriting       *)
@@ -808,10 +813,11 @@ type place = InNotation of op * int (* in the sndth place of the application to 
 *)
 
 type pp_option = {
-  show_implicit : bool
+  show_implicit : bool;
+  show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = false}
+let pp_option = ref {show_implicit = false; show_indices = false}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -823,7 +829,10 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | Obj o -> o#pprint ()
     | TVar i when i >= 0 -> 
       let frame = get_bvar_frame ctxt i in
-      Verbatim (symbol2string (frame.symbol))
+      if !pp_option.show_indices then
+	Box [Verbatim (symbol2string (frame.symbol)); Verbatim "["; Verbatim (string_of_int i); Verbatim "]"]
+      else
+	Verbatim (symbol2string (frame.symbol))
     | TVar i when i < 0 -> 
       Verbatim (String.concat "" ["["; string_of_int i;"]"])
 
@@ -1116,12 +1125,36 @@ let pos2token (p: pos) : token =
        Verbatim (string_of_int (snd endp)); 
       ]
     
+let context2token (ctxt: context) : token =
+  Box ([Verbatim "{"] 
+       @ ( intercalates [Verbatim ";"; Newline]
+	     (map_remain (fun hd tl ->
+	       Box [Verbatim "(";
+		    Verbatim (symbol2string hd.symbol); Space 1; Verbatim ":="; Space 1; term2token (hd::tl) hd.value Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) hd.ty Alone; Newline;
+		    Box (intercalates [Verbatim ";"; Newline] (List.map (fun (i, ty, te) -> 
+		      Box [Verbatim "(";
+			   Verbatim (string_of_int i); Space 1; Verbatim "=>"; Space 1; term2token (hd::tl) te Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) ty Alone;
+			   Verbatim ")"
+			  ]
+		    ) hd.fvs)
+		    );
+		    Verbatim ")"		    
+		   ]
+	      ) ctxt
+	     )
+       )	  
+       @ [Verbatim "}"]
+  )
 
 let rec error2token (err: doudou_error) : token =
   match err with
     | NegativeIndexBVar i -> Verbatim "bvar as a negative index"
     | Unshiftable_term (te, level, delta) -> Verbatim "Cannot shift a term"
     | UnknownCste c -> Box [Verbatim "unknown constante:"; Space 1; Verbatim (symbol2string c)]
+
+    | UnknownBVar (i, ctxt) -> Box [Verbatim "unknown bounded var:"; Space 1; Verbatim (string_of_int i); Space 1; context2token ctxt]
+    | UnknownFVar (i, ctxt) -> Verbatim "UnknownFVar"
+
     | ErrorPosPair (Some pos1, Some pos2, err) ->
       Box [
 	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
@@ -1188,26 +1221,6 @@ let judgment2string (ctxt: context) (te: term) (ty: term) : string =
   let box = token2box token 80 2 in
   box2string box
 
-let context2token (ctxt: context) : token =
-  Box ([Verbatim "{"] 
-       @ ( intercalates [Verbatim ";"; Newline]
-	     (map_remain (fun hd tl ->
-	       Box [Verbatim "(";
-		    Verbatim (symbol2string hd.symbol); Space 1; Verbatim ":="; Space 1; term2token (hd::tl) hd.value Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) hd.ty Alone; Newline;
-		    Box (intercalates [Verbatim ";"; Newline] (List.map (fun (i, ty, te) -> 
-		      Box [Verbatim "(";
-			   Verbatim (string_of_int i); Space 1; Verbatim "=>"; Space 1; term2token (hd::tl) te Alone; Space 1; Verbatim "::"; Space 1; term2token (hd::tl) ty Alone;
-			   Verbatim ")"
-			  ]
-		    ) hd.fvs)
-		    );
-		    Verbatim ")"		    
-		   ]
-	      ) ctxt
-	     )
-       )	  
-       @ [Verbatim "}"]
-  )
 
 let context2string (ctxt: context) : string =
   let token = context2token ctxt in
@@ -1722,6 +1735,7 @@ type reduction_strategy = {
   eta: bool;
 }
 
+(* the default strategy for typechecking/unification/ ...*)
 let unification_strat : reduction_strategy = {
   beta = Eager;
   betastrong = false;
@@ -1732,8 +1746,6 @@ let unification_strat : reduction_strategy = {
   zeta = true;
   eta = true;
 }
-
-
 
 (* unification pattern to term *)
 (*
@@ -1949,6 +1961,7 @@ let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2:
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
+  (*printf "reduction %s |- %s\n" (context2string !ctxt) (term2string !ctxt te);*)
   match te with
     | SrcInfo (pos, te) -> (
       try 
@@ -2063,9 +2076,11 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* we have one pattern that is ok *)
 	      | Right (r, body) ->
 		(* we rewrite the bound variables from the unification *)
+		(* and shift the term by the size of the rewrite *)
 		let body = term_substitution r body in
-		(* we can now shift the term by the size of the rewrite *)
-		shift_term body (IndexMap.cardinal r)	    
+		let body = shift_term body (- (IndexMap.cardinal r)) in
+		reduction defs ctxt strat body
+		
 
 	  )
 	| App (hd, args) ->
@@ -2384,6 +2399,18 @@ let ctxt = ref empty_context
 
 let defs = ref empty_defs
 
+(* the strategy to cleanup types *)
+let clean_term_strat : reduction_strategy = {
+  beta = Eager;
+  betastrong = true;
+  delta = true;
+  iota = true;
+  deltaiotaweak = false;
+  deltaiotaweak_armed = false;
+  zeta = true;
+  eta = true;
+}
+
 let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
     (* we set the parser *)
     let lines = stream_of_string s in
@@ -2412,11 +2439,14 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
+	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty);*)
+	  let ty = reduction !defs ctxt clean_term_strat ty in
 	  (* we flush the free vars so far *)
 	  (*let [te; ty] = flush_fvars ctxt [te; ty] in*)
 	  (* N.B.: here we should assert that there is not more free variables *)
 	  (* just print the result *)
-	  printf "Term %s |- %s :: %s \n" (*(context2string !ctxt)*) "" (term2string !ctxt te) (term2string !ctxt ty)
+	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)*)
+	  printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
     with
       | NoMatch -> 
 	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
