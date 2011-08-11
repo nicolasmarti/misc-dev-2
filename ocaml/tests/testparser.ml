@@ -92,6 +92,7 @@ let myp : expr opparser = {
   prefixes = prefixes;
   infixes = infixes;
   postfixes = postfixes;
+  reserved = (fun pb -> raise NoMatch);
 };;
 
 let text = "- 1 + - 1& * - 10 + 9& * 4 &";;
