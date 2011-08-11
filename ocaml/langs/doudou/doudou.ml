@@ -132,6 +132,8 @@ type doudou_error = NegativeIndexBVar of index
 		    | CannotInfer of context * term * doudou_error
 		    | CannotTypeCheck of context * term * term * term * doudou_error
 
+		    | FreeError of string
+
 exception DoudouException of doudou_error
 
 
@@ -1172,7 +1174,7 @@ let rec error2token (err: doudou_error) : token =
 	Verbatim "reason:"; Newline;
 	error2token err
       ]
-
+    | FreeError s -> Verbatim s
     | _ -> Verbatim "Internal error"
 
 (* make a string from an error *)
@@ -2224,7 +2226,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      args, ty
 	    | (hd, n)::_, _ -> 	      
 	      printf "%s (%s), %s\n" (term2string !ctxt hd) (match n with | Explicit -> "Explicit" | Implicit -> "Implicit") (term2string !ctxt ty);
-	      raise Exit
+	      raise (DoudouException (FreeError "terms needs an Explicit argument, but receives an Implicit one"))
 	) in
 	(* before returning we need to repush the (new) type *)
 	push_terms ctxt [ty];
@@ -2298,7 +2300,77 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
 
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term =
-  raise (Failure "NYI")
+      match p with
+	| PType -> PType, Type
+	| PVar (n, ty) ->
+	  let ty, _ = typecheck defs ctxt ty Type in
+	  PVar (n, ty), ty
+	| PCste s ->
+	  let _, ty = typeinfer defs ctxt (Cste s) in
+	  PCste s, ty
+	| PAlias (n, p, ty) ->
+	   let ty, _ = typecheck defs ctxt ty Type in
+	   push_terms ctxt [ty];
+	   let p, ty' = typeinfer_pattern defs ctxt p in
+	   let [ty] = pop_terms ctxt 1 in
+	   let ty = unification_term_term defs ctxt ty' ty in
+	   PAlias (n, p, ty), ty
+	(* this is duplication of typeinference code for app ... *)
+	| PApp (s, args, ty) ->
+	  let _, fty = typeinfer defs ctxt (Cste s) in
+	  let ty, _ = typecheck defs ctxt ty Type in
+	  push_terms ctxt [ty];
+	  push_terms ctxt [fty];
+	  let nb_args = fold_cont (fun nb_processed_args args ->
+	    let [fty] = pop_terms ctxt 1 in
+	    let fty = (
+	      match fty with
+		| Impl _ -> fty
+		| _ -> reduction defs ctxt unification_strat fty
+	    ) in
+	    let remaining_args, fty = (
+	      match args, fty with
+		| [], _ -> raise (Failure "typeinfer of PApp: catastrophic, we have an empty list !!!")
+		| (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
+		  push_terms ctxt [Impl ((s, ty, n2), te)];
+		  let hd, hdty = typeinfer_pattern defs ctxt hd in
+		  push_pattern ctxt hd;
+		  let hdty = unification_term_term defs ctxt ty hdty in
+		  let hd = set_pattern_type (pop_pattern ctxt) hdty in
+		  let [Impl (_, te)] = pop_terms ctxt 1 in
+		  (* how can we compute the type of the remaining ? 
+		     by the same trick as in typeinfer of typeinfer of DestructWith ?
+		  *)
+		  let ty = (fun x -> raise Exit) te in
+		  push_pattern ctxt hd;
+		  push_nature ctxt n1;
+		  (* and we returns the information *)
+		  tl, ty
+		| (hd, Explicit)::tl, Impl ((s, ty, Implicit), te) -> 
+		  let p = PVar (symbol2string s, ty) in
+		  (* how can we compute the type of the remaining ? 
+		     by the same trick as in typeinfer of typeinfer of DestructWith ?
+		  *)
+		  let ty = raise Exit in
+		  (* we push the arg and its nature *)
+		  push_pattern ctxt p;
+		  push_nature ctxt Implicit;
+		  (* and we returns the information *)
+		  args, ty
+		| _ -> 
+		  raise (DoudouException (FreeError "pattern needs an Explicit argument, but receives an Implicit one"))
+	    ) in
+	    push_terms ctxt [fty];
+	    remaining_args, nb_processed_args + 1
+	  ) 0 args in
+	  let [fty] = pop_terms ctxt 1 in
+	  let fty = unification_term_term defs ctxt fty ty in
+	  let args = List.rev (map_nth (fun i ->
+	    let arg = pop_pattern ctxt in
+	    let n = pop_nature ctxt in
+	    (arg, n)
+	  ) nb_args) in
+	  PApp (s, args, fty), fty
   
 
           
