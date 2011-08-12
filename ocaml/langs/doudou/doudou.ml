@@ -145,8 +145,12 @@ exception DoudouException of doudou_error
 
 (* set the outermost pattern type *)
 let set_pattern_type (p: pattern) (ty: term) : pattern =
-  printf "due to new convention on pattern, returns directly the pattern\n";
-  p
+  match p with
+    | PVar (n, _) -> PVar (n, ty)
+    | PAVar _ -> PAVar ty
+    | PAlias (n, p, _) -> PAlias (n, p, ty)
+    | PApp (s, args, _) -> PApp (s, args, ty)
+    | _ -> p    
 
 (* take and drop as in haskell *)
 let rec take (n: int) (l: 'a list) :'a list =
