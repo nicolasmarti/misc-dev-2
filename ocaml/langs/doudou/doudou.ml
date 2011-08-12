@@ -53,10 +53,12 @@ type term = Type
 
 and equation = (pattern * nature) * term
 
+(* N.B.: all types are properly scoped w.r.t. bounded var introduce by "preceding" pattern *)
 and pattern = PType
 	      | PVar of name * term
 	      | PAVar of term
 	      | PCste of symbol
+	      | PTerm of term
 	      | PAlias of name * pattern * term
 	      | PApp of symbol * (pattern * nature) list * term
 
@@ -143,12 +145,8 @@ exception DoudouException of doudou_error
 
 (* set the outermost pattern type *)
 let set_pattern_type (p: pattern) (ty: term) : pattern =
-  match p with
-    | PVar (n, _) -> PVar (n, ty)
-    | PAVar _ -> PAVar ty
-    | PAlias (n, p, _) -> PAlias (n, p, ty)
-    | PApp (s, args, _) -> PApp (s, args, ty)
-    | _ -> p    
+  printf "due to new convention on pattern, returns directly the pattern\n";
+  p
 
 (* take and drop as in haskell *)
 let rec take (n: int) (l: 'a list) :'a list =
@@ -254,6 +252,7 @@ and fv_equation (eq: equation) : IndexSet.t =
 and fv_pattern (p: pattern) : IndexSet.t =
   match p with
     | PType | PCste _ -> IndexSet.empty
+    | PTerm te -> fv_term te
     | PVar (n, ty) -> fv_term ty
     | PAVar ty -> fv_term ty
     | PAlias (n, p, ty) -> IndexSet.union (fv_term ty) (fv_pattern p)
@@ -333,6 +332,7 @@ let rec pattern_size (p: pattern) : int =
     | PVar (n, ty) -> 1
     | PAVar ty -> 0
     | PCste s -> 0
+    | PTerm _ -> 0
     | PAlias (n, p, ty) -> 1 + pattern_size p
     | PApp (s, args, ty) -> 
       List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
@@ -444,11 +444,16 @@ and pattern_substitution (s: substitution) (p: pattern) : pattern =
     | PType -> PType
     | PVar (n, ty) -> PVar (n, term_substitution s ty)
     | PCste s -> PCste s
-    | PAlias (n, p, ty) -> PAlias (n, pattern_substitution s p, term_substitution s ty)
+    | PTerm te -> PTerm (term_substitution s te)
+    | PAlias (n, p, ty) -> PAlias (n, pattern_substitution s p, term_substitution (shift_substitution s (pattern_size p)) ty)
     | PApp (symb, args, ty) ->
       PApp (symb,
-	    List.map (fun (p, n) -> pattern_substitution s p, n) args,
-	    term_substitution s ty)
+	    fst (
+	      List.fold_left (fun (args, s) (p, n) ->
+		args @ [pattern_substitution s p, n], shift_substitution s (pattern_size p)
+	      ) ([], s) args
+	    ),
+	    term_substitution (shift_substitution s (pattern_size p)) ty)
 
 (* shift vars index in a substitution 
    only bound variable of the l.h.s. of the map are shifted too
@@ -510,12 +515,17 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
   match p with
     | PType -> PType
     | PVar (n, ty) -> PVar (n, leveled_shift_term ty level delta)
+    | PTerm te -> PTerm (leveled_shift_term te level delta)
     | PAVar ty -> PAVar (leveled_shift_term ty level delta)
-    | PAlias (s, p, ty) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty level delta)
+    | PAlias (s, p, ty) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty (level + pattern_size p) delta)
     | PApp (s, args, ty) ->
       PApp (s,
-	    List.map (fun (p, n) -> leveled_shift_pattern p level delta, n) args,
-	    leveled_shift_term ty level delta)
+	    fst (
+	      List.fold_left (fun (args, level) (p, n) ->
+		args @ [leveled_shift_pattern p level delta, n], level + pattern_size p
+	      ) ([], level) args
+	    ),
+	    leveled_shift_term ty (level + pattern_size p) delta)
 
 
 (********************************)
@@ -549,8 +559,7 @@ let push_pattern_bvars (ctxt: context) (l: (name * term * term) list) : context 
   ) ctxt l
 
 
-(* returns the list of bound variables, their value (w.r.t. other bound variable) and their type in a pattern 
-   the order is such that 
+(* returns the list of bound variables, their value (w.r.t. other bound variable) and their type in a pattern    
    it also returns the overall value of the pattern (under the pattern itself)
    hd::tl -> hd is the "oldest" variable, and is next to be framed
 *)
@@ -558,14 +567,15 @@ let push_pattern_bvars (ctxt: context) (l: (name * term * term) list) : context 
 let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
   match p with
     | PType -> [], Type
-    | PVar (n, ty) -> [n, shift_term ty 1, TVar 0], TVar 0
-    | PAVar ty -> ["_", shift_term ty 1, TVar 0], TVar 0
+    | PVar (n, ty) -> [n, ty, TVar 0], TVar 0
+    | PAVar ty -> ["_", ty, TVar 0], TVar 0
     | PCste s -> [] , Cste s
+    | PTerm te -> [], te
     | PAlias (n, p, ty) -> 
       let l, te = pattern_bvars p in
       (* the value is shift by one (under the alias-introduced var) *)
       let te = shift_term te 1 in
-	(l @ [n, shift_term ty (1 + List.length l), te], te)
+	(l @ [n, ty, te], te)
     | PApp (s, args, ty) -> 
       let (delta, l, rev_values) = 
 	(* for sake of optimization the value list is in reverse order *)
@@ -1007,6 +1017,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PVar (n, _) -> Verbatim n
     | PAVar _ -> Verbatim "_"
     | PCste s -> Verbatim (symbol2string s)
+    | PTerm te -> Verbatim "[cste term]"
     | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
@@ -1747,6 +1758,11 @@ let unification_strat : reduction_strategy = {
   eta = true;
 }
 
+(* a special exception for the reduction which 
+   signals that an underlying iota reduction fails
+*)
+exception IotaReductionFailed
+
 (* unification pattern to term *)
 (*
   this is quite conservative:
@@ -1758,6 +1774,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     | PType, Type -> IndexMap.empty
     | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
     | PAVar _, te -> IndexMap.empty
+    | PTerm te', te when te' = te -> IndexMap.empty
     | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
     | PCste s1, Cste s2 when s1 != s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
     | PAlias (n, p, ty), te ->
@@ -1789,14 +1806,9 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
 	    | None, Some v -> Some v
 	)  s s12
       ) IndexMap.empty (List.combine args1 args2)
+    | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
-
-(* a special exception for the reduction which 
-   signals that an underlying iota reduction fails
-*)
-exception IotaReductionFailed
-
-let rec unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
+and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   match te1, te2 with
 
     (* first the cases for SrcInfo *)
@@ -2268,42 +2280,26 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 
     (* for now, just one ... equivalent to a lambda or a let *)
     | DestructWith [((p,n), body)] -> 
-      (* first we infer the types in the pattern *)
-      let p, ty = typeinfer_pattern defs ctxt p in
-      (* we push the pattern in the context *)
-      push_pattern ctxt p;
-      (* and we push its type *)
-      push_terms ctxt [ty];
+      (*
+	given that 
 
-      (* we add the frames corresponding to the pattern *)
-      ctxt := input_pattern !ctxt p;
+	typeinfer_pattern defs !ctxt p = c', p', ty
 
-      (* we infer the body *)
-      let body, bodyty = typeinfer defs ctxt body in
+	we have 
+	body' = body shifted for c'
+	!ctxt; c'; p' |- body' :: bodyty
 
-      (* here is the trick:
-	 bodyty might depends on variables inserted do to the pattern,
-	 that will not appear in the symbol of the application
-	 
-	 so that the real type is 
+	!ctxt; c' |- ((p', n) := body') :: (s, ty, n) -> ((p' := bodyty') s)
+	where bodyty' = bodyty shifted for s
 
-	 (s::ty) -> ((shift_pattern p 1) := (shift_term bodyty (size p) 1)) s
+	and thus:
 
-	 for sake of readability, it is possible to beta-strongly reduce the type (in case a trivial simplification of the case analysis exists
+	!ctxt |- ({[c']} := ((p', n) := body')) :: {[c']} -> (s, ty, n) -> ((p' := bodyty') s)
+
+	(modulo the shifting for {[c']} which is the implicit quantification of c')
 
       *)
-      let s = pattern2symbol p in
-      let bodyty = App (DestructWith [(leveled_shift_pattern p 0 1, Explicit), leveled_shift_term bodyty (pattern_size p) 1], [TVar 0, Explicit]) in
-
-      (* we removes the frames added for by the pattern *)
-      ctxt := pop_frames !ctxt (pattern_size p);
-
-      (* we pop the pattern and its type*)
-      let p = pop_pattern ctxt in
-      let [ty] = pop_terms ctxt 1 in
-      (* and we return the terms*)
-      DestructWith [((p, n), body)], Impl ((s, ty, n), bodyty)
-
+      raise (Failure "typeinference of DestructWith with 1 equations: in progress ...")
     | DestructWith eqs ->
       raise (Failure "typeinference of DestructWith with more than 1 equations not yet implemented")
 
@@ -2314,80 +2310,16 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := saved_ctxt;
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
 
-and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term =
-      match p with
-	| PType -> PType, Type
-	| PVar (n, ty) ->
-	  let ty, _ = typecheck defs ctxt ty Type in
-	  PVar (n, ty), ty
-	| PCste s ->
-	  let _, ty = typeinfer defs ctxt (Cste s) in
-	  PCste s, ty
-	| PAlias (n, p, ty) ->
-	   let ty, _ = typecheck defs ctxt ty Type in
-	   push_terms ctxt [ty];
-	   let p, ty' = typeinfer_pattern defs ctxt p in
-	   let [ty] = pop_terms ctxt 1 in
-	   let ty = unification_term_term defs ctxt ty' ty in
-	   PAlias (n, p, ty), ty
-	(* this is duplication of typeinference code for app ... *)
-	| PApp (s, args, ty) ->
-	  let _, fty = typeinfer defs ctxt (Cste s) in
-	  let ty, _ = typecheck defs ctxt ty Type in
-	  push_terms ctxt [ty];
-	  push_terms ctxt [fty];
-	  let nb_args = fold_cont (fun nb_processed_args args ->
-	    let [fty] = pop_terms ctxt 1 in
-	    let fty = (
-	      match fty with
-		| Impl _ -> fty
-		| _ -> reduction defs ctxt unification_strat fty
-	    ) in
-	    let remaining_args, fty = (
-	      match args, fty with
-		| [], _ -> raise (Failure "typeinfer of PApp: catastrophic, we have an empty list !!!")
-		| (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
-		  push_terms ctxt [Impl ((s, ty, n2), te)];
-		  let hd, hdty = typeinfer_pattern defs ctxt hd in
-		  push_pattern ctxt hd;
-		  let hdty = unification_term_term defs ctxt ty hdty in
-		  let hd = set_pattern_type (pop_pattern ctxt) hdty in
-		  let [Impl (_, te)] = pop_terms ctxt 1 in
-		  (* how can we compute the type of the remaining ? 
-		     by the same trick as in typeinfer of typeinfer of DestructWith ?
-		  *)
-		  let ty = (fun x -> printf "hum 1 ..."; raise Exit) te in
-		  push_pattern ctxt hd;
-		  push_nature ctxt n1;
-		  (* and we returns the information *)
-		  tl, ty
-		| (hd, Explicit)::tl, Impl ((s, ty, Implicit), te) -> 
-		  let p = PVar (symbol2string s, ty) in
-		  (* how can we compute the type of the remaining ? 
-		     by the same trick as in typeinfer of typeinfer of DestructWith ?
-		  *)
-		  let ty = printf "hum 2 ..."; raise Exit in
-		  (* we push the arg and its nature *)
-		  push_pattern ctxt p;
-		  push_nature ctxt Implicit;
-		  (* and we returns the information *)
-		  args, ty
-		| _ -> 
-		  raise (DoudouException (FreeError "pattern needs an Explicit argument, but receives an Implicit one"))
-	    ) in
-	    push_terms ctxt [fty];
-	    remaining_args, nb_processed_args + 1
-	  ) 0 args in
-	  let [fty] = pop_terms ctxt 1 in
-	  let fty = unification_term_term defs ctxt fty ty in
-	  let args = List.rev (map_nth (fun i ->
-	    let arg = pop_pattern ctxt in
-	    let n = pop_nature ctxt in
-	    (arg, n)
-	  ) nb_args) in
-	  PApp (s, args, fty), fty
-  
+(* this function is a bit special 
+   its semantics is:
+   typeinfer_pattern defs c p = c', p', ty <->
 
+   forall term t. such that p' match t under !c; c' |- ->
+                   !c; c' |- t :: ty
+   
+*)
+and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
+  raise (Failure "not yet implemented")
           
 (******************************************)
 (*        tests with parser               *)
