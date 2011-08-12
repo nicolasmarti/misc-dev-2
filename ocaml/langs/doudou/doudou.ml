@@ -2302,6 +2302,49 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 
 	(modulo the shifting for {[c']} which is the implicit quantification of c')
 
+	some example:
+
+	List :: Type -> Type
+	[[]] :: {A :: Type} -> List A
+	(:) :: {A :: Type} -> A -> List A -> List A
+
+	map :: {A B :: Type} -> (A -> B) -> List A -> List B
+	
+	Bool :: Type
+	True :: Bool
+	False :: Bool
+	
+	c |- (map f [] := False) :: ??
+	
+	c; (B :: Type) |- (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) 
+	
+	c; (B :: Type) |- (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := False :: (s :: List B) -> ((map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := Bool) s
+	
+	c |- ({B :: Type} := (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := False) :: {B :: Type} -> (s :: List B) -> ((map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := Bool) s
+
+
+	when there is several equations, the type of their patterns should be the same (and there nature too)
+
+	c |- (p0, n) := te0 | ... | (pi, n) := tei
+
+	for all i, exists c' ty, ty s.t. 
+	    !c; c' |- pi' :: ty
+
+	tyi s.t. !c; c'; pi' |- tei :: tyi
+
+	==> (modulo all the shifting ...)
+
+	c |- ({[c']} := (p0', n) := te0 | ... | (pi', n) := tei) :: {[c']} -> (s, ty, n) -> ((p0', n) := ty0 | ... | (pi', n) := tyi) s
+
+	Rmq: nice side effect you can figure out from the type if a function is complete or partial
+
+	Rmq: you can simplify the type in case all the tyi are equals (ty') and independent of the pi' --> {[c']} -> (s, ty, n) -> ty'
+
+	ex: 
+	   empty :: {A :: Type} -> List A -> Bool
+	   empty [] := True
+	   empty (_:_) := False
+
       *)
       raise (Failure "typeinference of DestructWith with 1 equations: in progress ...")
     | DestructWith eqs ->
@@ -2319,7 +2362,9 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
    typeinfer_pattern defs c p = c', p', ty <->
 
    forall term t. such that p' match t under !c; c' |- ->
-                   !c; c' |- t :: ty
+                   !c; c' |- t :: ty 
+                   implied ==> !c; c' |- p' :: ty
+                  
    
 *)
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
