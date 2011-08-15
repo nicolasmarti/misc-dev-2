@@ -502,7 +502,6 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | TVar i as v when i >= 0 ->
       if i >= level then
 	if i + delta < level then (
-	  printf "%d + %d < %d\n" i delta level;
 	  raise (DoudouException (Unshiftable_term (te, level, delta)))
 	)
 	else
@@ -620,7 +619,6 @@ let input_pattern (ctxt: context) (p: pattern) : context =
 (* apply a substitution in a context *)
 let context_substitution (s: substitution) (ctxt: context) : context =
   fst (mapacc (fun s frame ->
-    printf "|s| := %d\n" (IndexMap.cardinal s);
     { frame with
       ty = term_substitution s frame.ty;
       (* not sure on this one ... there should be no fv in value ... *)
@@ -2208,7 +2206,9 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
 	typecheck defs ctxt te ty
       ) else (
 	(* no: we typecheck normally *)
+	push_terms ctxt [te];
 	let ty = unification_term_term defs ctxt ty ty' in
+	let [te] = pop_terms ctxt 1 in
 	te, ty
       )
   ) with
@@ -2547,13 +2547,7 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       (* we have now a generic term for the pattern *)
       let te = App (Cste s, tes) in
 
-      printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
-
-      let te, ty' = typeinfer defs ctxt te in
-
-      printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty'); flush Pervasives.stdout;	
-	
-      let ty = unification_term_term defs ctxt ty ty' in
+      let te, ty = typecheck defs ctxt te ty in
 
       (* and returns the result *)
       PApp (s, args, ty), te, ty
