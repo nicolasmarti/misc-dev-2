@@ -30,7 +30,8 @@
 <tests/testdoudou.{ml,byte,native}>: pkg_unix, pkg_str
 
 <langs/poussin>: include
-
+<langs/poussin/datastructures.{ml,byte,native}>: pkg_unix, pkg_str
+<langs/poussin/poussin.{ml,byte,native}>: pkg_unix, pkg_str
 
 <finance>: include
 <finance/ibtws>: include

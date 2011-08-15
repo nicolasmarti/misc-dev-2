@@ -1,11 +1,6 @@
-(* for parsing *)
 open Parser
-(* for pretty printing *)
+
 open Pprinter
-
-(* for outputing *)
-open Printf
-
 
 (*********************************)
 (* Definitions of data structure *)
@@ -114,7 +109,7 @@ type term =
 (* a pattern is a term and a nature (counterpart of the nature in an implication) *)
 and equation = (term * nature) * term
 
-type definition = Inductive of (symbol, term) (* an inductive type with its terms *)
+type definition = Inductive of symbol * term (* an inductive type with its terms *)
 		  | Constructor (* a constructor *)
 		  | NoDef (* a symbol without definitions *)
 
