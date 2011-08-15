@@ -2418,7 +2418,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 (* fron-end function as the loop one require to push the bvar of the pattern in the context *)
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
   (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
-  let p', _, ty = typeinfer_pattern_loop defs ctxt p in
+  let _, _, _ = typeinfer_pattern_loop defs ctxt p in
   raise (Failure "NYI")
 
 (* takes a pattern and infer it 
@@ -2471,22 +2471,11 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       PAlias (n, p', ty), te, ty
     | PApp (s, args, ty) -> 
       (* let's grab the type of the constante *)
-      let sty = constante_type defs s in
+      let _ = constante_type defs s in
       (* and we infer the arguments against this type *)
       let args, tes, ty' = (
-	fold_cont (fun (args, tes, ty) (arg, n) ->
-	  (* first we reduce the type in order to have an Impl *)
-	  let ty = (
-	    match ty with
-	      | Impl _ -> ty
-	      | _ -> reduction defs ctxt unification_strat ty
-	  ) in
-	  (* do we need to add some  *)
-	  let (arg', 
-	  match ty with
-	    | 
-
-	) ([], [], ty) args
+	let _ = raise Exit in
+	[], [], Type
       ) in
       (* typecheck the type to Type *)
       let ty, _ = typecheck defs ctxt ty Type in
