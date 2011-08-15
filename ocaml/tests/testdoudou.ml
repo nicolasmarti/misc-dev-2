@@ -113,6 +113,12 @@ let _ = process_definition defs ctxt "(+) : left, 20 :: {A B :: Type} -> A -> B 
 
 let _ = process_definition defs ctxt "(+) {_} {_} True False"
 
+let _ = process_definition defs ctxt "map :: {A B:: Type} -> (f:: A -> B) -> List A -> List B"
+
+let _ = process_definition defs ctxt "\\ (map f []) -> True"
+
+let _ = process_definition defs ctxt "\\ (hd : []) -> a"
+
 let _ = process_definition defs ctxt "\\ {A::Type} (a :: A) -> a"
 
 let _ = process_definition defs ctxt "True || True := Type"
