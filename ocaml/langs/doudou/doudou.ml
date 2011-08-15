@@ -620,6 +620,7 @@ let input_pattern (ctxt: context) (p: pattern) : context =
 (* apply a substitution in a context *)
 let context_substitution (s: substitution) (ctxt: context) : context =
   fst (mapacc (fun s frame ->
+    printf "|s| := %d\n" (IndexMap.cardinal s);
     { frame with
       ty = term_substitution s frame.ty;
       (* not sure on this one ... there should be no fv in value ... *)
@@ -628,7 +629,7 @@ let context_substitution (s: substitution) (ctxt: context) : context =
       termstack = List.map (term_substitution s) frame.termstack;
       equationstack = List.map (equation_substitution s) frame.equationstack;
       patternstack = List.map (pattern_substitution s) frame.patternstack
-    }, shift_substitution s 1
+    }, shift_substitution s (-1)
   ) s ctxt
   )
 
@@ -875,7 +876,7 @@ type pp_option = {
   show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = true; show_indices = false}
+let pp_option = ref {show_implicit = true; show_indices = true}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -1867,7 +1868,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     | SrcInfo (pos, te1), _ -> (
       try 
-	if debug then printf "unification: case (1)";
+	if debug then printf "unification: case (1)\n";
 	unification_term_term defs ctxt te1 te2
       with
 	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
@@ -1875,7 +1876,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     | _, SrcInfo (pos, te2) -> (
       try 
-	if debug then printf "unification: case (2)";
+	if debug then printf "unification: case (2)\n";
 	unification_term_term defs ctxt te1 te2
       with
 	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
@@ -1889,32 +1890,36 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
 
     (* the trivial cases for Type, Cste and Obj *)
-    | Type, Type -> if debug then printf "unification: case (3)"; Type
-    | Obj o1, Obj o2 when o1 = o2 -> if debug then printf "unification: case (4)"; Obj o1
-    | Cste c1, Cste c2 when c1 = c2 -> if debug then printf "unification: case (5)"; Cste c1
+    | Type, Type -> if debug then printf "unification: case (3)\n"; Type
+    | Obj o1, Obj o2 when o1 = o2 -> if debug then printf "unification: case (4)\n"; Obj o1
+    | Cste c1, Cste c2 when c1 = c2 -> if debug then printf "unification: case (5)\n"; Cste c1
     (* when a term is a constant we just unfold it *)
-    | Cste c1, _ when unfold_constante defs c1 != None -> if debug then printf "unification: case (6)"; unification_term_term defs ctxt (fromSome (unfold_constante defs c1)) te2
-    | _, Cste c2 when unfold_constante defs c2 != None -> if debug then printf "unification: case (7)"; unification_term_term defs ctxt te1 (fromSome (unfold_constante defs c2))
+    | Cste c1, _ when unfold_constante defs c1 != None -> if debug then printf "unification: case (6)\n"; unification_term_term defs ctxt (fromSome (unfold_constante defs c1)) te2
+    | _, Cste c2 when unfold_constante defs c2 != None -> if debug then printf "unification: case (7)\n"; unification_term_term defs ctxt te1 (fromSome (unfold_constante defs c2))
 
     (* the trivial case for variable *)
-    | TVar i1, TVar i2 when i1 = i2 -> if debug then printf "unification: case (8)"; TVar i1
+    | TVar i1, TVar i2 when i1 = i2 -> if debug then printf "unification: case (8)\n"; TVar i1
     (* the case for free variables *)
     (* we need the free var to not be a free var of the term *)
-    | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2))->
-      if debug then printf "unification: case (9)"; 
+    | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
+      if debug then printf "unification: case (9)\n"; flush Pervasives.stdout;
       let s = IndexMap.singleton i1 te2 in
+      if debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i1) (term2string !ctxt te2); flush Pervasives.stdout;
       ctxt := context_substitution s (!ctxt);
+      if debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
       (* should we rewrite subst in te2 ? a priori no:
 	 1- i not in te2
 	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
 	 and that we did not comply with the N.B. above
       *)
       te2      
-	  
+    )
     | _, TVar i2 when i2 < 0 && not (IndexSet.mem i2 (fv_term te1))->
-      if debug then printf "unification: case (10)"; 
+      if debug then printf "unification: case (10)\n"; flush Pervasives.stdout;
       let s = IndexMap.singleton i2 te1 in
+      if debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i2) (term2string !ctxt te1); flush Pervasives.stdout;
       ctxt := context_substitution s (!ctxt);
+      if debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
       (* should we rewrite subst in te2 ? a priori no:
 	 1- i not in te2
 	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
@@ -1923,15 +1928,15 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       te1
     (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
     | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 != TVar i1 ->
-      if debug then printf "unification: case (11)"; 
+      if debug then printf "unification: case (11)\n"; 
       unification_term_term defs ctxt (bvar_value !ctxt i1) te2
     | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 != TVar i2 ->
-      if debug then printf "unification: case (12)"; 
+      if debug then printf "unification: case (12)\n"; 
       unification_term_term defs ctxt te1 (bvar_value !ctxt i2)
 
     (* the case of two application: with not the same arity *)
     | App (hd1, args1), App (hd2, args2) when List.length args1 != List.length args2 ->
-      if debug then printf "unification: case (13)"; 
+      if debug then printf "unification: case (13)\n"; 
       (* first we try to change them such that they have the same number of arguments and try to match them *)
       let min_arity = min (List.length args1) (List.length args2) in
       let te1' = if List.length args1 = min_arity then te1 else App (App (hd1, take (List.length args1 - min_arity) args1), drop (List.length args1 - min_arity) args1) in
@@ -1953,7 +1958,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       )
     (* the case of two application with same arity *)
     | App (hd1, args1), App (hd2, args2) when List.length args1 = List.length args2 ->
-      if debug then printf "unification: case (14)"; 
+      if debug then printf "unification: case (14)\n"; 
       (* first we save the context and try to unify all term component *)
       let saved_ctxt = !ctxt in
       (try
@@ -1996,17 +2001,17 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       )	
     (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
     | App (hd1, args1), _ ->
-      if debug then printf "unification: case (15)"; 
+      if debug then printf "unification: case (15)\n"; 
       let te1' = reduction defs ctxt unification_strat te1 in
       if te1 = te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
     | _, App (hd2, args2) ->
-      if debug then printf "unification: case (16)"; 
+      if debug then printf "unification: case (16)\n"; 
       let te2' = reduction defs ctxt unification_strat te2 in
       if te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
 
     (* the impl case: only works if both are impl *)
     | Impl ((s1, ty1, n1), te1), Impl ((s2, ty2, n2), te2) ->
-      if debug then printf "unification: case (17)"; 
+      if debug then printf "unification: case (17)\n"; 
       (* the symbol is not important, yet the nature is ! *)
       if n1 != n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
@@ -2453,11 +2458,30 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
   (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
   let p', te, ty = typeinfer_pattern_loop defs ctxt p in
 
+  
   printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
+  printf "(pattern) %s |- %s :: %s\n" (context2string !ctxt) (pattern2string !ctxt p') (term2string !ctxt ty); flush Pervasives.stdout;
+  
 
   (* now we should "reconstruct" the pattern using the term *)
-  raise (Failure "NYI")
+  
+  (* first we grab all the free variables in the type, and order them by frame *)
 
+
+  raise (Failure "NYI")
+(*
+and reconstruct_pattern (ctxt: context ref) (pattern_bvars_size: int) (p: pattern) (te: term) (ty: term) : pattern =
+  match te with
+    | Type -> PType
+    | Cste s -> PCste s
+
+    (* several cases for variables ... *)
+
+    (* a free variable that appears in the *)
+    | TVar i when i < 0 && -> raise (Failure "NYI")
+    | App (hd, args) -> raise (Failure "NYI")
+    | _ -> PTerm te
+*)
 (* takes a pattern and infer it 
    result = p', te, ty
    where te is the term equivalent to the pattern under its quantification and ty is its types
@@ -2516,15 +2540,21 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
 	    (args @ [arg, n], tes @ [te, n], tys @ [ty])	    
 	  ) ([], [], []) args
       ) in
+
+      (* typecheck the type to Type *)      
+      let ty, _ = typecheck defs ctxt ty Type in
+
       (* we have now a generic term for the pattern *)
       let te = App (Cste s, tes) in
-      (* that we infer *)
+
+      printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
+
       let te, ty' = typeinfer defs ctxt te in
-      (* typecheck the type to Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
-      (* we unify the types *)
+
+      printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty'); flush Pervasives.stdout;	
+	
       let ty = unification_term_term defs ctxt ty ty' in
-      
+
       (* and returns the result *)
       PApp (s, args, ty), te, ty
 
