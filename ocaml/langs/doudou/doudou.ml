@@ -69,7 +69,8 @@ type frame = {
   symbol : symbol;
   (* its type *)
   ty: term;
-
+  (* the nature of the quantification *)
+  nature: nature;
   (* its value: most stupid one: itself *)
   value: term;
     
@@ -91,6 +92,7 @@ type frame = {
 let empty_frame = {
   symbol = Symbol ("_", Nofix);
   ty = Type;
+  nature = Explicit;
   value = TVar 0;
   fvs = [];
   termstack = [];
@@ -539,10 +541,11 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (* build a new frame 
    value is optional
 *)
-let build_new_frame (s: symbol) ?(value: term = TVar 0) (ty: term) : frame =
+let build_new_frame (s: symbol) ?(value: term = TVar 0) ?(nature: nature = Explicit) (ty: term) : frame =
 { 
   symbol = s;
   ty = ty;
+  nature = nature;
   value = value;
 
   fvs = [];
@@ -634,6 +637,15 @@ let bvar_value (ctxt: context) (i: index) : term =
     let frame = List.nth ctxt i in
     let value = frame.value in
     shift_term value i
+  ) with
+    | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
+    | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
+
+(* grab the nature of a bound var *)
+let bvar_nature (ctxt: context) (i: index) : nature =
+  try (
+    let frame = List.nth ctxt i in
+    frame.nature    
   ) with
     | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
     | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
@@ -745,17 +757,21 @@ let constante_symbol (defs: defs) (s: symbol) : symbol =
   with
     | Not_found -> raise (DoudouException (UnknownCste s))
 
-(* push / pop a frame *)
-let pop_frame (ctxt: context) : context =
+(* pop a frame *)
+let pop_frame (ctxt: context) : context * frame =
   match List.hd ctxt with
     | { fvs = []; termstack = []; naturestack = []; equationstack = []; patternstack = []; _} ->
-      List.tl ctxt
+      List.tl ctxt, List.hd ctxt
     | { termstack = []; naturestack = []; equationstack = []; patternstack = []; _} ->
       raise (Failure "Case not yet supported, pop_frame with still fvs")
     | _ -> raise (DoudouException (PoppingNonEmptyFrame (List.hd ctxt)))
 
-let rec pop_frames (ctxt: context) (nb: int) : context =
-  if nb <= 0 then ctxt else pop_frames (pop_frame ctxt) (nb - 1)
+(* poping frame: fst := resulting context, snd := poped frames *)
+let rec pop_frames (ctxt: context) (nb: int) : context * context =
+  if nb <= 0 then ctxt, [] else 
+    let ctxt, frame = pop_frame ctxt in 
+    let ctxt, frames = pop_frames ctxt (nb - 1) in
+    ctxt, frame::frames
 
 (* we add a free variable *)
 let add_fvar (ctxt: context ref) (ty: term) : int =
@@ -787,6 +803,21 @@ let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
   ) (l, []) hd.fvs in
   ctxt := ({hd with fvs = fvs})::tl;
   terms
+
+(* quantify by DestructWith a term, using a context *)
+let rec quantify_DestructWith (ctxt: context) (te: term) : term =
+  match ctxt with
+    | [] -> te
+    | hd::tl ->
+      quantify_DestructWith tl (DestructWith [(PVar (symbol2string hd.symbol, shift_term hd.ty (-1)), hd.nature), te])
+
+(* quantify by Impl a term, using a context *)
+let rec quantify_Impl (ctxt: context) (te: term) : term =
+  match ctxt with
+    | [] -> te
+    | hd::tl ->
+      quantify_Impl tl (Impl ((hd.symbol, shift_term hd.ty (-1), hd.nature), te))
+
 
 (******************)
 (* pretty printer *)
@@ -1962,7 +1993,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
-	ctxt := pop_frame !ctxt;
+	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Impl ((s1, ty, n1), te)
 
@@ -2013,7 +2044,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
 	(* we pop the frame *)
-	ctxt := pop_frame !ctxt;
+	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Impl ((s, ty, n), te)
 
@@ -2030,7 +2061,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
 	(* we pop the frames *)
-	ctxt := pop_frames !ctxt (pattern_size p);
+	ctxt := fst (pop_frames !ctxt (pattern_size p));
 	((p, n), te)
       ) eqs in
       DestructWith eqs
@@ -2195,7 +2226,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       (* we typecheck te :: Type *)
       let te, _ = typecheck defs ctxt te Type in
       (* we pop the frame for s *)
-      ctxt := pop_frame !ctxt;
+      ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
       Impl ((s, ty, n), te), Type
 
@@ -2346,7 +2377,24 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	   empty (_:_) := False
 
       *)
-      raise (Failure "typeinference of DestructWith with 1 equations: in progress ...")
+      (* we grab the inference of the pattern *)
+      let c', p', ty = typeinfer_pattern defs ctxt p in
+      (* we build the new context for typechecking body *)
+      ctxt := input_pattern (c' @ !ctxt) p';
+
+      (* we infer body *)
+      let body, bodyty = typeinfer defs ctxt body in
+
+      (* we pop the bvar from the pattern *)
+      ctxt := fst (pop_frames !ctxt (pattern_size p));
+      (* we grab back the c' *)
+      let (ctxt', c') = pop_frames !ctxt (List.length c') in
+      ctxt := ctxt';
+      (* we compute the final term and its type *)
+      let te = quantify_DestructWith c' (DestructWith [(p', n), body]) in
+      let ty = quantify_Impl c' (Impl ((Name "@s", ty, n), App (DestructWith [(p', n), leveled_shift_term bodyty (pattern_size p') 1], [TVar 0, Explicit]))) in
+      (* and we return them *)
+      te, ty
     | DestructWith eqs ->
       raise (Failure "typeinference of DestructWith with more than 1 equations not yet implemented")
 
@@ -2367,9 +2415,87 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
                   
    
 *)
+(* fron-end function as the loop one require to push the bvar of the pattern in the context *)
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
-  raise (Failure "not yet implemented")
-          
+  (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
+  let p', _, ty = typeinfer_pattern_loop defs ctxt p in
+  raise (Failure "NYI")
+
+(* takes a pattern and infer it 
+   result = p', te, ty
+   where te is the term equivalent to the pattern under its quantification and ty is its types
+   
+*)
+and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term * term =
+  match p with
+    | PType -> PType, Type, Type
+    | PVar (n, ty) -> 
+      (* typecheck the type to Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* shift the type  *)
+      let ty = shift_term ty 1 in
+      (* input the term in the context *)
+      let frame = build_new_frame (Name n) ty in
+      ctxt := frame::!ctxt;
+      (* returns the result *)
+      PVar (n, ty), TVar 0, ty      
+    | PAVar ty -> 
+      (* typecheck the type to Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* we create a free var of the type for value *)
+      let fv = add_fvar ctxt ty in
+      (* returns the result *)
+      PAVar ty, TVar fv ,ty
+    | PCste s -> 
+      (* just grab the constante type *)
+      let ty = constante_type defs s in
+      (* returns the result *)
+      PCste s, Cste s, ty
+    | PTerm te ->
+      let te, ty = typeinfer defs ctxt te in
+      PTerm te, te, ty
+    | PAlias (n, p, ty) -> 
+      (* let's get type and new pattern under *)
+      let p', te, ty' = typeinfer_pattern_loop defs ctxt p in
+      (* typecheck the type to Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* we unify the types *)
+      let ty = unification_term_term defs ctxt ty ty' in
+      (* shift the type and term *)
+      let ty = shift_term ty 1 in      
+      let te = shift_term te 1 in
+      (* input the frame for n *)
+      let frame = build_new_frame (Name n) ty in
+      ctxt := frame::!ctxt;
+      (* and return the result (we use the most precise term := te) *)
+      PAlias (n, p', ty), te, ty
+    | PApp (s, args, ty) -> 
+      (* let's grab the type of the constante *)
+      let sty = constante_type defs s in
+      (* and we infer the arguments against this type *)
+      let args, tes, ty' = (
+	fold_cont (fun (args, tes, ty) (arg, n) ->
+	  (* first we reduce the type in order to have an Impl *)
+	  let ty = (
+	    match ty with
+	      | Impl _ -> ty
+	      | _ -> reduction defs ctxt unification_strat ty
+	  ) in
+	  (* do we need to add some  *)
+	  let (arg', 
+	  match ty with
+	    | 
+
+	) ([], [], ty) args
+      ) in
+      (* typecheck the type to Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* we unify the types *)
+      let ty = unification_term_term defs ctxt ty ty' in
+      (* and returns the result *)
+      PApp (s, args, ty), App (Cste s, tes), ty
+
+
 (******************************************)
 (*        tests with parser               *)
 (******************************************)
