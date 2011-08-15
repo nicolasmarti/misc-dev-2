@@ -573,6 +573,7 @@ and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
 and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
   match p with
     | PType -> PType
+    | PCste s -> PCste s
     | PVar (n, ty) -> PVar (n, leveled_shift_term ty level delta)
     | PTerm te -> PTerm (leveled_shift_term te level delta)
     | PAVar ty -> PAVar (leveled_shift_term ty level delta)
@@ -730,6 +731,15 @@ let bvar_type (ctxt: context) (i: index) : term =
     | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
     | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
 
+(* grab a bvar symbol *)
+let bvar_symbol (ctxt: context) (i: index) : symbol =
+  try (
+    let frame = List.nth ctxt i in
+    frame.symbol
+  ) with
+    | Failure "nth" -> raise (DoudouException (UnknownBVar (i, ctxt)))
+    | Invalid_argument "List.nth" -> raise (DoudouException (NegativeIndexBVar i))
+
 (* grab the value of a free var *)
 let fvar_value (ctxt: context) (i: index) : term =
   let lookup = fold_stop (fun level frame ->
@@ -765,6 +775,9 @@ let var_type (ctxt: context) (i: index) : term =
 (* grab the value of a var *)
 let var_value (ctxt: context) (i: index) : term =
   if i < 0 then fvar_value ctxt i else bvar_value ctxt i
+
+  
+
 
 (* extract a substitution from the context *)
 let context2substitution (ctxt: context) : substitution =
@@ -1130,11 +1143,11 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PVar (n, _) -> Verbatim n
     | PAVar _ -> Verbatim "_"
     | PCste s -> Verbatim (symbol2string s)
-    | PTerm te -> Verbatim "[cste term]"
+    | PTerm te -> term2token ctxt te p
     | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
-    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (filter_explicit args) = 2->
+    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -1156,7 +1169,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	(* else we do not need parenthesis *)
 	| _ -> fun x -> x
       ) (
-	match filter_explicit args with
+	match (if !pp_option.show_implicit then List.map fst args else filter_explicit args) with
 	  | arg1::arg2::[] ->
 	    let arg1 = pattern2token ctxt arg1 (InNotation (Infix (myprio, myassoc), 1)) in
 	    let arg2 = pattern2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
@@ -1165,7 +1178,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -1178,7 +1191,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	| InNotation (Postfix i, _) when i > myprio -> withParen
 	| _ -> fun x -> x
       ) (
-	match filter_explicit args with
+	match (if !pp_option.show_implicit then List.map fst args else filter_explicit args) with
 	  | arg::[] ->
 	    let arg = pattern2token ctxt arg (InNotation (Prefix myprio, 1)) in
 	    let te = Verbatim s in
@@ -1187,7 +1200,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
        )
 
     (* the case for Postfix *)
-    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (filter_explicit args) = 1 ->
+    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -1200,7 +1213,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	| InAlias -> withParen
 	| _ -> fun x -> x
       ) (
-	match filter_explicit args with
+	match (if !pp_option.show_implicit then List.map fst args else filter_explicit args) with
 	  | arg::[] ->
 	    let arg = pattern2token ctxt arg (InNotation (Postfix myprio, 1)) in
 	    let te = Verbatim s in
@@ -1220,7 +1233,12 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	| InAlias -> withParen
 	| _ -> fun x -> x
       ) (
-	let args = List.map (fun te -> pattern2token ctxt te (InArg Explicit)) (filter_explicit args) in
+	let _, args = 
+	  List.fold_left (
+	    fun (ctxt, lst) te ->
+	      input_pattern ctxt te, lst @ [pattern2token ctxt te (InArg Explicit)]
+	  ) (ctxt, []) (if !pp_option.show_implicit then List.map fst args else filter_explicit args)
+	in
 	let s = symbol2string s in
 	Box (intercalate (Space 1) (Verbatim s::args))
        )
@@ -2605,8 +2623,48 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
   printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
 
   (* now we should "reconstruct" the pattern using the term *)
+  let p = reconstruct_pattern defs ctxt (pattern_size p') te in
+  printf "(pattern) |- %s \n" (pattern2string !ctxt p); flush Pervasives.stdout;
   
   raise (Failure "NYI")
+
+and reconstruct_pattern (defs: defs) (ctxt: context ref) (pattern_sz: int) (te: term) : pattern =
+  let p = (
+    match te with	
+      | Type -> PType
+      | Cste s -> PCste s
+      (* for the variables two cases: either a pattern variable, or a outside quantified variable *)
+      (* a pattern variable *)
+      | TVar i when i < pattern_sz ->
+	PVar (symbol2string (bvar_symbol !ctxt i), bvar_type !ctxt i) 
+      (* an outside variable *)
+      | TVar i when i >= pattern_sz -> PTerm (TVar i)
+      | App (Cste s, args) -> 
+	let _, ty = typeinfer defs ctxt te in
+	PApp (s, 
+	      snd (List.fold_left (
+		fun (i, args) (arg, n) -> 
+		  let arg = leveled_shift_pattern (reconstruct_pattern defs ctxt pattern_sz arg) 0 i in
+		  i + (pattern_size arg), args @ [arg, n]				    
+	      ) (0, []) args
+	      ), ty
+	)
+      | App (App (hd, args1), args2) ->
+	reconstruct_pattern defs ctxt pattern_sz (App (hd, args1 @ args2))
+  ) in
+  (* we just look if the term is not a value for a pattern bvars in the context. If yes then it is an alias *)
+  let res = fold_cont (fun i l ->
+    match i with
+      | None -> [], None
+      | Some i -> 
+	if i >= pattern_sz then [], None else 
+	  let value = bvar_value !ctxt i in
+	  if value != TVar i && value = te then [], Some i else l, Some (i+1)
+  ) (Some 0) (0::[]) in
+  match res with
+    | None -> p
+    | Some i -> PAlias (symbol2string (bvar_symbol !ctxt i), p, shift_term (bvar_type !ctxt i) (pattern_size p))
+
 
 (* takes a pattern and infer it 
    result = p', te, ty
