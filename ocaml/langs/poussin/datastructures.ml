@@ -114,6 +114,10 @@ type term =
 (* a pattern is a term and a nature (counterpart of the nature in an implication) *)
 and equation = (term * nature) * term
 
+type definition = Inductive of (symbol, term) (* an inductive type with its terms *)
+		  | Constructor (* a constructor *)
+		  | NoDef (* a symbol without definitions *)
+
 (* context of a term *)
 (* N.B.: all terms are of the level in which they appear *)
 type frame = {
@@ -139,7 +143,7 @@ type frame = {
   equationstack: equation list;
 
   (* a store of definition (lookuped through the Cste term) *)
-  store : (string, (symbol * term * term option)) Hashtbl.t; 
+  store : (string, (symbol * term * definition)) Hashtbl.t; 
 }
 
 let empty_frame = {
@@ -168,3 +172,55 @@ let empty_context = empty_frame::[]
 type poussin_error = FreeError of string
 
 exception PoussinException of poussin_error
+
+module IndexMap = Map.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+module IndexSet = Set.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+(* substitution: from free variables to term *) 
+type substitution = term IndexMap.t;;
+
+(*
+  reduction of terms
+  several strategy are possible:
+  for beta reduction: Lazy or Eager
+  possibility to have strong beta reduction
+  delta: unfold equations (replace cste with their equations)
+  iota: try to match equations l.h.s
+  deltaiotaweak: if after delta reduction (on head of app), a iota reduction fails, then the delta reduction is backtracked
+  deltaiotaweak_armed: just a flag to tell the reduction function that it should raise a IotaReductionFailed
+  zeta: compute the let bindings
+  eta: not sure if needed
+
+  all these different strategy are used for several cases: unification, typechecking, ...
+  
+*)
+type strategy = 
+  | Lazy 
+  | Eager
+
+type reduction_strategy = {
+  beta: strategy;
+  betastrong: bool;
+  delta: bool;
+  iota: bool;
+  deltaiotaweak: bool;
+  deltaiotaweak_armed: bool;
+  zeta: bool;
+  eta: bool;
+}
+
+(* a special exception for the reduction which 
+   signals that an underlying iota reduction fails
+*)
+exception IotaReductionFailed
