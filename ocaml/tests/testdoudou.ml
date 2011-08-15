@@ -115,10 +115,18 @@ let _ = process_definition defs ctxt "(+) {_} {_} True False"
 
 let _ = process_definition defs ctxt "map :: {A B:: Type} -> (f:: A -> B) -> List A -> List B"
 
-let _ = process_definition defs ctxt "\\ (map f []) -> True"
+let _ = process_definition defs ctxt "Nat :: Type"
+let _ = process_definition defs ctxt "O :: Nat"
+let _ = process_definition defs ctxt "S :: Nat -> Nat"
 
-let _ = process_definition defs ctxt "\\ (hd : []) -> a"
+let _ = process_definition defs ctxt "Vec :: Type -> Nat -> Type"
+let _ = process_definition defs ctxt "Empty :: {A :: Type} -> Vec A O"
+let _ = process_definition defs ctxt "Next :: {A :: Type} -> {n:: Nat} -> A -> Vec A n -> Vec A (S n)"
 
-let _ = process_definition defs ctxt "\\ {A::Type} (a :: A) -> a"
+let _ = process_definition defs ctxt "prod :: Type -> Type -> Type"
+let _ = process_definition defs ctxt "pair :: {A B :: Type} -> A -> B -> prod A B"
 
-let _ = process_definition defs ctxt "True || True := Type"
+let _ = process_definition defs ctxt "\\ (Next {prout@(prod A _)} hd Empty) -> prout"
+
+(*let _ = process_definition defs ctxt "\\ (map {A} {_} f []) -> True"*)
+

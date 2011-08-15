@@ -242,6 +242,21 @@ let pos_in (pos1: pos) (pos2: pos) : bool =
   (* and the end of pos2 must be equal or before the end of pos 1*)
   && ((end_line2 < end_line1) || (end_line1 = end_line2 && end_col2 <= end_col1))
 
+(* returns the numbers of bvars introduced by a pattern 
+   we should always have 
+   pattern_size p = List.length (fst (pattern_bvars p)))
+*)
+let rec pattern_size (p: pattern) : int =
+  match p with
+    | PType -> 0
+    | PVar (n, ty) -> 1
+    | PAVar ty -> 0
+    | PCste s -> 0
+    | PTerm _ -> 0
+    | PAlias (n, p, ty) -> 1 + pattern_size p
+    | PApp (s, args, ty) -> 
+      List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
+
 (* computation of free variable in a term *)
 module IndexSet = Set.Make(
   struct
@@ -250,6 +265,7 @@ module IndexSet = Set.Make(
   end
 );;
 
+(* the set of free variable in a term *)
 let rec fv_term (te: term) : IndexSet.t =
   match te with
     | Type | Cste _ | Obj _ -> IndexSet.empty
@@ -277,6 +293,46 @@ and fv_pattern (p: pattern) : IndexSet.t =
     | PAlias (n, p, ty) -> IndexSet.union (fv_term ty) (fv_pattern p)
     | PApp (s, args, ty) ->
       List.fold_left (fun acc (p, _) -> IndexSet.union acc (fv_pattern p)) (fv_term ty) args
+
+(* the set of free variable in a term *)
+let shift_bvterm (s: IndexSet.t) (delta: int) : IndexSet.t =
+  (*fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a*)
+  IndexSet.fold (fun e acc ->
+    if e + delta < 0 then acc else IndexSet.add (e+delta) acc
+  ) s IndexSet.empty
+
+let rec bv_term (te: term) : IndexSet.t =
+  match te with
+    | Type | Cste _ | Obj _ -> IndexSet.empty
+    | TVar i when i >= 0 -> IndexSet.singleton i
+    | TVar i when i < 0 -> IndexSet.empty
+    | AVar -> raise (Failure "fv_term catastrophic: AVar")
+    | TName _ -> raise (Failure "fv_term catastrophic: TName")
+    | App (te, args) ->
+      List.fold_left (fun acc (te, _) -> IndexSet.union acc (bv_term te)) (bv_term te) args
+    | Impl ((s, ty, n), te) ->
+      IndexSet.union (bv_term ty) (shift_bvterm (bv_term te) (-1))
+    | DestructWith eqs ->
+      List.fold_left (fun acc eq -> IndexSet.union acc (bv_equation eq)) IndexSet.empty eqs
+    | SrcInfo (pos, te) -> (bv_term te)
+
+and bv_equation (eq: equation) : IndexSet.t = 
+  let (p, _), te = eq in
+  IndexSet.union (bv_pattern p) (shift_bvterm (bv_term te) (- (pattern_size p)))
+and bv_pattern (p: pattern) : IndexSet.t =
+  match p with
+    | PType | PCste _ -> IndexSet.empty
+    | PTerm te -> bv_term te
+    | PVar (n, ty) -> shift_bvterm (bv_term ty) (-1)
+    | PAVar ty -> bv_term ty
+    | PAlias (n, p, ty) -> shift_bvterm (IndexSet.union (bv_term ty) (bv_pattern p)) (-1)
+    | PApp (s, args, ty) ->
+      snd (List.fold_left 
+	     (fun (i, acc) (p, _) -> 
+	       i + pattern_size p, IndexSet.union acc (shift_bvterm (bv_pattern p) i)
+	     ) 
+	     (0, shift_bvterm (bv_term ty) (pattern_size p)) args
+      )
 
 
 (* function like map, but that can skip elements *)
@@ -340,21 +396,6 @@ let rec accumulate_pattern_destructwith (te: term) : (pattern * nature) list * t
       let (ps, te) = accumulate_pattern_destructwith te in
       (p::ps, te)
     | _ -> ([], te)
-
-(* returns the numbers of bvars introduced by a pattern 
-   we should always have 
-   pattern_size p = List.length (fst (pattern_bvars p)))
-*)
-let rec pattern_size (p: pattern) : int =
-  match p with
-    | PType -> 0
-    | PVar (n, ty) -> 1
-    | PAVar ty -> 0
-    | PCste s -> 0
-    | PTerm _ -> 0
-    | PAlias (n, p, ty) -> 1 + pattern_size p
-    | PApp (s, args, ty) -> 
-      List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
 
 (* utilities for DoudouException *)
 
@@ -480,10 +521,10 @@ and pattern_substitution (s: substitution) (p: pattern) : pattern =
 and shift_substitution (s: substitution) (delta: int) : substitution =
   IndexMap.fold (fun key value acc -> 
     try 
-      let key = if key < 0 then key else 
-	  if delta < 0 then raise (Failure "shift_substitution: catastrophic, negative shifting of bound variables") else key + delta 
-	    in
-      IndexMap.add key (shift_term value delta) acc
+      if key < 0 then 
+	IndexMap.add key (shift_term value delta) acc
+      else 
+	if key + delta < 0 then acc else IndexMap.add (key + delta) (shift_term value delta) acc 
     with
       | DoudouException (Unshiftable_term _) -> acc
   ) s IndexMap.empty
@@ -549,6 +590,23 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (********************************)
 (*      defs/context/frame      *)
 (********************************)
+
+(*
+  get a bounded/free variable frame number
+*)
+let get_var_frame_index (ctxt: context) (i: index) : int =
+  if i >= 0 then i else
+    let res = fold_stop (fun framei frame ->
+      let res = fold_stop (fun () (index, _, _) ->
+	if i = index then Right () else Left ()
+      ) () frame.fvs in
+      match res with
+	| Left _ -> Left (framei+1)
+	| Right _ -> Right framei
+    ) 0 ctxt in
+    match res with
+      | Left _ -> raise (DoudouException (UnknownFVar (i, ctxt)))
+      | Right i -> i
 
 (* build a new frame 
    value is optional
@@ -699,6 +757,14 @@ let fvar_type (ctxt: context) (i: index) : term =
   match lookup with
     | Left _ -> raise (DoudouException (UnknownFVar (i, ctxt)))
     | Right res -> res
+
+(* grab the type of a var *)
+let var_type (ctxt: context) (i: index) : term =
+  if i < 0 then fvar_type ctxt i else bvar_type ctxt i
+
+(* grab the value of a var *)
+let var_value (ctxt: context) (i: index) : term =
+  if i < 0 then fvar_value ctxt i else bvar_value ctxt i
 
 (* extract a substitution from the context *)
 let context2substitution (ctxt: context) : substitution =
@@ -1682,7 +1748,11 @@ and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuff
   )
   )
   <|>(fun pb -> 
-    let te = bracket (parse_pattern_lvl2 defs leftmost) pb in
+    let te = bracket (parse_pattern_lvl1 defs leftmost) pb in
+    [te, Implicit]
+  )
+  <|>(fun pb -> 
+    let te = paren (parse_pattern_lvl1 defs leftmost) pb in
     [te, Implicit]
   )
   <|> (fun pb -> 
@@ -2453,35 +2523,91 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
                   
    
 *)
+
+(* this code is rubbish (computing several times the same thing) but should suffice for now *)
+and bvar_fvar_closure (ctxt: context) (bvar: IndexSet.t) (fvar: IndexSet.t) : IndexSet.t * IndexSet.t =
+  (* fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a *)
+  let bvar' = List.fold_left IndexSet.union IndexSet.empty
+    [(IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (bv_term (var_type ctxt i))
+     ) bvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (bv_term (var_value ctxt i))
+     ) bvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+       IndexSet.union acc (bv_term (var_type ctxt i))
+      ) fvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (bv_term (var_value ctxt i))
+      ) fvar IndexSet.empty)] in
+  let fvar' = List.fold_left IndexSet.union IndexSet.empty
+    [(IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (fv_term (var_type ctxt i))
+     ) bvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (fv_term (var_value ctxt i))
+     ) bvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+       IndexSet.union acc (fv_term (var_type ctxt i))
+      ) fvar IndexSet.empty);
+     (IndexSet.fold (fun i acc -> 
+      IndexSet.union acc (fv_term (var_value ctxt i))
+      ) fvar IndexSet.empty)] in     
+  if IndexSet.subset bvar' bvar && IndexSet.subset fvar' fvar then bvar, fvar else
+    bvar_fvar_closure ctxt (IndexSet.union bvar bvar') (IndexSet.union fvar fvar')
+
+
+
 (* fron-end function as the loop one require to push the bvar of the pattern in the context *)
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
   (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
   let p', te, ty = typeinfer_pattern_loop defs ctxt p in
 
-  
   printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
-  printf "(pattern) %s |- %s :: %s\n" (context2string !ctxt) (pattern2string !ctxt p') (term2string !ctxt ty); flush Pervasives.stdout;
+  printf "(pattern) |- %s \n" (pattern2string !ctxt p'); flush Pervasives.stdout;
+  printf "| |- %s | = %d \n" (pattern2string !ctxt p') (pattern_size p'); flush Pervasives.stdout;
+
+  (* first we create the middle context, from the bounded/free var of the type and those of there value/type *)
+
+  (* here we should compute the set of all free/bound variable in ty
+     closed under addition of the value/type of the variables in set, but only such that their frame is = (for bvar) than the size of pattern
+     
+  *)
+
+  let bvs, fvs = bvar_fvar_closure !ctxt (bv_term ty) (fv_term ty) in  
+
+  (* we order them by frame number *)
+  (* stable_sort : ('a -> 'a -> int) -> 'a list -> 'a list *)
+  let sorted_var_list = List.stable_sort (fun v1 v2 -> compare (get_var_frame_index !ctxt v1) (get_var_frame_index !ctxt v2)) (IndexSet.elements fvs @ IndexSet.elements bvs) in
+
+  printf "ordered variables:\n";
+  let _ = List.map (
+    fun i -> printf "%s := %s :: %s\n" (term2string !ctxt (TVar i)) (term2string !ctxt (var_value !ctxt i)) (term2string !ctxt (var_type !ctxt i))
+  ) (List.rev sorted_var_list) in
+
+  (* we shift the term and the type by the cardinal of f/bvars in ty, just over the bvars of p' in ctxt *)
+  let te = leveled_shift_term te (pattern_size p') (List.length sorted_var_list) in
+  let ty = leveled_shift_term ty (pattern_size p') (List.length sorted_var_list) in
   
+  (* we build a substitution *)
+  let l = map_nth (fun i -> List.nth sorted_var_list (i - 1), TVar (i + pattern_size p' - 1)) (List.length sorted_var_list) in
+  let s = List.fold_left (fun acc (i, v) -> IndexMap.add i v acc) IndexMap.empty l in
+
+  let te = term_substitution s te in
+  let ty = term_substitution s ty in
+
+  (* we input the new frames *)
+  ctxt := context_substitution s (take (pattern_size p') !ctxt) @ (List.map (fun i ->
+    build_new_frame (Name (String.concat "" ["@"; string_of_int i])) (term_substitution s (var_type !ctxt i))
+  ) sorted_var_list
+  ) @ drop (pattern_size p') !ctxt;    
+
+  printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
 
   (* now we should "reconstruct" the pattern using the term *)
   
-  (* first we grab all the free variables in the type, and order them by frame *)
-
-
   raise (Failure "NYI")
-(*
-and reconstruct_pattern (ctxt: context ref) (pattern_bvars_size: int) (p: pattern) (te: term) (ty: term) : pattern =
-  match te with
-    | Type -> PType
-    | Cste s -> PCste s
 
-    (* several cases for variables ... *)
-
-    (* a free variable that appears in the *)
-    | TVar i when i < 0 && -> raise (Failure "NYI")
-    | App (hd, args) -> raise (Failure "NYI")
-    | _ -> PTerm te
-*)
 (* takes a pattern and infer it 
    result = p', te, ty
    where te is the term equivalent to the pattern under its quantification and ty is its types
@@ -2526,7 +2652,7 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       let ty = shift_term ty 1 in      
       let te = shift_term te 1 in
       (* input the frame for n *)
-      let frame = build_new_frame (Name n) ty in
+      let frame = build_new_frame (Name n) ~value:te ty in
       ctxt := frame::!ctxt;
       (* and return the result (we use the most precise term := te) *)
       PAlias (n, p', ty), te, ty
