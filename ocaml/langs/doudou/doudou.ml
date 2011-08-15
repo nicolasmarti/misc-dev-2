@@ -2418,7 +2418,8 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 (* fron-end function as the loop one require to push the bvar of the pattern in the context *)
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
   (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
-  let _, _, _ = typeinfer_pattern_loop defs ctxt p in
+  let p', te, ty = typeinfer_pattern_loop defs ctxt p in
+  (* now we should "reconstruct" the pattern using the term *)
   raise (Failure "NYI")
 
 (* takes a pattern and infer it 
@@ -2470,19 +2471,25 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       (* and return the result (we use the most precise term := te) *)
       PAlias (n, p', ty), te, ty
     | PApp (s, args, ty) -> 
-      (* let's grab the type of the constante *)
-      let _ = constante_type defs s in
-      (* and we infer the arguments against this type *)
-      let args, tes, ty' = (
-	let _ = raise Exit in
-	[], [], Type
+      (* we infer the arguments against this type *)
+      let args, tes, tys = (
+	  List.fold_left ( fun (args, tes, tys) (arg, n) ->
+	    let (arg, te, ty) = typeinfer_pattern_loop defs ctxt arg in
+	    let tes = List.map (fun (te, n) -> shift_term te (pattern_size arg), n) tes in
+	    let tys = List.map (fun ty -> shift_term ty (pattern_size arg)) tys in
+	    (args @ [arg, n], tes @ [te, n], tys @ [ty])	    
+	  ) ([], [], []) args
       ) in
+      (* we have now a generic term for the pattern *)
+      let te = App (Cste s, tes) in
+      (* that we infer *)
+      let te, ty' = typeinfer defs ctxt te in
       (* typecheck the type to Type *)
       let ty, _ = typecheck defs ctxt ty Type in
       (* we unify the types *)
       let ty = unification_term_term defs ctxt ty ty' in
       (* and returns the result *)
-      PApp (s, args, ty), App (Cste s, tes), ty
+      PApp (s, args, ty), te, ty
 
 
 (******************************************)
