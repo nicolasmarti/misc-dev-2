@@ -138,6 +138,6 @@ let _ = process_definition defs ctxt "_ || True := True"
 let _ = process_definition defs ctxt "map"
 
 let _ = process_definition defs ctxt "map f [] := []"
-let _ = process_definition defs ctxt "map f ((:) hd tl) := f hd : map f tl"
+let _ = process_definition defs ctxt "map f (hd:tl) := (f hd) : map f tl"
 
 

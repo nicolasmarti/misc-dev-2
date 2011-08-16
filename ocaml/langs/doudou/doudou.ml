@@ -1775,11 +1775,11 @@ and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuff
   )
   )
   <|>(fun pb -> 
-    let te = bracket (parse_pattern_lvl1 defs leftmost) pb in
+    let te = bracket (parse_pattern defs leftmost) pb in
     [te, Implicit]
   )
   <|>(fun pb -> 
-    let te = paren (parse_pattern_lvl1 defs leftmost) pb in
+    let te = paren (parse_pattern defs leftmost) pb in
     [te, Explicit]
   )
   <|> (fun pb -> 
@@ -2669,6 +2669,8 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
 and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (te: term) (p: pattern) (psz: int): pattern =
   match te, p with
 
+    | _, PCste (Symbol ("_", Nofix)) -> PTerm (shift_term te (- (List.length !ctxt')))
+
     | TVar i, PVar (n, _) when i >= 0 && i >= psz ->
       let i' = i - List.length !ctxt' in
       PTerm (TVar i')
@@ -2698,7 +2700,7 @@ and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (t
 	    let arg = reconstruct_pattern defs ctxt ctxt' arg1 arg2 psz in
 	    (tl1, tl2)::[], acc @ [arg, n1]
 	  | (arg1, Implicit)::tl1, (arg2, Explicit)::tl2 ->
-	    let arg = reconstruct_pattern defs ctxt ctxt' arg1 (PAVar Type) psz in
+	    let arg = reconstruct_pattern defs ctxt ctxt' arg1 (PCste (Symbol ("_", Nofix))) psz in
 	    (tl1, (arg2, Explicit)::tl2)::[], acc @ [arg, Implicit]
 	  | [], [] ->
 	    [], acc
@@ -2708,7 +2710,7 @@ and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (t
       PApp (s2, args, shift_term ty (- (List.length !ctxt')))
      
     | App (Cste s1, args1), PCste s2 ->
-      let args = List.map (fun (arg, n) -> reconstruct_pattern defs ctxt ctxt' arg (PAVar Type) psz, n) args1 in
+      let args = List.map (fun (arg, n) -> reconstruct_pattern defs ctxt ctxt' arg (PCste (Symbol ("_", Nofix))) psz, n) args1 in
       let _, ty = typeinfer defs (ref (List.rev !ctxt' @ !ctxt)) te in
       PApp (s2, args,  shift_term ty (- (List.length !ctxt')))
       
@@ -2736,6 +2738,8 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       let ty, _ = typecheck defs ctxt ty Type in
       (* we create a free var of the type for value *)
       let fv = add_fvar ctxt ty in
+      let frame = build_new_frame (Name "_") ty in
+      ctxt := frame::!ctxt;
       (* returns the result *)
       PAVar ty, TVar fv ,ty
     | PCste s -> 
@@ -2787,9 +2791,10 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
 and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
   (* we infer the pattern *)
   let lhs', lhste, lhsty = typeinfer_pattern_loop defs ctxt lhs in
-
-  (*printf "|- :: %s\n" (term2string !ctxt lhsty);*)
-
+  (*
+  printf "|- :: %s\n" (term2string !ctxt lhsty);
+  printf "%s |-\n" (context2string !ctxt);
+  *)
   (* we typecheck the body *)
   let rhs, _ = typecheck defs ctxt rhs lhsty in
   (* we reconstruct the pattern *)
