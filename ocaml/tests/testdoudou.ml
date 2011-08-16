@@ -133,3 +133,11 @@ let _ = process_definition defs ctxt "\\ (Next {prout@(prod A _)} hd caca@Empty)
 let _ = process_definition defs ctxt "\\ (map {A} {_} f []) -> True"
 
 let _ = process_definition defs ctxt "True || _ := True"
+let _ = process_definition defs ctxt "_ || True := True"
+
+let _ = process_definition defs ctxt "map"
+
+let _ = process_definition defs ctxt "map f [] := []"
+let _ = process_definition defs ctxt "map f ((:) hd tl) := f hd : map f tl"
+
+

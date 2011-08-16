@@ -955,7 +955,7 @@ type pp_option = {
   show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = false; show_indices = false}
+let pp_option = ref {show_implicit = true; show_indices = true}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -2382,7 +2382,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	) in
 	(* we should push the args with there nature ... *)
 	(*printf "(typeinfer Arg in loop) %s\n" (judgment2string !ctxt (App (te, processed_args)) ty);*)
-	let remaining_args, ty = (
+	let remaining_args, ty = (	  
 	  match args, ty with
 	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
 	    (* lots of cases here *)
@@ -2419,8 +2419,17 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      push_nature ctxt Implicit;
 	      (* and we returns the information *)
 	      args, ty
-	    | (hd, n)::_, _ -> 	      
-	      printf "%s (%s), %s\n" (term2string !ctxt hd) (match n with | Explicit -> "Explicit" | Implicit -> "Implicit") (term2string !ctxt ty);
+	    | (hd, n)::_, Impl ((s, ty, n2), te) -> 	      
+	      let args = List.rev (map_nth (fun i ->
+		let [arg] = pop_terms ctxt 1 in
+		let n = pop_nature ctxt in
+		(arg, n)
+	      ) nb_processed_args) in
+	      let [te] = pop_terms ctxt 1 in
+	      printf "%s , %s\n" (term2string !ctxt (App (te, args@[hd,n]))) (term2string !ctxt ty);
+	      printf "%s =/= %s\n"
+		(match n with | Explicit -> "Explicit" | Implicit -> "Implicit")
+		(match n2 with | Explicit -> "Explicit" | Implicit -> "Implicit");
 	      raise (DoudouException (FreeError "terms needs an Explicit argument, but receives an Implicit one"))
 	) in
 	(* before returning we need to repush the (new) type *)
@@ -2774,6 +2783,21 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       (* and returns the result *)
       PApp (s, args, ty), te, ty
 
+(* typechecking for equations where type of l.h.s := type of r.h.s *)
+and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
+  (* we infer the pattern *)
+  let lhs', lhste, lhsty = typeinfer_pattern_loop defs ctxt lhs in
+
+  printf "|- :: %s\n" (term2string !ctxt lhsty);
+
+  (* we typecheck the body *)
+  let rhs, _ = typecheck defs ctxt rhs lhsty in
+  (* we reconstruct the pattern *)
+  let lhs = reconstruct_pattern defs (ref (drop (pattern_size lhs') !ctxt)) (ref (List.rev (take (pattern_size lhs') !ctxt))) lhste lhs' (pattern_size lhs') in
+  (* and here we are *)
+  ctxt := drop (pattern_size lhs') !ctxt;
+  (lhs, rhs) 
+
 
 (******************************************)
 (*        tests with parser               *)
@@ -2820,11 +2844,11 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 	| Equation (p, te) ->
-	  let te = DestructWith [((p, Explicit), te)] in
-	  let te, ty = typeinfer !defs ctxt te in
-	  let te = reduction !defs ctxt clean_term_strat te in
-	  let ty = reduction !defs ctxt clean_term_strat ty in
-	  printf "Equation %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
+	  let p, te = typecheck_equation !defs ctxt p te in
+	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
+			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
+	  let box = token2box token 80 2 in	    
+	  printf "Equation:  %s \n" (box2string box)
 	    
 	| Term te ->
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
