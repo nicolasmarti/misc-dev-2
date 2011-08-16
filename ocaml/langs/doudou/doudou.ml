@@ -2615,6 +2615,7 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
   ) (List.rev sorted_var_list) in
   printf "---------------------\n";
   *)
+
   (* we shift the term and the type by the cardinal of f/bvars in ty, just over the bvars of p' in ctxt *)
   let te = leveled_shift_term te (pattern_size p') (List.length sorted_var_list) in
   let ty = leveled_shift_term ty (pattern_size p') (List.length sorted_var_list) in
@@ -2626,11 +2627,15 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
   let te = term_substitution s te in
   let ty = term_substitution s ty in
 
+  (*printf "%s\n" (context2string !ctxt);*)
+
   (* we input the new frames *)
   ctxt := context_substitution s (take (pattern_size p') !ctxt) @ (List.map (fun i ->
-    build_new_frame (Name (String.concat "" ["@"; string_of_int i])) (term_substitution s (var_type !ctxt i))
+    build_new_frame (if i >= 0 then (bvar_symbol !ctxt i) else (Name (String.concat "" (["@"; string_of_int i])))) (term_substitution s (var_type !ctxt i))
   ) sorted_var_list
-  ) @ drop (pattern_size p') !ctxt;    
+  ) @ drop (pattern_size p') !ctxt;   
+
+  (*printf "%s\n" (context2string !ctxt);*)
 
   (*printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;*)
 
