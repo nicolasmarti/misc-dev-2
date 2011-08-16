@@ -2647,7 +2647,7 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
 
   (* we input the new frames *)
   ctxt := context_substitution s (take (pattern_size p') !ctxt) @ (List.map (fun i ->
-    build_new_frame (if i >= 0 then (bvar_symbol !ctxt i) else (Name (String.concat "" (["@"; string_of_int i])))) (term_substitution s (var_type !ctxt i))
+    build_new_frame (if i >= 0 then (bvar_symbol !ctxt i) else (Name (String.concat "" (["@"; string_of_int i])))) ~nature:Implicit (term_substitution s (var_type !ctxt i))
   ) sorted_var_list
   ) @ drop (pattern_size p') !ctxt;   
 
