@@ -128,9 +128,9 @@ let _ = process_definition defs ctxt "pair :: {A B :: Type} -> A -> B -> prod A 
 
 let _ = process_definition defs ctxt "\\ {A::Type} (a::A) -> a"
 
-let _ = process_definition defs ctxt "\\ (Next {prout@(prod A _)} hd caca@Empty) -> prout"
+let _ = process_definition defs ctxt "\\ (Next {prout@(prod A B)} hd caca@Empty) -> prout"
 
-let _ = process_definition defs ctxt "\\ (map {A} {_} f []) -> True"
+let _ = process_definition defs ctxt "\\ (map f []) -> True"
 
 let _ = process_definition defs ctxt "True || _ := True"
 let _ = process_definition defs ctxt "_ || True := True"

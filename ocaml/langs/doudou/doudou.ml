@@ -1230,6 +1230,9 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
 
+    | PApp (s, args, _) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
+      term2token ctxt (Cste s) p
+
     (* general case *)
     | PApp (s, args, _) ->
       (* we only embed in parenthesis if
