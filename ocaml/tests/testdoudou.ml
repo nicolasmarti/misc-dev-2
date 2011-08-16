@@ -96,7 +96,7 @@ plusType Nat Nat := Nat
 depfold {Nat} (+) O (S (S 0)) :?: 
 (* :?: Nat -> Nat -> Nat *)
 "
-
+(*
 let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
@@ -144,3 +144,10 @@ let _ = process_definition defs ctxt "\\ (b :: Bool) -> b || False"
 
 
 let _ = process_definition defs ctxt "map (\\ (b :: Bool) -> b || False) (True:False:[])"
+*)
+
+let _ = process_definition defs ctxt "List :: Type -> Type"
+let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
+let _ = process_definition defs ctxt "(:) : right, 10 :: {A :: Type} -> A -> List A -> List A"
+let _ = process_definition defs ctxt "map :: {A B:: Type} -> (f:: A -> B) -> List A -> List B"
+let _ = process_definition defs ctxt "map f [] := []"

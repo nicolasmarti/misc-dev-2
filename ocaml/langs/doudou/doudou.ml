@@ -2547,8 +2547,9 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	   empty (_:_) := False
 
       *)
+      raise (Failure "redoing it ...")
       (*printf "(pattern) |- %s \n" (pattern2string !ctxt p); flush Pervasives.stdout;*)
-
+    (*
       (* we grab the inference of the pattern *)
       let c', p', ty = typeinfer_pattern defs ctxt p in
       (* we build the new context for typechecking body *)
@@ -2571,6 +2572,8 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let ty = quantify_Impl c' ty in
       (* and we return them *)
       te, ty
+	*)
+
     | DestructWith eqs ->
       raise (Failure "typeinference of DestructWith with more than 1 destructors not yet implemented")
 
@@ -2581,6 +2584,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := saved_ctxt;
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
 
+(*
 (* this function is a bit special 
    its semantics is:
    typeinfer_pattern defs c p = c', p', ty <->
@@ -2767,10 +2771,10 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       let ty, _ = typecheck defs ctxt ty Type in
       (* we create a free var of the type for value *)
       let fv = add_fvar ctxt ty in
-      let frame = build_new_frame (Name "_") ty in
+      let frame = build_new_frame (Name "_") ~value:(TVar fv) ty in
       ctxt := frame::!ctxt;
       (* returns the result *)
-      PAVar ty, TVar fv ,ty
+      PAVar ty, TVar fv, ty
     | PCste s -> 
       (* just grab the constante type *)
       let ty = constante_type defs s in
@@ -2815,22 +2819,30 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
 
       (* and returns the result *)
       PApp (s, args, ty), te, ty
+	*)
+
+and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term =
+  match p with
+    | PApp (s, args, ty) -> (
+      let sty = constante_type defs s in
+      raise Exit
+    )
+    | _ -> raise Exit
+      
+
 
 (* typechecking for destructors where type of l.h.s := type of r.h.s *)
 and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
   (* we infer the pattern *)
-  let lhs', lhste, lhsty = typeinfer_pattern_loop defs ctxt lhs in
-  (*
-  printf "|- :: %s\n" (term2string !ctxt lhsty);
-  printf "%s |-\n" (context2string !ctxt);
-  *)
-  (* we typecheck the body *)
-  let rhs, _ = typecheck defs ctxt rhs lhsty in
-  (* we reconstruct the pattern *)
-  let lhs = reconstruct_pattern defs (ref (drop (pattern_size lhs') !ctxt)) (ref (List.rev (take (pattern_size lhs') !ctxt))) lhste lhs' (pattern_size lhs') in
-  (* and here we are *)
-  ctxt := drop (pattern_size lhs') !ctxt;
-  (lhs, rhs) 
+
+  let lhs', lhsty = typeinfer_pattern defs ctxt lhs in
+  
+  printf "%s |- %s |-:: %s\n" 
+    (context2string !ctxt)
+    (pattern2string !ctxt lhs')
+    (term2string (input_pattern !ctxt lhs') lhsty);
+
+  raise Exit;
 
 
 (******************************************)
