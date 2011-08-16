@@ -2660,9 +2660,6 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * 
 and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (te: term) (p: pattern) (psz: int): pattern =
   match te, p with
 
-    | TVar i, PVar (n, _) when i < 0 -> 
-      raise (Failure "free var !")
-
     | TVar i, PVar (n, _) when i >= 0 && i >= psz ->
       let i' = i - List.length !ctxt' in
       PTerm (TVar i')
@@ -2671,6 +2668,10 @@ and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (t
       ctxt := List.hd !ctxt' :: !ctxt; ctxt' := List.tl !ctxt';
       let ty = shift_term (bvar_type (List.rev !ctxt' @ !ctxt) i) (- (List.length !ctxt')) in
       PVar (n, ty)
+
+    | TVar i, PAVar _ when i < 0 -> 
+      let ty = shift_term (fvar_type (List.rev !ctxt' @ !ctxt) i) (- (List.length !ctxt')) in
+      PAVar ty
 
     | _, PAVar _ -> PTerm (shift_term te (- (List.length !ctxt')))
     | Type, PType -> PType
