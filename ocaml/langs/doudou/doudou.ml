@@ -47,11 +47,11 @@ type term = Type
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
-	    | DestructWith of equation list
+	    | DestructWith of destructor list
 
 	    | SrcInfo of pos * term
 
-and equation = (pattern * nature) * term
+and destructor = (pattern * nature) * term
 
 (* N.B.: all types are properly scoped w.r.t. bounded var introduce by "preceding" pattern *)
 and pattern = PType
@@ -61,6 +61,8 @@ and pattern = PType
 	      | PTerm of term
 	      | PAlias of name * pattern * term
 	      | PApp of symbol * (pattern * nature) list * term
+
+and equation = pattern * term
 
 (* context of a term *)
 (* N.B.: all terms are of the level in which they appear *)
@@ -84,7 +86,7 @@ type frame = {
   (* the stacks *)
   termstack: term list;
   naturestack: nature list;
-  equationstack: equation list;
+  destructorstack: destructor list;
   patternstack: pattern list;
   
 }
@@ -97,7 +99,7 @@ let empty_frame = {
   fvs = [];
   termstack = [];
   naturestack = [];
-  equationstack = [];
+  destructorstack = [];
   patternstack = [];
 }
 
@@ -109,8 +111,8 @@ let empty_context = empty_frame::[]
 (* definitions *)
 type defs = {
   (* here we store all id in a string *)
-  (* id -> (symbol * type * value) *)
-  store : (string, (symbol * term * term option)) Hashtbl.t;
+  (* id -> (symbol * type * equations) *)
+  store : (string, (symbol * term * equation list)) Hashtbl.t;
   hist : symbol list;
 }
 
@@ -250,7 +252,7 @@ let rec pattern_size (p: pattern) : int =
   match p with
     | PType -> 0
     | PVar (n, ty) -> 1
-    | PAVar ty -> 0
+    | PAVar ty -> 1
     | PCste s -> 0
     | PTerm _ -> 0
     | PAlias (n, p, ty) -> 1 + pattern_size p
@@ -278,10 +280,10 @@ let rec fv_term (te: term) : IndexSet.t =
     | Impl ((s, ty, n), te) ->
       IndexSet.union (fv_term ty) (fv_term te)
     | DestructWith eqs ->
-      List.fold_left (fun acc eq -> IndexSet.union acc (fv_equation eq)) IndexSet.empty eqs
+      List.fold_left (fun acc eq -> IndexSet.union acc (fv_destructor eq)) IndexSet.empty eqs
     | SrcInfo (pos, te) -> (fv_term te)
 
-and fv_equation (eq: equation) : IndexSet.t = 
+and fv_destructor (eq: destructor) : IndexSet.t = 
   let (p, _), te = eq in
   IndexSet.union (fv_pattern p) (fv_term te)
 and fv_pattern (p: pattern) : IndexSet.t =
@@ -313,10 +315,10 @@ let rec bv_term (te: term) : IndexSet.t =
     | Impl ((s, ty, n), te) ->
       IndexSet.union (bv_term ty) (shift_bvterm (bv_term te) (-1))
     | DestructWith eqs ->
-      List.fold_left (fun acc eq -> IndexSet.union acc (bv_equation eq)) IndexSet.empty eqs
+      List.fold_left (fun acc eq -> IndexSet.union acc (bv_destructor eq)) IndexSet.empty eqs
     | SrcInfo (pos, te) -> (bv_term te)
 
-and bv_equation (eq: equation) : IndexSet.t = 
+and bv_destructor (eq: destructor) : IndexSet.t = 
   let (p, _), te = eq in
   IndexSet.union (bv_pattern p) (shift_bvterm (bv_term te) (- (pattern_size p)))
 and bv_pattern (p: pattern) : IndexSet.t =
@@ -387,7 +389,7 @@ let filter_explicit (l: ('a * nature) list) : 'a list =
    return a list of pattern ps and a term te2 such that
    List.fold_right (fun p acc -> DestructWith p acc) ps te2 == te1
    
-   less formally, traversing a term to find the maximum list of DestructWith with only one equation (the next visited term being the r.h.s of the equation)
+   less formally, traversing a term to find the maximum list of DestructWith with only one destructor (the next visited term being the r.h.s of the destructor)
 *)
 
 let rec accumulate_pattern_destructwith (te: term) : (pattern * nature) list * term =
@@ -494,9 +496,9 @@ let rec term_substitution (s: substitution) (te: term) : term =
       Impl ((symb, term_substitution s ty, n),
 	    term_substitution (shift_substitution s 1) te)
     | DestructWith eqs ->
-      DestructWith (List.map (equation_substitution s) eqs)
+      DestructWith (List.map (destructor_substitution s) eqs)
     | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
-and equation_substitution (s: substitution) (eq: equation) : equation =
+and destructor_substitution (s: substitution) (eq: destructor) : destructor =
   let (p, n), te = eq in
   (pattern_substitution s p, n), term_substitution (shift_substitution s (pattern_size p)) te
 and pattern_substitution (s: substitution) (p: pattern) : pattern =
@@ -562,11 +564,11 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       Impl ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
 
     | DestructWith eqs ->
-      DestructWith (List.map (fun eq -> leveled_shift_equation eq level delta) eqs)
+      DestructWith (List.map (fun eq -> leveled_shift_destructor eq level delta) eqs)
 
     | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
 
-and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
+and leveled_shift_destructor (eq: destructor) (level: int) (delta: int) : destructor =
   let (p, n), te = eq in
   (leveled_shift_pattern p level delta, n), leveled_shift_term te (level + pattern_size p) delta
 
@@ -622,7 +624,7 @@ let build_new_frame (s: symbol) ?(value: term = TVar 0) ?(nature: nature = Expli
   fvs = [];
   termstack = [];
   naturestack = [];
-  equationstack = [];
+  destructorstack = [];
   patternstack = [];
 
 }
@@ -684,7 +686,7 @@ let context_substitution (s: substitution) (ctxt: context) : context =
       value = term_substitution s frame.value;
       fvs = List.map (fun (index, ty, value) -> index, term_substitution s ty, term_substitution s value) frame.fvs;
       termstack = List.map (term_substitution s) frame.termstack;
-      equationstack = List.map (equation_substitution s) frame.equationstack;
+      destructorstack = List.map (destructor_substitution s) frame.destructorstack;
       patternstack = List.map (pattern_substitution s) frame.patternstack
     }, shift_substitution s (-1)
   ) s ctxt
@@ -828,7 +830,7 @@ let pop_pattern (ctxt: context ref) : pattern =
   List.hd hd.patternstack
 
 (* unfold a constante *)
-let unfold_constante (defs: defs) (s: symbol) : term option =
+let unfold_constante (defs: defs) (s: symbol) : equation list =
   try 
     (fun (_, _, value) -> value) (Hashtbl.find defs.store (symbol2string s))
   with
@@ -851,9 +853,9 @@ let constante_symbol (defs: defs) (s: symbol) : symbol =
 (* pop a frame *)
 let pop_frame (ctxt: context) : context * frame =
   match List.hd ctxt with
-    | { fvs = []; termstack = []; naturestack = []; equationstack = []; patternstack = []; _} ->
+    | { fvs = []; termstack = []; naturestack = []; destructorstack = []; patternstack = []; _} ->
       List.tl ctxt, List.hd ctxt
-    | { termstack = []; naturestack = []; equationstack = []; patternstack = []; _} ->
+    | { termstack = []; naturestack = []; destructorstack = []; patternstack = []; _} ->
       printf "there is still %d fvars\n in the frame\n" (List.length (List.hd ctxt).fvs);
       raise (Failure "Case not yet supported, pop_frame with still fvs")
     | _ -> raise (DoudouException (PoppingNonEmptyFrame (List.hd ctxt)))
@@ -955,7 +957,7 @@ type pp_option = {
   show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = false; show_indices = false}
+let pp_option = ref {show_implicit = true; show_indices = true}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -972,7 +974,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       else
 	Verbatim (symbol2string (frame.symbol))
     | TVar i when i < 0 -> 
-      Verbatim (String.concat "" ["["; string_of_int i;"]"])
+      Verbatim (String.concat "" ["?["; string_of_int i;"]"])
 
     (* we need to split App depending on the head *)
     (* the case for notation Infix *)
@@ -1118,7 +1120,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	match ps with
 	  (* if ps is empty -> do something basic *)
 	  | [] ->
-	    let eqs = List.map (fun eq -> equation2token ctxt eq) eqs in
+	    let eqs = List.map (fun eq -> destructor2token ctxt eq) eqs in
 	    Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
 	  (* else we do more prettty printing *)
 	  | _ ->
@@ -1142,8 +1144,8 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | TName s -> Box [Verbatim "(TName"; Space 1; Verbatim (symbol2string s); Verbatim ")"]
 
 
-and equation2token (ctxt: context) (eq: equation) : token =
-  (* here we simply print the DestructWith with only one equation *)
+and destructor2token (ctxt: context) (eq: destructor) : token =
+  (* here we simply print the DestructWith with only one destructor *)
   term2token ctxt (DestructWith [eq]) Alone
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
@@ -1152,7 +1154,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PVar (n, _) -> Verbatim n
     | PAVar _ -> Verbatim "_"
     | PCste s -> Verbatim (symbol2string s)
-    | PTerm te -> term2token ctxt te p
+    | PTerm te -> Box [Verbatim "<"; term2token ctxt te p; Verbatim ">"]
     | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
@@ -1827,7 +1829,7 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
 end pb
 
 type definition = Signature of symbol * term
-		  | Equation of pattern * term
+		  | Destructor of pattern * term
 		  | Term of term
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
@@ -1841,7 +1843,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let ty = parse_term defs leftmost pb in
     Signature (s, ty)
   )
-  (* here we should have the Equation parser *)
+  (* here we should have the Destructor parser *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let p = parse_pattern defs leftmost pb in
@@ -1849,7 +1851,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = word ":=" pb in
     let () = whitespaces pb in
     let te = parse_term defs leftmost pb in
-    Equation (p, te)
+    Destructor (p, te)
   )
   (* finally a free term *)
   <|> tryrule (fun pb ->
@@ -1866,8 +1868,8 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
   several strategy are possible:
   for beta reduction: Lazy or Eager
   possibility to have strong beta reduction
-  delta: unfold equations (replace cste with their equations)
-  iota: try to match equations l.h.s
+  delta: unfold destructors (replace cste with their destructors)
+  iota: try to match destructors l.h.s
   deltaiotaweak: if after delta reduction (on head of app), a iota reduction fails, then the delta reduction is backtracked
   deltaiotaweak_armed: just a flag to tell the reduction function that it should raise a IotaReductionFailed
   zeta: compute the let bindings
@@ -1910,7 +1912,7 @@ let unification_strat : reduction_strategy = {
 *)
 exception IotaReductionFailed
 
-let debug = false
+let debug = ref false
 
 (* unification pattern to term *)
 (*
@@ -1919,14 +1921,14 @@ let debug = false
   - we ask for equality of symbol for constant, rather than looking for possible alias
 *)
 let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
-  if debug then printf "unification_pattern_term\n"; flush Pervasives.stdout;
+  if !debug then printf "unification_pattern_term\n"; flush Pervasives.stdout;
   match p, te with
     | PType, Type -> IndexMap.empty
     | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
     | PAVar _, te -> IndexMap.empty
     | PTerm te', te when te' = te -> IndexMap.empty
     | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
-    | PCste s1, Cste s2 when s1 != s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
+    | PCste s1, Cste s2 when s1 <> s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
     | PAlias (n, p, ty), te ->
       (* grab the substitution *)
       let s = unification_pattern_term ctxt p te in
@@ -1959,14 +1961,14 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
 and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
-  if debug then printf "unification %s Vs %s\n" (term2cons te1) (term2cons te2); flush Pervasives.stdout;
+  if !debug then printf "unification\n %s |- %s Vs %s\n" (context2string !ctxt) (term2string !ctxt te1) (term2string !ctxt te2); flush Pervasives.stdout;
   match te1, te2 with
 
     (* first the cases for SrcInfo *)
 
     | SrcInfo (pos, te1), _ -> (
       try 
-	if debug then printf "unification: case (1)\n";
+	if !debug then printf "unification: case (1)\n";
 	unification_term_term defs ctxt te1 te2
       with
 	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
@@ -1974,7 +1976,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     | _, SrcInfo (pos, te2) -> (
       try 
-	if debug then printf "unification: case (2)\n";
+	if !debug then printf "unification: case (2)\n";
 	unification_term_term defs ctxt te1 te2
       with
 	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
@@ -1988,23 +1990,28 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
 
     (* the trivial cases for Type, Cste and Obj *)
-    | Type, Type -> if debug then printf "unification: case (3)\n"; Type
-    | Obj o1, Obj o2 when o1 = o2 -> if debug then printf "unification: case (4)\n"; Obj o1
-    | Cste c1, Cste c2 when c1 = c2 -> if debug then printf "unification: case (5)\n"; Cste c1
-    (* when a term is a constant we just unfold it *)
-    | Cste c1, _ when unfold_constante defs c1 != None -> if debug then printf "unification: case (6)\n"; unification_term_term defs ctxt (fromSome (unfold_constante defs c1)) te2
-    | _, Cste c2 when unfold_constante defs c2 != None -> if debug then printf "unification: case (7)\n"; unification_term_term defs ctxt te1 (fromSome (unfold_constante defs c2))
+    | Type, Type -> if !debug then printf "unification: case (3)\n"; Type
+    | Obj o1, Obj o2 when o1 = o2 -> if !debug then printf "unification: case (4)\n"; Obj o1
+    | Cste c1, Cste c2 when c1 = c2 -> if !debug then printf "unification: case (5)\n"; Cste c1
+
+    | Cste c1, _ when List.length (unfold_constante defs c1) = 1 && fst (List.nth (unfold_constante defs c1) 0) = PCste c1 ->
+      if !debug then printf "unification: case (6)\n"; 
+      unification_term_term defs ctxt (snd (List.nth (unfold_constante defs c1) 0)) te2
+
+    | _, Cste c2 when List.length (unfold_constante defs c2) = 1 && fst (List.nth (unfold_constante defs c2) 0) = PCste c2 ->
+      if !debug then printf "unification: case (7)\n"; 
+      unification_term_term defs ctxt te1 (snd (List.nth (unfold_constante defs c2) 0))
 
     (* the trivial case for variable *)
-    | TVar i1, TVar i2 when i1 = i2 -> if debug then printf "unification: case (8)\n"; TVar i1
+    | TVar i1, TVar i2 when i1 = i2 -> if !debug then printf "unification: case (8)\n"; TVar i1
     (* the case for free variables *)
     (* we need the free var to not be a free var of the term *)
     | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
-      if debug then printf "unification: case (9)\n"; flush Pervasives.stdout;
+      if !debug then printf "unification: case (9)\n"; flush Pervasives.stdout;
       let s = IndexMap.singleton i1 te2 in
-      if debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i1) (term2string !ctxt te2); flush Pervasives.stdout;
+      if !debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i1) (term2string !ctxt te2); flush Pervasives.stdout;
       ctxt := context_substitution s (!ctxt);
-      if debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
+      if !debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
       (* should we rewrite subst in te2 ? a priori no:
 	 1- i not in te2
 	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
@@ -2013,11 +2020,11 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       te2      
     )
     | _, TVar i2 when i2 < 0 && not (IndexSet.mem i2 (fv_term te1))->
-      if debug then printf "unification: case (10)\n"; flush Pervasives.stdout;
+      if !debug then printf "unification: case (10)\n"; flush Pervasives.stdout;
       let s = IndexMap.singleton i2 te1 in
-      if debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i2) (term2string !ctxt te1); flush Pervasives.stdout;
+      if !debug then printf "%s |- %s --> %s \n" (context2string !ctxt) (string_of_int i2) (term2string !ctxt te1); flush Pervasives.stdout;
       ctxt := context_substitution s (!ctxt);
-      if debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
+      if !debug then printf "%s |- \n" (context2string !ctxt); flush Pervasives.stdout;
       (* should we rewrite subst in te2 ? a priori no:
 	 1- i not in te2
 	 2- if s introduce a possible substitution, it means that i was in te2 by transitives substitution
@@ -2025,16 +2032,19 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       *)
       te1
     (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
-    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 != TVar i1 ->
-      if debug then printf "unification: case (11)\n"; 
+    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 <> TVar i1 ->
+      if !debug then printf "unification: case (11)\n"; 
       unification_term_term defs ctxt (bvar_value !ctxt i1) te2
-    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 != TVar i2 ->
-      if debug then printf "unification: case (12)\n"; 
+    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 <> TVar i2 ->
+      if !debug then printf "unification: case (12)\n"; 
+      assert (bvar_value !ctxt i2 <> TVar i2);
+      printf "%d --> %s (%s)\n" i2 (match bvar_value !ctxt i2 with | TVar i -> string_of_int i | _ -> "???") (term2cons (bvar_value !ctxt i2));
+      printf "%s --> %s\n" (term2string !ctxt (TVar i2)) (term2string !ctxt (bvar_value !ctxt i2));
       unification_term_term defs ctxt te1 (bvar_value !ctxt i2)
 
     (* the case of two application: with not the same arity *)
-    | App (hd1, args1), App (hd2, args2) when List.length args1 != List.length args2 ->
-      if debug then printf "unification: case (13)\n"; 
+    | App (hd1, args1), App (hd2, args2) when List.length args1 <> List.length args2 ->
+      if !debug then printf "unification: case (13)\n"; 
       (* first we try to change them such that they have the same number of arguments and try to match them *)
       let min_arity = min (List.length args1) (List.length args2) in
       let te1' = if List.length args1 = min_arity then te1 else App (App (hd1, take (List.length args1 - min_arity) args1), drop (List.length args1 - min_arity) args1) in
@@ -2056,7 +2066,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       )
     (* the case of two application with same arity *)
     | App (hd1, args1), App (hd2, args2) when List.length args1 = List.length args2 ->
-      if debug then printf "unification: case (14)\n"; 
+      if !debug then printf "unification: case (14)\n"; 
       (* first we save the context and try to unify all term component *)
       let saved_ctxt = !ctxt in
       (try
@@ -2064,7 +2074,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	 (* we build a list where arguments of te1 and te2 are alternate *)
 	 let rev_arglist = List.fold_left (
 	   fun acc ((arg1, n1), (arg2, n2)) ->
-	     if n1 != n2 then
+	     if n1 <> n2 then
 	     (* if both nature are different -> no unification ! *)
 	       raise (DoudouException (NoUnification (!ctxt, te1, te2)))
 	     else  
@@ -2099,19 +2109,19 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       )	
     (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
     | App (hd1, args1), _ ->
-      if debug then printf "unification: case (15)\n"; 
+      if !debug then printf "unification: case (15)\n"; 
       let te1' = reduction defs ctxt unification_strat te1 in
       if te1 = te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
     | _, App (hd2, args2) ->
-      if debug then printf "unification: case (16)\n"; 
+      if !debug then printf "unification: case (16)\n"; 
       let te2' = reduction defs ctxt unification_strat te2 in
       if te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
 
     (* the impl case: only works if both are impl *)
     | Impl ((s1, ty1, n1), te1), Impl ((s2, ty2, n2), te2) ->
-      if debug then printf "unification: case (17)\n"; 
+      if !debug then printf "unification: case (17)\n"; 
       (* the symbol is not important, yet the nature is ! *)
-      if n1 != n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
+      if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
 	(* we push a frame *)
@@ -2119,8 +2129,8 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	ctxt := frame::!ctxt;
 	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	let s = context2substitution !ctxt in
-	let te1 = term_substitution s te1 in
-	let te2 = term_substitution s te2 in
+	let te1 = term_substitution s (reduction defs ctxt unification_strat te1) in
+	let te2 = term_substitution s (reduction defs ctxt unification_strat te2) in
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
@@ -2136,11 +2146,11 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     (* for all the rest: I do not know ! *)
     | _ -> 
       printf "WARNING: unification_term_term: case not explicitely defined\n";
+      printf "unification\n %s |- %s Vs %s\n" (context2string !ctxt) (term2string !ctxt te1) (term2string !ctxt te2); flush Pervasives.stdout;
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
-  (*printf "reduction %s |- %s\n" (context2string !ctxt) (term2string !ctxt te);*)
-  if debug then printf "reduction_term_term\n"; flush Pervasives.stdout;
+  if !debug then printf "reduction %s |- %s\n" (context2string !ctxt) (term2string !ctxt te);
   match te with
     | SrcInfo (pos, te) -> (
       try 
@@ -2152,15 +2162,22 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | Type -> Type
     (* without delta reduction we do unfold *)
     | Cste c1 when not strat.delta -> te
+
+
     (* with delta reduction we unfold *)
-    | Cste c1 when strat.delta && unfold_constante defs c1 != None -> fromSome (unfold_constante defs c1)
-    | Cste c1 when strat.delta && unfold_constante defs c1 = None -> te
+    | Cste c1 when strat.delta -> (
+      match unfold_constante defs c1 with
+	| [PCste c1, te] -> te
+	| _ -> te
+    )
 
     | Obj o -> te
 
     (* for both free and bound variables we have their value in the context *)
-    | TVar i when i >= 0 && bvar_value !ctxt i != TVar i -> bvar_value !ctxt i
-    | TVar i when i < 0 && fvar_value !ctxt i != TVar i -> fvar_value !ctxt i
+    | TVar i when i >= 0 && bvar_value !ctxt i <> TVar i -> bvar_value !ctxt i
+    | TVar i when i >= 0 -> te
+    | TVar i when i < 0 && fvar_value !ctxt i <> TVar i -> fvar_value !ctxt i
+    | TVar i when i < 0 -> te
 
     (* trivial error cases *) 
     | AVar -> raise (Failure "reduction catastrophic: AVar")
@@ -2208,18 +2225,26 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	  
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
-	| App (Cste c1, args) when strat.deltaiotaweak && unfold_constante defs c1 != None -> (
-	  (* first we save the context *)
-	  let saved_ctxt = !ctxt in
-	  (* we unfold the constante *)
-	  let te1 = fromSome (unfold_constante defs c1) in
-	  try 
-	    reduction defs ctxt {strat with deltaiotaweak_armed = true} (App (te1, args))
-	  with
-	    | IotaReductionFailed -> 
-	  (* we restore the context *)
-	      ctxt := saved_ctxt;
-	      App (Cste c1, args)
+	| App (Cste c1, args) when unfold_constante defs c1 <> [] -> (
+	  (* we reduce the arguments *)
+	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
+	  (* we have our term *)
+	  let te = App (Cste c1, args) in
+	  (* we try all the possible equations *)
+	  let res = fold_stop (fun () (p, body) ->
+	      (* we could check that n = argn, but it should have been already checked *)
+	      (* can we unify the pattern ? *)
+	      try 
+		let r = unification_pattern_term !ctxt p te in
+		let te = term_substitution r te in
+		let te = shift_term te (- (IndexMap.cardinal r)) in
+		Right te
+	      with
+		| DoudouException (NoMatchingPattern _) -> Left ()
+	    ) () (unfold_constante defs c1) in
+	  match res with
+	    | Left () -> te
+	    | Right te -> te
 	)
 
 	(* App is right associative ... *)
@@ -2234,7 +2259,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	    let argte = reduction defs ctxt strat argte in
 	    (* yet it means that the arguments are reduce a lots of times .... so remove the next line, such that only the arg needed will be reduce *)
 	    (*let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in*)
-	    (* we try all the equation until finding one that unify with arg *)
+	    (* we try all the destructor until finding one that unify with arg *)
 	    let match_pattern = fold_stop (fun () ((p, n), body) ->
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
@@ -2278,8 +2303,8 @@ and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
     | _ -> 0
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
-  (*printf "(typecheck) %s\n" (judgment2string !ctxt te ty);*)
-  if debug then printf "typecheck\n"; flush Pervasives.stdout;
+  if !debug then printf "(typecheck) %s\n" (judgment2string !ctxt te ty);
+  (*if !debug then printf "typecheck\n"; flush Pervasives.stdout;*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -2320,8 +2345,8 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
       
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
-  (*printf "(typeinfer) %s\n" (judgment2string !ctxt te (TName (Name "???")));*)
-  if debug then printf "typeinfer\n"; flush Pervasives.stdout;
+  if !debug then printf "(typeinfer) %s\n" (judgment2string !ctxt te (TName (Name "???")));
+  (*if !debug then printf "typeinfer\n"; flush Pervasives.stdout;*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -2499,7 +2524,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	c |- ({B :: Type} := (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := False) :: {B :: Type} -> (s :: List B) -> ((map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := Bool) s
 
 
-	when there is several equations, the type of their patterns should be the same (and there nature too)
+	when there is several destructors, the type of their patterns should be the same (and there nature too)
 
 	c |- (p0, n) := te0 | ... | (pi, n) := tei
 
@@ -2547,7 +2572,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       (* and we return them *)
       te, ty
     | DestructWith eqs ->
-      raise (Failure "typeinference of DestructWith with more than 1 equations not yet implemented")
+      raise (Failure "typeinference of DestructWith with more than 1 destructors not yet implemented")
 
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -2684,6 +2709,7 @@ and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (t
       PVar (n, ty)
 
     | TVar i, PAVar _ when i < 0 -> 
+      ctxt := List.hd !ctxt' :: !ctxt; ctxt' := List.tl !ctxt';
       let ty = shift_term (fvar_type (List.rev !ctxt' @ !ctxt) i) (- (List.length !ctxt')) in
       PAVar ty
 
@@ -2790,7 +2816,7 @@ and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : patte
       (* and returns the result *)
       PApp (s, args, ty), te, ty
 
-(* typechecking for equations where type of l.h.s := type of r.h.s *)
+(* typechecking for destructors where type of l.h.s := type of r.h.s *)
 and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
   (* we infer the pattern *)
   let lhs', lhste, lhsty = typeinfer_pattern_loop defs ctxt lhs in
@@ -2839,7 +2865,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
     let saved_defs = !defs in
     try
       let def = parse_definition !defs pos pb in
-      match def with
+      let _ = ( match def with
 	| Signature (s, ty) ->
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty Type in	  
@@ -2847,11 +2873,11 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (*let [ty] = flush_fvars ctxt [ty] in*)
 	  (* N.B.: here we should assert that there is not more free variables *)
 	  (* update the definitions *)
-	  Hashtbl.add !defs.store (symbol2string s) (s, ty, None);
+	  Hashtbl.add !defs.store (symbol2string s) (s, ty, []);
 	  defs := {!defs with hist = s::!defs.hist };
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
-	| Equation (p, te) ->
+	| Destructor (p, te) ->
 	  let p, te = typecheck_equation !defs ctxt p te in
 	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
 			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
@@ -2862,7 +2888,6 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
-	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty);*)
 	  let te = reduction !defs ctxt clean_term_strat te in
 	  let ty = reduction !defs ctxt clean_term_strat ty in
 	  (* we flush the free vars so far *)
@@ -2871,6 +2896,8 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* just print the result *)
 	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)*)
 	  printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
+      ) in
+      assert (List.length !ctxt = 1)
     with
       | NoMatch -> 
 	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
