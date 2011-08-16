@@ -2825,6 +2825,33 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
   match p with
     | PApp (s, args, ty) -> (
       let sty = constante_type defs s in
+      printf "sty := %s\n" (term2string !ctxt sty);
+
+      let args = fold_cont (fun (ty, adone) args ->
+	let ty = (
+	  match ty with
+	    | Impl _ -> ty
+	    | _ -> reduction defs ctxt unification_strat ty
+	) in
+	match args, ty with
+	  | (arg, n1)::tl, Impl ((_, _, n2), _) when n1 = n2 ->	    	    
+	    printf "natures match\n";
+	    printf "%s\n" (pattern2string !ctxt arg);
+	    printf "%s\n" (term2string !ctxt ty);
+	    
+	    (* we infer the type of the argument *)
+	    let (arg, argty) = typeinfer_pattern defs ctxt arg in
+	    (* we need to shift the type *)
+	    let Impl ((s, sty, _), te) = shift_term ty (pattern_size arg) in
+	    
+	    raise Exit
+	  | (arg, Explicit)::tl, Impl ((_, _, Implicit), _) ->
+	    printf "add an Implicit\n";
+	    (PAVar AVar, Implicit)::args, (ty, adone)
+	  | _ ->
+	    raise (Failure "bad case")
+      ) (sty, []) args in
+
       raise Exit
     )
     | _ -> raise Exit
@@ -2835,7 +2862,14 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
 and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
   (* we infer the pattern *)
 
+  printf "%s |- %s := %s\n" 
+    (context2string !ctxt)
+    (pattern2string !ctxt lhs)
+    (term2string (input_pattern !ctxt lhs) rhs);
+
   let lhs', lhsty = typeinfer_pattern defs ctxt lhs in
+
+  ctxt := fst (pop_frames !ctxt (pattern_size lhs'));
   
   printf "%s |- %s |-:: %s\n" 
     (context2string !ctxt)
