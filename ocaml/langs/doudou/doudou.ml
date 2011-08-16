@@ -1044,6 +1044,13 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
 
+    (* the case with DestructWith *)
+    | App (DestructWith [(p, n1), body], (arg, n2)::[]) when n1 = n2 ->
+      Box [Verbatim "let"; Space 1;
+	   pattern2token ctxt p Alone; Space 1; Verbatim ":="; Space 1;
+	   term2token ctxt arg Alone; Space 1; Verbatim "in"; Space 1;
+	   let ctxt = input_pattern ctxt p in term2token ctxt body Alone]
+	   
     (* if we have only implicit argument (and if we don't want to print them, then we are not really considered as a App  *)
     | App (te, args) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
       term2token ctxt te p
@@ -2517,7 +2524,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let [body; bodyty] = flush_fvars ctxt [body; bodyty] in
       ctxt := fst (pop_frames !ctxt (pattern_size p'));
       let te = DestructWith [(p', n), body] in
-      let ty = Impl ((pattern2symbol p', ty, n), App (DestructWith [(p', n), leveled_shift_term bodyty (pattern_size p') 1], [TVar 0, Explicit])) in
+      let ty = Impl ((pattern2symbol p', ty, n), App (DestructWith [(p', n), leveled_shift_term bodyty (pattern_size p') 1], [TVar 0, n])) in
 
       (* we grab back the c' *)
       let (ctxt', c') = pop_frames !ctxt (List.length c') in
