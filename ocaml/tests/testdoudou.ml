@@ -126,7 +126,9 @@ let _ = process_definition defs ctxt "Next :: {A :: Type} -> {n:: Nat} -> A -> V
 let _ = process_definition defs ctxt "prod :: Type -> Type -> Type"
 let _ = process_definition defs ctxt "pair :: {A B :: Type} -> A -> B -> prod A B"
 
-let _ = process_definition defs ctxt "\\ (Next {prout@(prod A _)} hd Empty) -> prout"
+let _ = process_definition defs ctxt "\\ {A::Type} (a::A) -> a"
+
+let _ = process_definition defs ctxt "\\ (Next {prout@(prod A _)} hd caca@Empty) -> prout"
 
 (*let _ = process_definition defs ctxt "\\ (map {A} {_} f []) -> True"*)
 
