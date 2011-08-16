@@ -955,7 +955,7 @@ type pp_option = {
   show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = true; show_indices = true}
+let pp_option = ref {show_implicit = false; show_indices = false}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -1780,7 +1780,7 @@ and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuff
   )
   <|>(fun pb -> 
     let te = paren (parse_pattern_lvl1 defs leftmost) pb in
-    [te, Implicit]
+    [te, Explicit]
   )
   <|> (fun pb -> 
     let te = parse_pattern_lvl2 defs leftmost pb in
@@ -2788,7 +2788,7 @@ and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: ter
   (* we infer the pattern *)
   let lhs', lhste, lhsty = typeinfer_pattern_loop defs ctxt lhs in
 
-  printf "|- :: %s\n" (term2string !ctxt lhsty);
+  (*printf "|- :: %s\n" (term2string !ctxt lhsty);*)
 
   (* we typecheck the body *)
   let rhs, _ = typecheck defs ctxt rhs lhsty in
