@@ -176,5 +176,13 @@ let _ = process_definition defs ctxt "Nat :: Type"
 let _ = process_definition defs ctxt "O :: Nat"
 let _ = process_definition defs ctxt "S :: Nat -> Nat"
 
-let _ = process_definition defs ctxt "(+) : right, 20 :: Nat -> Nat -> Nat"
+let _ = process_definition defs ctxt "plusType :: Type -> Type -> Type"
+let _ = process_definition defs ctxt "(+) : right, 20 :: {A B :: Type } -> A -> B -> plusType A B"
+
+let _ = process_definition defs ctxt "plusType Nat Nat := Nat"
+let _ = process_definition defs ctxt "(+) {Nat} {Nat} O x := x"
+let _ = process_definition defs ctxt "(+) {Nat} {Nat} x O := x"
+let _ = process_definition defs ctxt "(+) {Nat} {Nat} (S x) y := S (x + y)"
+
 let _ = process_definition defs ctxt "S O + S O"
+
