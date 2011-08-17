@@ -216,4 +216,15 @@ let _ = process_definition defs ctxt "foldl f acc (hd:tl) := foldl f (f acc hd) 
 
 let _ = process_definition defs ctxt "foldl ((+) {Nat} {Nat}) O (O : S O : [])"
 
+let _ = process_definition defs ctxt "T :: Type -> Type -> Nat -> Type"
+let _ = process_definition defs ctxt "T A B O := B"
+let _ = process_definition defs ctxt "T A B (S n) := A -> T A B n"
+
+let _ = process_definition defs ctxt "depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n"
+
+(*
+  these examples are failing
+let _ = process_definition defs ctxt "depfold f acc O := acc"
+let _ = process_definition defs ctxt "depfold f acc (S n) := (x := depfold f (f acc x) n)"
+*)
 
