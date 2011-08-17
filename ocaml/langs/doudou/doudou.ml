@@ -47,18 +47,14 @@ type term = Type
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
-	    | DestructWith of destructor list
 
 	    | SrcInfo of pos * term
-
-and destructor = (pattern * nature) * term
 
 (* N.B.: all types are properly scoped w.r.t. bounded var introduce by "preceding" pattern *)
 and pattern = PType
 	      | PVar of name * term
 	      | PAVar of term
 	      | PCste of symbol
-	      | PTerm of term
 	      | PAlias of name * pattern * term
 	      | PApp of symbol * (pattern * nature) list * term
 
@@ -86,7 +82,6 @@ type frame = {
   (* the stacks *)
   termstack: term list;
   naturestack: nature list;
-  destructorstack: destructor list;
   patternstack: pattern list;
   
 }
@@ -99,7 +94,6 @@ let empty_frame = {
   fvs = [];
   termstack = [];
   naturestack = [];
-  destructorstack = [];
   patternstack = [];
 }
 
@@ -157,7 +151,6 @@ let rec term2cons (te: term) : string =
     | TName _ -> "TName"
     | App _ -> "App"
     | Impl _ -> "Impl"
-    | DestructWith _ -> "DestructWith"
     | SrcInfo _ -> "SrcInfo"
 
 (* set the outermost pattern type *)
@@ -260,7 +253,6 @@ let rec pattern_size (p: pattern) : int =
     | PVar (n, ty) -> 1
     | PAVar ty -> 1
     | PCste s -> 0
-    | PTerm _ -> 0
     | PAlias (n, p, ty) -> 1 + pattern_size p
     | PApp (s, args, ty) -> 
       List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
@@ -285,17 +277,11 @@ let rec fv_term (te: term) : IndexSet.t =
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
     | Impl ((s, ty, n), te) ->
       IndexSet.union (fv_term ty) (fv_term te)
-    | DestructWith eqs ->
-      List.fold_left (fun acc eq -> IndexSet.union acc (fv_destructor eq)) IndexSet.empty eqs
     | SrcInfo (pos, te) -> (fv_term te)
 
-and fv_destructor (eq: destructor) : IndexSet.t = 
-  let (p, _), te = eq in
-  IndexSet.union (fv_pattern p) (fv_term te)
 and fv_pattern (p: pattern) : IndexSet.t =
   match p with
     | PType | PCste _ -> IndexSet.empty
-    | PTerm te -> fv_term te
     | PVar (n, ty) -> fv_term ty
     | PAVar ty -> fv_term ty
     | PAlias (n, p, ty) -> IndexSet.union (fv_term ty) (fv_pattern p)
@@ -320,17 +306,11 @@ let rec bv_term (te: term) : IndexSet.t =
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (bv_term te)) (bv_term te) args
     | Impl ((s, ty, n), te) ->
       IndexSet.union (bv_term ty) (shift_bvterm (bv_term te) (-1))
-    | DestructWith eqs ->
-      List.fold_left (fun acc eq -> IndexSet.union acc (bv_destructor eq)) IndexSet.empty eqs
     | SrcInfo (pos, te) -> (bv_term te)
 
-and bv_destructor (eq: destructor) : IndexSet.t = 
-  let (p, _), te = eq in
-  IndexSet.union (bv_pattern p) (shift_bvterm (bv_term te) (- (pattern_size p)))
 and bv_pattern (p: pattern) : IndexSet.t =
   match p with
     | PType | PCste _ -> IndexSet.empty
-    | PTerm te -> bv_term te
     | PVar (n, ty) -> shift_bvterm (bv_term ty) (-1)
     | PAVar ty -> bv_term ty
     | PAlias (n, p, ty) -> shift_bvterm (IndexSet.union (bv_term ty) (bv_pattern p)) (-1)
@@ -391,20 +371,6 @@ let filter_explicit (l: ('a * nature) list) : 'a list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
     
 
-(* this function take a term te1 and
-   return a list of pattern ps and a term te2 such that
-   List.fold_right (fun p acc -> DestructWith p acc) ps te2 == te1
-   
-   less formally, traversing a term to find the maximum list of DestructWith with only one destructor (the next visited term being the r.h.s of the destructor)
-*)
-
-let rec accumulate_pattern_destructwith (te: term) : (pattern * nature) list * term =
-  match te with
-    | DestructWith ([(p, te)]) ->
-      let (ps, te) = accumulate_pattern_destructwith te in
-      (p::ps, te)
-    | _ -> ([], te)
-
 (* utilities for DoudouException *)
 
 (* makes error more precise *)
@@ -443,7 +409,6 @@ let error_pos (err: doudou_error) (pos: pos) =
 let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun s acc -> Impl ((s, ty, nature), acc)) symbols body
 
-
 let rec destruct_impl (ty: term) : (symbol * term * nature) list * term =
   match ty with
     | SrcInfo (pos, te) -> destruct_impl te
@@ -452,21 +417,6 @@ let rec destruct_impl (ty: term) : (symbol * term * nature) list * term =
       e::l, te
     | _ -> [], ty
 
-(* build a destruct with: no shifting in types !!! *)
-let build_destructwith (patterns: (pattern * nature) list) (body: term) : term =
-  List.fold_right (fun p acc -> DestructWith ([p, acc])) patterns body
-
-let fromSome (e: 'a option) : 'a =
-  let Some e = e in e
-
-(* generate a name for a given pattern *)
-let pattern2symbol (p: pattern) : symbol =
-  match p with
-    | PAlias (n, _, _) -> Name n
-    | PVar (n, _) -> Name n
-    | PAVar _ -> Symbol ("_", Nofix)
-    | _ -> Name "@pattern"
-  
 
 (*************************************)
 (*      substitution/rewriting       *)
@@ -510,18 +460,13 @@ let rec term_substitution (s: substitution) (te: term) : term =
     | Impl ((symb, ty, n), te) ->
       Impl ((symb, term_substitution s ty, n),
 	    term_substitution (shift_substitution s 1) te)
-    | DestructWith eqs ->
-      DestructWith (List.map (destructor_substitution s) eqs)
     | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
-and destructor_substitution (s: substitution) (eq: destructor) : destructor =
-  let (p, n), te = eq in
-  (pattern_substitution s p, n), term_substitution (shift_substitution s (pattern_size p)) te
+
 and pattern_substitution (s: substitution) (p: pattern) : pattern =
   match p with
     | PType -> PType
     | PVar (n, ty) -> PVar (n, term_substitution s ty)
     | PCste s -> PCste s
-    | PTerm te -> PTerm (term_substitution s te)
     | PAlias (n, p, ty) -> PAlias (n, pattern_substitution s p, term_substitution (shift_substitution s (pattern_size p)) ty)
     | PApp (symb, args, ty) ->
       PApp (symb,
@@ -578,21 +523,13 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | Impl ((s, ty, n), te) ->
       Impl ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
 
-    | DestructWith eqs ->
-      DestructWith (List.map (fun eq -> leveled_shift_destructor eq level delta) eqs)
-
     | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
-
-and leveled_shift_destructor (eq: destructor) (level: int) (delta: int) : destructor =
-  let (p, n), te = eq in
-  (leveled_shift_pattern p level delta, n), leveled_shift_term te (level + pattern_size p) delta
 
 and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
   match p with
     | PType -> PType
     | PCste s -> PCste s
     | PVar (n, ty) -> PVar (n, leveled_shift_term ty level delta)
-    | PTerm te -> PTerm (leveled_shift_term te level delta)
     | PAVar ty -> PAVar (leveled_shift_term ty level delta)
     | PAlias (s, p, ty) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty (level + pattern_size p) delta)
     | PApp (s, args, ty) ->
@@ -639,7 +576,6 @@ let build_new_frame (s: symbol) ?(value: term = TVar 0) ?(nature: nature = Expli
   fvs = [];
   termstack = [];
   naturestack = [];
-  destructorstack = [];
   patternstack = [];
 
 }
@@ -665,7 +601,6 @@ let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
     | PVar (n, ty) -> [n, ty, TVar 0], TVar 0
     | PAVar ty -> ["_", ty, TVar 0], TVar 0
     | PCste s -> [] , Cste s
-    | PTerm te -> [], te
     | PAlias (n, p, ty) -> 
       let l, te = pattern_bvars p in
       (* the value is shift by one (under the alias-introduced var) *)
@@ -701,7 +636,6 @@ let context_substitution (s: substitution) (ctxt: context) : context =
       value = term_substitution s frame.value;
       fvs = List.map (fun (index, ty, value) -> index, term_substitution s ty, term_substitution s value) frame.fvs;
       termstack = List.map (term_substitution s) frame.termstack;
-      destructorstack = List.map (destructor_substitution s) frame.destructorstack;
       patternstack = List.map (pattern_substitution s) frame.patternstack
     }, shift_substitution s (-1)
   ) s ctxt
@@ -868,9 +802,9 @@ let constante_symbol (defs: defs) (s: symbol) : symbol =
 (* pop a frame *)
 let pop_frame (ctxt: context) : context * frame =
   match List.hd ctxt with
-    | { fvs = []; termstack = []; naturestack = []; destructorstack = []; patternstack = []; _} ->
+    | { fvs = []; termstack = []; naturestack = []; patternstack = []; _} ->
       List.tl ctxt, List.hd ctxt
-    | { termstack = []; naturestack = []; destructorstack = []; patternstack = []; _} ->
+    | { termstack = []; naturestack = []; patternstack = []; _} ->
       printf "there is still %d fvars\n in the frame\n" (List.length (List.hd ctxt).fvs);
       raise (Failure "Case not yet supported, pop_frame with still fvs")
     | _ -> raise (DoudouException (PoppingNonEmptyFrame (List.hd ctxt)))
@@ -913,13 +847,6 @@ let add_fvar (ctxt: context ref) (ty: term) : int =
   ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar next_fvar_index)::frame.fvs})::List.tl !ctxt;
   next_fvar_index
 
-
-(* quantify by DestructWith a term, using a context *)
-let rec quantify_DestructWith (ctxt: context) (te: term) : term =
-  match ctxt with
-    | [] -> te
-    | hd::tl ->
-      quantify_DestructWith tl (DestructWith [(PVar (symbol2string hd.symbol, shift_term hd.ty (-1)), hd.nature), te])
 
 (* quantify by Impl a term, using a context *)
 let rec quantify_Impl (ctxt: context) (te: term) : term =
@@ -1061,13 +988,6 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
 
-    (* the case with DestructWith *)
-    | App (DestructWith [(p, n1), body], (arg, n2)::[]) when n1 = n2 ->
-      Box [Verbatim "let"; Space 1;
-	   pattern2token ctxt p Alone; Space 1; Verbatim ":="; Space 1;
-	   term2token ctxt arg Alone; Space 1; Verbatim "in"; Space 1;
-	   let ctxt = input_pattern ctxt p in term2token ctxt body Alone]
-	   
     (* if we have only implicit argument (and if we don't want to print them, then we are not really considered as a App  *)
     | App (te, args) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
       term2token ctxt te p
@@ -1120,48 +1040,10 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
-    | DestructWith eqs ->
-      (* we do not put parenthesis only when
-	 - we are alone
-      *)
-      (
-	match p with
-	  | Alone -> (fun x -> x)
-	  | _ -> withParen
-      )
-      (
-	(* we extract the accumulation of destructwith *)
-	let (ps, te) = accumulate_pattern_destructwith te in
-	match ps with
-	  (* if ps is empty -> do something basic *)
-	  | [] ->
-	    let eqs = List.map (fun eq -> destructor2token ctxt eq) eqs in
-	    Box (intercalates [Newline; Verbatim "|"; Space 1] eqs)
-	  (* else we do more prettty printing *)
-	  | _ ->
-	    let (ps, ctxt) = List.fold_left (fun (ps, ctxt) (p, nature)  -> 
-
-	      (* N.B.: we are printing even the implicit arguments ... is it always a good thing ? *)
-
-	      (* we print the pattern *)
-	      let pattern = (if nature = Implicit then withBracket else fun x -> x) (pattern2token ctxt p (InArg nature)) in
-	      (* grab the underlying context *)
-	      let ctxt = input_pattern ctxt p in
-	      (* we return the whole thing *)
-	      (* NB: for sake of optimization we return a reversed list of pattern, which are reversed in the final box *)
-	      ((pattern::ps), ctxt)
-	    ) ([], ctxt) ps in
-	      let te = term2token ctxt te Alone in
-	      Box (intercalate (Space 1) (List.rev ps) @ [Space 1; Verbatim ":="; Space 1; te])
-      )
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
     (*| TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")*)
     | TName s -> Box [Verbatim "(TName"; Space 1; Verbatim (symbol2string s); Verbatim ")"]
 
-
-and destructor2token (ctxt: context) (eq: destructor) : token =
-  (* here we simply print the DestructWith with only one destructor *)
-  term2token ctxt (DestructWith [eq]) Alone
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
   match pattern with
@@ -1169,7 +1051,6 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PVar (n, _) -> Verbatim n
     | PAVar _ -> Verbatim "_"
     | PCste s -> Verbatim (symbol2string s)
-    | PTerm te -> Box [Verbatim "<"; term2token ctxt te p; Verbatim ">"]
     | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
@@ -1713,19 +1594,6 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
     let () =  whitespaces pb in
     SrcInfo (pos, AVar)
   ) 
-  (* just a lambda here *)
-  <|> tryrule (fun pb ->
-    let () = whitespaces pb in
-    let () = word "\\" pb in    
-    let () = whitespaces pb in
-    let patterns = List.flatten (separatedBy (parse_pattern_arguments defs leftmost) whitespaces pb) in
-    let () =  whitespaces pb in
-    let () = word "->" pb in
-    let () =  whitespaces pb in
-    let body = parse_term defs leftmost pb in
-    let () =  whitespaces pb in
-    build_destructwith patterns body
-  ) 
   <|> tryrule (fun pb -> 
     let () =  whitespaces pb in
     let s, pos = with_pos (parse_symbol_name defs) pb in
@@ -1844,7 +1712,7 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
 end pb
 
 type definition = Signature of symbol * term
-		  | Destructor of pattern * term
+		  | Equation of pattern * term
 		  | Term of term
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
@@ -1866,7 +1734,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = word ":=" pb in
     let () = whitespaces pb in
     let te = parse_term defs leftmost pb in
-    Destructor (p, te)
+    Equation (p, te)
   )
   (* finally a free term *)
   <|> tryrule (fun pb ->
@@ -1941,7 +1809,6 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     | PType, Type -> IndexMap.empty
     | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
     | PAVar _, te -> IndexMap.empty
-    | PTerm te', te when te' = te -> IndexMap.empty
     | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
     | PCste s1, Cste s2 when s1 <> s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
     | PAlias (n, p, ty), te ->
@@ -2167,11 +2034,6 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* and we return the term *)
 	Impl ((s1, ty, n1), te)
 
-    (* for now we do not allow unification of DestructWith *)
-    | DestructWith eqs1, DestructWith eq2 ->
-      printf "WARNING: unification_term_term: DestructWith\n";
-      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
-
     (* for all the rest: I do not know ! *)
     | _ -> 
       printf "WARNING: unification_term_term: case not explicitely defined\n";
@@ -2228,22 +2090,6 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
       ) else Impl ((s, ty, n), te)
     
-    (* DestructWith: we only go down if betastrong *)
-    | DestructWith eqs when not strat.betastrong -> te
-    | DestructWith eqs when strat.betastrong -> 
-      let eqs = List.map (fun ((p, n), te) ->
-	(* maybe we should reduce the type annotation in pattern? ... humpf *)
-	let p = (fun x -> x) p in
-	(* we push the bvar generated by the pattern in the context *)	
-	ctxt := input_pattern !ctxt p;
-	(* we reduce the body *)
-	let te = reduction defs ctxt strat te in
-	(* we pop the frames *)
-	ctxt := fst (pop_frames !ctxt (pattern_size p));
-	((p, n), te)
-      ) eqs in
-      DestructWith eqs
-
     (* Application: the big part *)
     (* for no only Eager is implemented *)
     | App _ when strat.beta = Eager -> (
@@ -2280,42 +2126,6 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	| App (App (te1, args1), arg2) ->
 	  reduction defs ctxt strat (App (te1, args1 @ arg2))
 
-	(* the real stuffs: application on a destruct with *)
-	| App (DestructWith eqs, arg::args) -> 
-	  (
-	    let (argte, argn) = arg in
-	    (* we reduce the arguments *)
-	    let argte = reduction defs ctxt strat argte in
-	    (* yet it means that the arguments are reduce a lots of times .... so remove the next line, such that only the arg needed will be reduce *)
-	    (*let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in*)
-	    (* we try all the destructor until finding one that unify with arg *)
-	    let match_pattern = fold_stop (fun () ((p, n), body) ->
-	      (* we could check that n = argn, but it should have been already checked *)
-	      (* can we unify the pattern ? *)
-	      try 
-		Right (unification_pattern_term !ctxt p argte, body)
-	      with
-		| DoudouException (NoMatchingPattern _) -> Left ()
-	    ) () eqs in
-	    match match_pattern with
-	      | Left () ->
-		(* no pattern were unifiable: return the term as it 
-		   except if deltaiotaweak and ..._armed are set
-		*)
-		if strat.deltaiotaweak && strat.deltaiotaweak_armed then
-		  raise IotaReductionFailed
-		else
-		  App (DestructWith eqs, (argte, argn)::args)
-	      (* we have one pattern that is ok *)
-	      | Right (r, body) ->
-		(* we rewrite the bound variables from the unification *)
-		(* and shift the term by the size of the rewrite *)
-		let body = term_substitution r body in
-		let body = shift_term body (- (IndexMap.cardinal r)) in
-		reduction defs ctxt strat body
-		
-
-	  )
 	| App (hd, args) ->
 	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args)
 
@@ -2511,9 +2321,6 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let fvty = add_fvar ctxt Type in
       let fvte = add_fvar ctxt (TVar fvty) in
       TVar fvte, TVar fvty
-
-    | DestructWith eqs ->
-      raise (Failure "typeinference of DestructWith not yet implemented")
 
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -2720,7 +2527,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  defs := {!defs with hist = s::!defs.hist };
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
-	| Destructor (p, te) ->
+	| Equation (p, te) ->
 	  let p, te = typecheck_equation !defs ctxt p te in
 	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
 			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
