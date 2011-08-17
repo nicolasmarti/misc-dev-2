@@ -447,7 +447,8 @@ let rec term_substitution (s: substitution) (te: term) : term =
     (* generalization for free AND bound variables *)
     | TVar i as v (*when i < 0*) -> 
       (
-	try IndexMap.find i s 
+	try 
+	  IndexMap.find i s 
 	with
 	  | Not_found -> v
       )
@@ -899,7 +900,7 @@ type pp_option = {
   show_indices : bool;
 }
 
-let pp_option = ref {show_implicit = true; show_indices = true}
+let pp_option = ref {show_implicit = false; show_indices = false}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
@@ -1262,6 +1263,11 @@ let rec error2token (err: doudou_error) : token =
     | FreeError s -> Verbatim s
     | _ -> Verbatim "Internal error"
 
+let equation2token (ctxt: context) (eq: equation) : token =
+  let (p, te) = eq in
+  Box [pattern2token ctxt p Alone; Space 1; Verbatim ":="; Space 1;
+       let ctxt = input_pattern ctxt p in term2token ctxt te Alone]
+
 (* make a string from an error *)
 let error2string (err: doudou_error) : string =
   let token = error2token err in
@@ -1273,9 +1279,13 @@ let judgment2string (ctxt: context) (te: term) (ty: term) : string =
   let box = token2box token 80 2 in
   box2string box
 
-
 let context2string (ctxt: context) : string =
   let token = context2token ctxt in
+  let box = token2box token 80 2 in
+  box2string box
+
+let equation2string (ctxt: context) (eq: equation) : string =
+  let token = equation2token ctxt eq in
   let box = token2box token 80 2 in
   box2string box
 
@@ -1804,10 +1814,10 @@ let debug = ref false
   - we ask for equality of symbol for constant, rather than looking for possible alias
 *)
 let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
-  if !debug then printf "unification_pattern_term\n"; flush Pervasives.stdout;
+  if !debug then printf "unification_pattern_term: \n%s\n Vs\n %s\n" (pattern2string ctxt p) (term2string ctxt te); flush Pervasives.stdout;
   match p, te with
     | PType, Type -> IndexMap.empty
-    | PVar (n, ty), te -> IndexMap.singleton 0 (shift_term te 1)
+    | PVar (n, ty), te -> IndexMap.singleton 0 te
     | PAVar _, te -> IndexMap.empty
     | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
     | PCste s1, Cste s2 when s1 <> s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
@@ -1825,20 +1835,21 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
       (* we unify arguments one by one (with proper shifting) *)
       List.fold_left (fun s ((arg1, n1), (arg2, n2)) -> 
 	(* first we unify both args *)
-	let s12 = unification_pattern_term ctxt p te in
+	let s12 = unification_pattern_term ctxt arg1 arg2 in
 	(* we need to shift the accumulator by the number of introduced free variable == caridnality of s12 *)
-	let s = shift_substitution s12 (IndexMap.cardinal s12) in
+	let s = shift_substitution s (IndexMap.cardinal s12) in
 	(* and we just return the union (making sure no key are duplicated)
 	   merge : (key -> 'a option -> 'b option -> 'c option) ->
 	   'a t -> 'b t -> 'c t
 	*)
-	IndexMap.merge (fun k val1 val2 ->
+	let res = IndexMap.merge (fun k val1 val2 ->
 	  match val1, val2 with
 	    | None, None -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are None")
 	    | Some _, Some _ -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are Some ==> it means that a bound variable is duplicated, and thus the shifting in substitution is not properly done!")
 	    | Some v, None -> Some v
 	    | None, Some v -> Some v
-	)  s s12
+	)  s s12 in
+	res
       ) IndexMap.empty (List.combine args1 args2)
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
@@ -2041,7 +2052,8 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
-  if !debug then printf "reduction %s |- %s\n" (context2string !ctxt) (term2string !ctxt te);
+  (*if !debug then printf "reduction %s |- %s\n" (context2string !ctxt) (term2string !ctxt te);*)
+  if !debug then printf "reduction |- %s\n" (term2string !ctxt te);
   match te with
     | SrcInfo (pos, te) -> (
       try 
@@ -2095,32 +2107,38 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | App _ when strat.beta = Eager -> (
 
       (* we do a case analysis ... *)
-
       match te with
+
+	| App (hd, []) ->
+	  reduction defs ctxt strat hd
+
+	| App (SrcInfo (pos, te), args) ->
+	  reduction defs ctxt strat (App (te, args))
 	  
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
 	| App (Cste c1, args) when unfold_constante defs c1 <> [] -> (
 	  (* we reduce the arguments *)
 	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
-	  (* we have our term *)
-	  let te = App (Cste c1, args) in
 	  (* we try all the possible equations *)
 	  let res = fold_stop (fun () (p, body) ->
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
 	      try 
-		printf "trying 1 equation for %s\n" (symbol2string c1);
-		let r = unification_pattern_term !ctxt p te in
-		let te = term_substitution r te in
+		(* we need to cut arguments *)
+		let PApp (_, pargs, _) = p in
+		let neededargs = take (List.length pargs) args in
+		let surplusargs = drop (List.length pargs) args in
+		let r = unification_pattern_term !ctxt p (App (Cste c1, neededargs)) in
+		let te = term_substitution r body in
 		let te = shift_term te (- (IndexMap.cardinal r)) in
-		Right te
+		Right (App (te, surplusargs))
 	      with
 		| DoudouException (NoMatchingPattern _) -> Left ()
 	    ) () (unfold_constante defs c1) in
 	  match res with
 	    | Left () -> te
-	    | Right te -> te
+	    | Right te -> reduction defs ctxt strat te
 	)
 
 	(* App is right associative ... *)
@@ -2521,8 +2539,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty Type in	  
 	  (* we flush the free vars so far *)
-	  (*let [ty] = flush_fvars ctxt [ty] in*)
-	  (* N.B.: here we should assert that there is not more free variables *)
+	  let [ty] = flush_fvars ctxt [ty] in
 	  (* update the definitions *)
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, []);
 	  defs := {!defs with hist = s::!defs.hist };
@@ -2534,22 +2551,19 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  let (s, ty, eqs) = Hashtbl.find !defs.store (symbol2string s) in
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, eqs @ [p, te]);
 	  defs := {!defs with hist = s::!defs.hist };
-	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
-			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
-	  let box = token2box token 80 2 in	    
-	  printf "Equation: %s \n" (box2string box);
+	  (* we flush the free vars so far *)
+	  let [] = flush_fvars ctxt [] in
+	  (* just print that everything is fine *)
+	  printf "Equation: %s \n" (equation2string !ctxt (p, te));
 	    
 	| Term te ->
-	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
 	  let te = reduction !defs ctxt clean_term_strat te in
 	  let ty = reduction !defs ctxt clean_term_strat ty in
 	  (* we flush the free vars so far *)
-	  (*let [te; ty] = flush_fvars ctxt [te; ty] in*)
-	  (* N.B.: here we should assert that there is not more free variables *)
-	  (* just print the result *)
-	  (*printf "Term %s |- %s :: %s \n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty)*)
+	  let [te; ty] = flush_fvars ctxt [te; ty] in
+	  (* just print that everything is fine *)
 	  printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
       ) in
       assert (List.length !ctxt = 1)
