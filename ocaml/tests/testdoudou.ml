@@ -188,4 +188,32 @@ let _ = process_definition defs ctxt "(+) {Nat} {Nat} (S x) y := S (x + y)"
 
 let _ = process_definition defs ctxt "S O + S O"
 
+let _ = process_definition defs ctxt "multType :: Type -> Type -> Type"
+let _ = process_definition defs ctxt "(*) : right, 20 :: {A B :: Type} -> A -> B -> multType A B"
+
+let _ = process_definition defs ctxt "multType Nat Nat := Nat"
+let _ = process_definition defs ctxt "(*) {Nat} {Nat} O x := O"
+let _ = process_definition defs ctxt "(*) {Nat} {Nat} x O := O"
+let _ = process_definition defs ctxt "(*) {Nat} {Nat} (S x) y := y + (x * y)"
+
+let _ = process_definition defs ctxt "S O * S O"
+
 let _ = process_definition defs ctxt "\\ {A :: Type} (a :: A) -> A"
+
+let _ = process_definition defs ctxt "Bool :: Type"
+let _ = process_definition defs ctxt "True :: Bool"
+let _ = process_definition defs ctxt "False :: Bool"
+let _ = process_definition defs ctxt "(=) : no, 5 :: {A :: Type} -> A -> A -> Bool"
+
+let _ = process_definition defs ctxt "(=) {Nat} O O := True"
+let _ = process_definition defs ctxt "(=) {Nat} (S _) O := False"
+let _ = process_definition defs ctxt "(=) {Nat} O (S _) := False"
+let _ = process_definition defs ctxt "(=) {Nat} (S x) (S y) := x = y"
+
+let _ = process_definition defs ctxt "foldl :: {A B :: Type} -> (B -> A -> B) -> B -> List A -> B"
+let _ = process_definition defs ctxt "foldl f acc [] := acc"
+let _ = process_definition defs ctxt "foldl f acc (hd:tl) := foldl f (f acc hd) tl"
+
+let _ = process_definition defs ctxt "foldl ((+) {Nat} {Nat}) O (O : S O : [])"
+
+

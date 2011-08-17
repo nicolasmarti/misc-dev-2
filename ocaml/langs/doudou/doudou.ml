@@ -986,11 +986,11 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | App (te, args) ->
       (* we only embed in parenthesis if
 	 - we are an argument of an application
-	 - we are in a notation
+	 - we are in a notation (no !!! application more binding than operators)
       *)
       (match p with
 	| InArg Explicit -> withParen
-	| InNotation _ -> withParen
+	(*| InNotation _ -> withParen*)
 	| _ -> fun x -> x
       ) (
 	let args = List.map (fun te -> term2token ctxt te (InArg Explicit)) (if !pp_option.show_implicit then List.map fst args else filter_explicit args) in
@@ -1064,7 +1064,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
     (*| TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")*)
-    | TName s -> Box [Verbatim "(TName"; Space 1; Verbatim (symbol2string s); Verbatim ")"]
+    | TName s -> Box [Verbatim (symbol2string s)]
 
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
@@ -1157,11 +1157,11 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PApp (s, args, _) ->
       (* we only embed in parenthesis if
 	 - we are an argument of an application
-	 - we are in a notation
+	 - we are in a notation (no !!! application more binding than operators)
       *)
       (match p with
 	| InArg Explicit -> withParen
-	| InNotation _ -> withParen
+	(*| InNotation _ -> withParen*)
 	| InAlias -> withParen
 	| _ -> fun x -> x
       ) (
@@ -1376,7 +1376,7 @@ let parseassoc : associativity parsingrule =
 
 let parse_symbol_name_def : symbol parsingrule = 
   let symbols = ["\\+"; "\\*"; "\\["; "\\]";
-		 "@"; "-"; ":"; "|"; "\\&"
+		 "@"; "-"; ":"; "|"; "\\&"; "="
 		] in
   let format_symbols = String.concat "" ["\\("; 
 					 String.concat "\\|" symbols;
@@ -2103,8 +2103,10 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     (* for all the rest: I do not know ! *)
     | _ -> 
+      (*
       printf "WARNING: unification_term_term: case not explicitely defined\n";
       printf "unification\n %s |- %s Vs %s\n" (context2string !ctxt) (term2string !ctxt te1) (term2string !ctxt te2); flush Pervasives.stdout;
+      *)
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
@@ -2538,8 +2540,25 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
     | PCste s ->
       PCste s, Cste s, constante_type defs s
 
-    | _ -> raise (Failure "NYI")
-      
+    | PType ->
+      PType, Type, Type
+
+    | PAVar ty ->
+      let fvty = add_fvar ctxt Type in
+      let fvte = add_fvar ctxt (TVar fvty) in
+      ctxt := build_new_frame (Symbol ("_", Nofix)) ~value:(TVar fvte) (TVar fvty) :: !ctxt;      
+      let ty, _ = typecheck defs ctxt ty Type in 
+      let ty = unification_term_term defs ctxt ty (TVar fvty) in
+      PAVar ty, TVar 0, ty
+
+    | PAlias (s, p, ty) ->
+      let p, pte, pty = typeinfer_pattern defs ctxt p in
+      let pte = shift_term pte 1 in
+      let pty = shift_term pty 1 in
+      ctxt := build_new_frame (Name s) ~value:pte pty :: !ctxt;
+      let ty, _ = typecheck defs ctxt ty Type in 
+      let ty = unification_term_term defs ctxt ty pty in
+      PAlias (s, p, ty), TVar 0, ty
 
 
 (* typechecking for destructors where type of l.h.s := type of r.h.s *)
