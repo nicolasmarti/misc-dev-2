@@ -7,4 +7,3 @@ tests/testlisp.native
 tests/testauto.native
 tests/testdoudou.native
 
-langs/poussin/poussin.native
