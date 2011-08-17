@@ -161,5 +161,13 @@ let _ = process_definition defs ctxt "map id (Type:List Type:[])"
 
 let _ = process_definition defs ctxt "(@) : right, 5 :: {A :: Type} -> List A -> List A -> List A"
 let _ = process_definition defs ctxt "[] @ l := l"
+let _ = process_definition defs ctxt "l @ [] := l"
+let _ = process_definition defs ctxt "(hd:tl) @ l := hd:(tl @ l)"
 
+let _ = process_definition defs ctxt "(Type:List Type:[]) @ (Type:List Type:[])"
 
+let _ = process_definition defs ctxt "reverse :: {A :: Type} -> List A -> List A"
+let _ = process_definition defs ctxt "reverse [] := []"
+let _ = process_definition defs ctxt "reverse (hd:tl) := reverse tl @ (hd:[])"
+
+let _ = process_definition defs ctxt "reverse (Type:List Type:[])"
