@@ -188,6 +188,12 @@ let rec drop (n: int) (l: 'a list) :'a list =
 	| [] -> []
 	| hd::tl -> drop (n-1) tl
 
+(* build a list of the same element of size n *)
+let rec replicate (e: 'a) (n: int) : 'a list =
+  match n with
+    | _ when n < 0 -> raise (Failure "replicate")
+    | 0 -> []
+    | _ -> e :: replicate e (n-1)
 
 (* some traverse fold without the reverse *)
 let mapacc (f: 'b -> 'a -> ('c * 'b)) (acc: 'b) (l: 'a list) : 'c list * 'b =
@@ -436,6 +442,15 @@ let error_pos (err: doudou_error) (pos: pos) =
 (* build an implication: no shifting in types !!! *)
 let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun s acc -> Impl ((s, ty, nature), acc)) symbols body
+
+
+let rec destruct_impl (ty: term) : (symbol * term * nature) list * term =
+  match ty with
+    | SrcInfo (pos, te) -> destruct_impl te
+    | Impl (e, te) ->
+      let l, te = destruct_impl te in
+      e::l, te
+    | _ -> [], ty
 
 (* build a destruct with: no shifting in types !!! *)
 let build_destructwith (patterns: (pattern * nature) list) (body: term) : term =
@@ -978,7 +993,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 
     (* we need to split App depending on the head *)
     (* the case for notation Infix *)
-    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
+    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -1007,7 +1022,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | App (Cste (Symbol (s, (Prefix myprio))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Prefix myprio))), args) when not !pp_option.show_implicit &&List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -1027,7 +1042,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
        )
 
     (* the case for Postfix *)
-    | App (Cste (Symbol (s, (Postfix myprio))), args) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Postfix myprio))), args) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -1158,7 +1173,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
     | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
-    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
+    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -1189,7 +1204,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | PApp (Symbol (s, (Prefix myprio)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | PApp (Symbol (s, (Prefix myprio)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -1211,7 +1226,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
        )
 
     (* the case for Postfix *)
-    | PApp (Symbol (s, (Postfix myprio)), args, _) when List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | PApp (Symbol (s, (Postfix myprio)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -2004,6 +2019,30 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     (* the trivial case for variable *)
     | TVar i1, TVar i2 when i1 = i2 -> if !debug then printf "unification: case (8)\n"; TVar i1
+
+    | TVar i1, TVar i2 when i1 < 0 && i2 < 0 -> 
+      let imin = min i1 i2 in
+      let imax = max i1 i2 in
+      let s = IndexMap.singleton imin (TVar imax) in
+      ctxt := context_substitution s (!ctxt);
+      TVar imax
+
+    (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
+    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 <> TVar i1 ->
+      if !debug then printf "unification: case (11)\n"; 
+      let _ = unification_term_term defs ctxt (bvar_value !ctxt i1) te2 in
+      TVar i1
+
+    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 <> TVar i2 ->
+      if !debug then printf "unification: case (12)\n"; 
+      (*assert (bvar_value !ctxt i2 <> TVar i2);*)
+      (*
+      printf "%d --> %s (%s)\n" i2 (match bvar_value !ctxt i2 with | TVar i -> string_of_int i | _ -> "???") (term2cons (bvar_value !ctxt i2));
+      printf "%s --> %s\n" (term2string !ctxt (TVar i2)) (term2string !ctxt (bvar_value !ctxt i2));
+      *)
+      let _ = unification_term_term defs ctxt te1 (bvar_value !ctxt i2) in
+      TVar i2
+
     (* the case for free variables *)
     (* we need the free var to not be a free var of the term *)
     | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
@@ -2031,16 +2070,6 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	 and that we did not comply with the N.B. above
       *)
       te1
-    (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
-    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 <> TVar i1 ->
-      if !debug then printf "unification: case (11)\n"; 
-      unification_term_term defs ctxt (bvar_value !ctxt i1) te2
-    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 <> TVar i2 ->
-      if !debug then printf "unification: case (12)\n"; 
-      assert (bvar_value !ctxt i2 <> TVar i2);
-      printf "%d --> %s (%s)\n" i2 (match bvar_value !ctxt i2 with | TVar i -> string_of_int i | _ -> "???") (term2cons (bvar_value !ctxt i2));
-      printf "%s --> %s\n" (term2string !ctxt (TVar i2)) (term2string !ctxt (bvar_value !ctxt i2));
-      unification_term_term defs ctxt te1 (bvar_value !ctxt i2)
 
     (* the case of two application: with not the same arity *)
     | App (hd1, args1), App (hd2, args2) when List.length args1 <> List.length args2 ->
@@ -2174,7 +2203,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | Obj o -> te
 
     (* for both free and bound variables we have their value in the context *)
-    | TVar i when i >= 0 && bvar_value !ctxt i <> TVar i -> bvar_value !ctxt i
+    (*| TVar i when i >= 0 && bvar_value !ctxt i <> TVar i -> bvar_value !ctxt i*)
     | TVar i when i >= 0 -> te
     | TVar i when i < 0 && fvar_value !ctxt i <> TVar i -> fvar_value !ctxt i
     | TVar i when i < 0 -> te
@@ -2483,99 +2512,8 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let fvte = add_fvar ctxt (TVar fvty) in
       TVar fvte, TVar fvty
 
-    (* for now, just one ... equivalent to a lambda or a let *)
-    | DestructWith [((p,n), body)] -> 
-      (*
-	given that 
-
-	typeinfer_pattern defs !ctxt p = c', p', ty
-
-	we have 
-	body' = body shifted for c'
-	!ctxt; c'; p' |- body' :: bodyty
-
-	!ctxt; c' |- ((p', n) := body') :: (s, ty, n) -> ((p' := bodyty') s)
-	where bodyty' = bodyty shifted for s
-
-	and thus:
-
-	!ctxt |- ({[c']} := ((p', n) := body')) :: {[c']} -> (s, ty, n) -> ((p' := bodyty') s)
-
-	(modulo the shifting for {[c']} which is the implicit quantification of c')
-
-	some example:
-
-	List :: Type -> Type
-	[[]] :: {A :: Type} -> List A
-	(:) :: {A :: Type} -> A -> List A -> List A
-
-	map :: {A B :: Type} -> (A -> B) -> List A -> List B
-	
-	Bool :: Type
-	True :: Bool
-	False :: Bool
-	
-	c |- (map f [] := False) :: ??
-	
-	c; (B :: Type) |- (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) 
-	
-	c; (B :: Type) |- (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := False :: (s :: List B) -> ((map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := Bool) s
-	
-	c |- ({B :: Type} := (map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := False) :: {B :: Type} -> (s :: List B) -> ((map {A :: Type} {[B] :: Type} (f :: A -> [B]) ([[]] {A} :: List A) :: List B) := Bool) s
-
-
-	when there is several destructors, the type of their patterns should be the same (and there nature too)
-
-	c |- (p0, n) := te0 | ... | (pi, n) := tei
-
-	for all i, exists c' ty, ty s.t. 
-	    !c; c' |- pi' :: ty
-
-	tyi s.t. !c; c'; pi' |- tei :: tyi
-
-	==> (modulo all the shifting ...)
-
-	c |- ({[c']} := (p0', n) := te0 | ... | (pi', n) := tei) :: {[c']} -> (s, ty, n) -> ((p0', n) := ty0 | ... | (pi', n) := tyi) s
-
-	Rmq: nice side effect you can figure out from the type if a function is complete or partial
-
-	Rmq: you can simplify the type in case all the tyi are equals (ty') and independent of the pi' --> {[c']} -> (s, ty, n) -> ty'
-
-	ex: 
-	   empty :: {A :: Type} -> List A -> Bool
-	   empty [] := True
-	   empty (_:_) := False
-
-      *)
-      raise (Failure "redoing it ...")
-      (*printf "(pattern) |- %s \n" (pattern2string !ctxt p); flush Pervasives.stdout;*)
-    (*
-      (* we grab the inference of the pattern *)
-      let c', p', ty = typeinfer_pattern defs ctxt p in
-      (* we build the new context for typechecking body *)
-      ctxt := input_pattern (c' @ !ctxt) p';
-
-      (* we infer body *)
-      let body, bodyty = typeinfer defs ctxt body in
-
-      (* we pop the bvar from the pattern and properly quantify in the te/ty *)      
-      let [body; bodyty] = flush_fvars ctxt [body; bodyty] in
-      ctxt := fst (pop_frames !ctxt (pattern_size p'));
-      let te = DestructWith [(p', n), body] in
-      let ty = Impl ((pattern2symbol p', ty, n), App (DestructWith [(p', n), leveled_shift_term bodyty (pattern_size p') 1], [TVar 0, n])) in
-
-      (* we grab back the c' *)
-      let (ctxt', c') = pop_frames !ctxt (List.length c') in
-      ctxt := ctxt';
-      (* we compute the final term and its type *)
-      let te = quantify_DestructWith c' te in
-      let ty = quantify_Impl c' ty in
-      (* and we return them *)
-      te, ty
-	*)
-
     | DestructWith eqs ->
-      raise (Failure "typeinference of DestructWith with more than 1 destructors not yet implemented")
+      raise (Failure "typeinference of DestructWith not yet implemented")
 
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -2584,300 +2522,159 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := saved_ctxt;
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
 
-(*
-(* this function is a bit special 
-   its semantics is:
-   typeinfer_pattern defs c p = c', p', ty <->
-
-   forall term t. such that p' match t under !c; c' |- ->
-                   !c; c' |- t :: ty 
-                   implied ==> !c; c' |- p' :: ty
-                  
-   
-*)
-
-(* this code is rubbish (computing several times the same thing) but should suffice for now *)
-and bvar_fvar_closure (ctxt: context) (bvar: IndexSet.t) (fvar: IndexSet.t) : IndexSet.t * IndexSet.t =
-  (* fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a *)
-  let bvar' = List.fold_left IndexSet.union IndexSet.empty
-    [(IndexSet.fold (fun i acc -> 
-	IndexSet.union acc (bv_term (var_type ctxt i))
-     ) bvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	IndexSet.union acc (bv_term (var_value ctxt i))
-      ) bvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	 IndexSet.union acc (bv_term (var_type ctxt i))
-      ) fvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	 IndexSet.union acc (bv_term (var_value ctxt i))
-      ) fvar IndexSet.empty)] in
-  let fvar' = List.fold_left IndexSet.union IndexSet.empty
-    [(IndexSet.fold (fun i acc -> 
-	IndexSet.union acc (fv_term (var_type ctxt i))
-     ) bvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	 IndexSet.union acc (fv_term (var_value ctxt i))
-      ) bvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	 IndexSet.union acc (fv_term (var_type ctxt i))
-      ) fvar IndexSet.empty);
-     (IndexSet.fold (fun i acc -> 
-	 IndexSet.union acc (fv_term (var_value ctxt i))
-      ) fvar IndexSet.empty)] in     
-  if IndexSet.subset bvar' bvar && IndexSet.subset fvar' fvar then bvar, fvar else
-    bvar_fvar_closure ctxt (IndexSet.union bvar bvar') (IndexSet.union fvar fvar')
-
-
-
-(* fron-end function as the loop one require to push the bvar of the pattern in the context *)
-and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : context * pattern * term =
-  (* here we infer "normally" the patterns. Meaning that the type ty is valid under the pattern quantification *)
-  let p', te, ty = typeinfer_pattern_loop defs ctxt p in
- 
-  (*
-  printf "result of typeinfer_pattern_loop:\n";
-  printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
-  printf "(pattern) |- %s \n" (pattern2string !ctxt p'); flush Pervasives.stdout;
-  printf "| |- %s | = %d \n" (pattern2string !ctxt p') (pattern_size p'); flush Pervasives.stdout;
-  printf "-------------------------:\n";
-  *)
-  (* first we create the middle context, from the bounded/free var of the type and those of there value/type *)
-
-  (* here we should compute the set of all free/bound variable in ty
-     closed under addition of the value/type of the variables in set, but only such that their frame is = (for bvar) than the size of pattern
-     
-  *)
-
-  let bvs, fvs = bvar_fvar_closure !ctxt (bv_term ty) (fv_term ty) in  
-  let bvs = IndexSet.fold (fun i acc -> if i >= pattern_size p' then acc else IndexSet.add i acc) bvs IndexSet.empty in
-
-  (* we order them by frame number *)
-  (* stable_sort : ('a -> 'a -> int) -> 'a list -> 'a list *)
-  let sorted_var_list = List.stable_sort (fun v1 v2 -> compare (get_var_frame_index !ctxt v1) (get_var_frame_index !ctxt v2)) (IndexSet.elements fvs @ IndexSet.elements bvs) in
-
-  (*
-  printf "ordered variables:\n";
-  let _ = List.map (
-    fun i -> printf "%s := %s :: %s\n" (term2string !ctxt (TVar i)) (term2string !ctxt (var_value !ctxt i)) (term2string !ctxt (var_type !ctxt i))
-  ) (List.rev sorted_var_list) in
-  printf "---------------------\n";
-  *)
-
-  (* we shift the term and the type by the cardinal of f/bvars in ty, just over the bvars of p' in ctxt *)
-  let te = leveled_shift_term te (pattern_size p') (List.length sorted_var_list) in
-  let ty = leveled_shift_term ty (pattern_size p') (List.length sorted_var_list) in
+and typecheck_pattern (defs: defs) (ctxt: context ref) (p: pattern) (ty: term) : pattern * term * term =
+  let p', pte, pty = typeinfer_pattern defs ctxt p in
   
-  (* we build a substitution *)
-  let l = map_nth (fun i -> List.nth sorted_var_list (i - 1), TVar (i + pattern_size p' - 1)) (List.length sorted_var_list) in
-  let s = List.fold_left (fun acc (i, v) -> IndexMap.add i v acc) IndexMap.empty l in
+  let ty' = shift_term ty (pattern_size p') in
 
-  let te = term_substitution s te in
-  let ty = term_substitution s ty in
+  (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
+  if nb_explicite_arguments defs ctxt pty > nb_explicite_arguments defs ctxt ty then (
+    (* we need to add enough implicit arguments *)
+    let new_args = List.map (fun (s, _, _) -> PVar (symbol2string s, AVar), Implicit) (take (nb_explicite_arguments defs ctxt pty - nb_explicite_arguments defs ctxt ty) (fst (destruct_impl pty))) in
+    let p'' = match p with | PCste s -> PApp (s, new_args, AVar) in
+    ctxt := drop (pattern_size p') !ctxt;
+    typecheck_pattern defs ctxt p'' ty
+  ) else (
+    push_terms ctxt [pte];
+    let ty = unification_term_term defs ctxt ty' pty in
+    let [pte] = pop_terms ctxt 1 in
+    p', pte, ty  
+  )
 
-  (*printf "%s\n" (context2string !ctxt);*)
-
-  (* we input the new frames *)
-  ctxt := context_substitution s (take (pattern_size p') !ctxt) @ (List.map (fun i ->
-    build_new_frame (if i >= 0 then (bvar_symbol !ctxt i) else (Name (String.concat "" (["@"; string_of_int i])))) ~nature:Implicit (term_substitution s (var_type !ctxt i))
-  ) sorted_var_list
-  ) @ drop (pattern_size p') !ctxt;   
-
-  (*printf "%s\n" (context2string !ctxt);*)
-
-  (*printf "(term) %s |- %s :: %s\n" (context2string !ctxt) (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;*)
-
-  (* now we should "reconstruct" the pattern using the term *)
-  let p = reconstruct_pattern defs (ref (drop (pattern_size p') !ctxt)) (ref (List.rev (take (pattern_size p') !ctxt))) te p' (pattern_size p') in
-
-  let ty = shift_term ty (- (pattern_size p')) in
-  ctxt := drop (pattern_size p') !ctxt;
-  let ctxt' = take (List.length sorted_var_list) !ctxt in
-  ctxt := drop (List.length sorted_var_list) !ctxt;
-
-  (*printf "(pattern) |- %s \n" (pattern2string (ctxt' @ !ctxt) p); flush Pervasives.stdout;*)
-  (ctxt', p, ty)
-
-and reconstruct_pattern (defs: defs) (ctxt: context ref) (ctxt': context ref) (te: term) (p: pattern) (psz: int): pattern =
-  match te, p with
-
-    | _, PCste (Symbol ("_", Nofix)) -> PTerm (shift_term te (- (List.length !ctxt')))
-
-    | TVar i, PVar (n, _) when i >= 0 && i >= psz ->
-      let i' = i - List.length !ctxt' in
-      PTerm (TVar i')
-
-    | TVar i, PVar (n, _) when i >= 0 && i < psz ->
-      ctxt := List.hd !ctxt' :: !ctxt; ctxt' := List.tl !ctxt';
-      let ty = shift_term (bvar_type (List.rev !ctxt' @ !ctxt) i) (- (List.length !ctxt')) in
-      PVar (n, ty)
-
-    | TVar i, PAVar _ when i < 0 -> 
-      ctxt := List.hd !ctxt' :: !ctxt; ctxt' := List.tl !ctxt';
-      let ty = shift_term (fvar_type (List.rev !ctxt' @ !ctxt) i) (- (List.length !ctxt')) in
-      PAVar ty
-
-    | _, PAVar _ -> PTerm (shift_term te (- (List.length !ctxt')))
-    | Type, PType -> PType
-    | Cste c1, PCste c2 -> PCste c2
-    | _, PAlias (n, p, ty) ->
-      assert (List.length !ctxt' > 0);
-      let p = reconstruct_pattern defs ctxt ctxt' te p psz in
-      ctxt := List.hd !ctxt' :: !ctxt; ctxt' := List.tl !ctxt';
-      let _, ty = typeinfer defs (ref (List.rev !ctxt' @ !ctxt)) te in
-      PAlias (n, p, shift_term ty (- (List.length !ctxt')))
-    | App (Cste s1, args1), PApp (s2, args2, ty) ->
-      let args = fold_cont (fun acc ((args1, args2)::[]) ->
-	match args1, args2 with
-	  | (arg1, n1)::tl1, (arg2, n2)::tl2 when n1 = n2 ->
-	    let arg = reconstruct_pattern defs ctxt ctxt' arg1 arg2 psz in
-	    (tl1, tl2)::[], acc @ [arg, n1]
-	  | (arg1, Implicit)::tl1, (arg2, Explicit)::tl2 ->
-	    let arg = reconstruct_pattern defs ctxt ctxt' arg1 (PCste (Symbol ("_", Nofix))) psz in
-	    (tl1, (arg2, Explicit)::tl2)::[], acc @ [arg, Implicit]
-	  | [], [] ->
-	    [], acc
-	  | _ -> raise Exit	    
-      ) [] ((args1, args2)::[]) in
-      let _, ty = typeinfer defs (ref ((List.rev !ctxt') @ !ctxt)) te in
-      PApp (s2, args, shift_term ty (- (List.length !ctxt')))
-     
-    | App (Cste s1, args1), PCste s2 ->
-      let args = List.map (fun (arg, n) -> reconstruct_pattern defs ctxt ctxt' arg (PCste (Symbol ("_", Nofix))) psz, n) args1 in
-      let _, ty = typeinfer defs (ref (List.rev !ctxt' @ !ctxt)) te in
-      PApp (s2, args,  shift_term ty (- (List.length !ctxt')))
-      
-
-(* takes a pattern and infer it 
-   result = p', te, ty
-   where te is the term equivalent to the pattern under its quantification and ty is its types
-   
-*)
-and typeinfer_pattern_loop (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term * term =
-  match p with
-    | PType -> PType, Type, Type
-    | PVar (n, ty) -> 
-      (* typecheck the type to Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
-      (* shift the type  *)
-      let ty = shift_term ty 1 in
-      (* input the term in the context *)
-      let frame = build_new_frame (Name n) ty in
-      ctxt := frame::!ctxt;
-      (* returns the result *)
-      PVar (n, ty), TVar 0, ty      
-    | PAVar ty -> 
-      (* typecheck the type to Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
-      (* we create a free var of the type for value *)
-      let fv = add_fvar ctxt ty in
-      let frame = build_new_frame (Name "_") ~value:(TVar fv) ty in
-      ctxt := frame::!ctxt;
-      (* returns the result *)
-      PAVar ty, TVar fv, ty
-    | PCste s -> 
-      (* just grab the constante type *)
-      let ty = constante_type defs s in
-      (* returns the result *)
-      PCste s, Cste s, ty
-    | PTerm te ->
-      let te, ty = typeinfer defs ctxt te in
-      PTerm te, te, ty
-    | PAlias (n, p, ty) -> 
-      (* let's get type and new pattern under *)
-      let p', te, ty' = typeinfer_pattern_loop defs ctxt p in
-      (* typecheck the type to Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
-      (* we unify the types *)
-      let ty = unification_term_term defs ctxt ty ty' in
-      (* shift the type and term *)
-      let ty = shift_term ty 1 in      
-      let te = shift_term te 1 in
-      (* input the frame for n *)
-      let frame = build_new_frame (Name n) ~value:te ty in
-      ctxt := frame::!ctxt;
-      (* and return the result (we use the most precise term := te) *)
-      PAlias (n, p', ty), te, ty
-    | PApp (s, args, ty) -> 
-      (* we infer the arguments against this type *)
-      let args, tes, tys = (
-	  List.fold_left ( fun (args, tes, tys) (arg, n) ->
-	    let (arg, te, ty) = typeinfer_pattern_loop defs ctxt arg in
-	    let tes = List.map (fun (te, n) -> shift_term te (pattern_size arg), n) tes in
-	    let tys = List.map (fun ty -> shift_term ty (pattern_size arg)) tys in
-	    (args @ [arg, n], tes @ [te, n], tys @ [ty])	    
-	  ) ([], [], []) args
-      ) in
-
-      (* typecheck the type to Type *)      
-      let ty, _ = typecheck defs ctxt ty Type in
-
-      (* we have now a generic term for the pattern *)
-      let te = App (Cste s, tes) in
-
-      let te, ty = typecheck defs ctxt te ty in
-
-      (* and returns the result *)
-      PApp (s, args, ty), te, ty
-	*)
-
-and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term =
+and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term * term =
   match p with
     | PApp (s, args, ty) -> (
       let sty = constante_type defs s in
-      printf "sty := %s\n" (term2string !ctxt sty);
+      let (appty, te_done, args_done) = fold_cont (fun (appty, te_done, args_done) args ->
 
-      let args = fold_cont (fun (ty, adone) args ->
-	let ty = (
-	  match ty with
-	    | Impl _ -> ty
-	    | _ -> reduction defs ctxt unification_strat ty
+	(*
+	printf "\n---------------\n";
+	
+	printf "starting context: %s \n" (context2string !ctxt);
+
+	printf "current pattern: %s :: %s\n" (pattern2string !ctxt (PApp (s, args_done, AVar))) (term2string !ctxt appty);
+	*)
+
+	let appty = (
+	  match appty with
+	    | Impl _ -> appty
+	    | _ -> reduction defs ctxt unification_strat appty
 	) in
-	match args, ty with
-	  | (arg, n1)::tl, Impl ((_, _, n2), _) when n1 = n2 ->	    	    
-	    printf "natures match\n";
-	    printf "%s\n" (pattern2string !ctxt arg);
-	    printf "%s\n" (term2string !ctxt ty);
-	    
-	    (* we infer the type of the argument *)
-	    let (arg, argty) = typeinfer_pattern defs ctxt arg in
-	    (* we need to shift the type *)
-	    let Impl ((s, sty, _), te) = shift_term ty (pattern_size arg) in
-	    
-	    raise Exit
-	  | (arg, Explicit)::tl, Impl ((_, _, Implicit), _) ->
-	    printf "add an Implicit\n";
-	    (PAVar AVar, Implicit)::args, (ty, adone)
+
+	match args, appty with
+	  | (arg, n1)::tl, Impl ((_, ty, n2), _) when n1 = n2 ->	    	    
+
+	    (*
+	    printf "next arg and its type: %s :?: %s\n " (pattern2string !ctxt arg) (term2string !ctxt ty);
+	    *)
+	    (* we typecheck the pattern *)
+	    let (arg, argte, argty) = typecheck_pattern defs ctxt arg ty in
+	    (*
+	    printf "typed arg and its type: %s :!: %s\n" (pattern2string !ctxt arg) (term2string !ctxt argty);
+	    printf "|%s| = %d\n" (pattern2string !ctxt arg) (pattern_size arg);
+	    *)
+	    (* we compute the type after application of the term *)
+	    let Impl ((_, _, _), te) = shift_term appty (pattern_size arg) in
+	    (*
+	    printf "pattern type before arg type in the current ctxt: %s\n" (term2string !ctxt appty);
+	    *)
+	    let appty = term_substitution (context2substitution !ctxt) (shift_term (term_substitution (IndexMap.singleton 0 (shift_term argte 1)) te) (-1)) in
+	    (* we compute the te_done at this level *)
+	    let te_done = List.map (fun (te, n) -> term_substitution (context2substitution !ctxt) (shift_term te (pattern_size arg)), n) te_done in
+	    (*
+	    printf "%s :: %s\n" (pattern2string !ctxt (PApp (s, args_done  @ [arg, n1], AVar))) (term2string !ctxt appty);
+	    printf "---------------\n";
+	    *)
+	    tl, (appty, te_done @ [argte, n1], args_done @ [arg, n1])	
+	  | (arg, Explicit)::tl, Impl ((s, _, Implicit), _) ->
+	    (*
+	    printf "add implicit arg: %s\n" (symbol2string s);
+	    printf "---------------\n";
+	    *)
+	    (PVar (symbol2string s, AVar), Implicit)::args, (appty, te_done, args_done)
 	  | _ ->
 	    raise (Failure "bad case")
-      ) (sty, []) args in
+      ) (sty, [], []) args in
 
-      raise Exit
+      let p = PApp (s, args_done, appty) in
+
+      let ty, _ = typecheck defs ctxt ty Type in
+      let appty = unification_term_term defs ctxt appty ty in
+
+      (*
+      printf "PApp done: %s :: %s\n" (pattern2string !ctxt p) (term2string !ctxt appty);
+      *)
+
+      p, App (Cste s, te_done), appty
+      
     )
-    | _ -> raise Exit
+    | PVar (n, ty) ->
+      let fvty = add_fvar ctxt Type in
+      let fvte = add_fvar ctxt (TVar fvty) in
+      ctxt := build_new_frame (Name n) ~value:(TVar fvte) (TVar fvty) :: !ctxt;      
+      let ty, _ = typecheck defs ctxt ty Type in 
+      let ty = unification_term_term defs ctxt ty (TVar fvty) in
+      PVar (n, ty), TVar 0, ty
+
+    | PCste s ->
+      PCste s, Cste s, constante_type defs s
+
+    | _ -> raise (Failure "NYI")
       
 
 
 (* typechecking for destructors where type of l.h.s := type of r.h.s *)
 and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: term) : pattern * term =
   (* we infer the pattern *)
-
+  (*
   printf "%s |- %s := %s\n" 
     (context2string !ctxt)
     (pattern2string !ctxt lhs)
     (term2string (input_pattern !ctxt lhs) rhs);
+  *)
 
-  let lhs', lhsty = typeinfer_pattern defs ctxt lhs in
-
-  ctxt := fst (pop_frames !ctxt (pattern_size lhs'));
-  
-  printf "%s |- %s |-:: %s\n" 
+  let lhs', lhste, lhsty = typeinfer_pattern defs ctxt lhs in
+  (*
+  printf "%s |- %s :: %s\n" 
     (context2string !ctxt)
-    (pattern2string !ctxt lhs')
-    (term2string (input_pattern !ctxt lhs') lhsty);
+    (term2string !ctxt lhste)
+    (term2string !ctxt lhsty);
+  *)
+  close_context ctxt;
+  (*
+  printf "%s |- \n" 
+    (context2string !ctxt);
+  *)
+  let rhs, rhsty = typecheck defs ctxt rhs lhsty in
 
-  raise Exit;
+  (*
+  printf "%s |- %s :: %s\n" 
+    (context2string !ctxt)
+    (term2string !ctxt rhs)
+    (term2string !ctxt rhsty);
+  *)
+  
 
+  ctxt := drop (pattern_size lhs') !ctxt;
+
+  lhs', rhs
+
+(* close a context with bvar valued to fvars *)
+and close_context (ctxt: context ref) : unit =
+  let s = List.fold_left (fun s frame ->
+    let s = shift_substitution s 1 in
+    match frame.value with
+      | TVar i when i < 0 && not (IndexMap.mem i s) -> IndexMap.add i (TVar 0) s
+      | _ -> s
+
+  ) IndexMap.empty (List.rev !ctxt) in
+  (*iter : (key -> 'a -> unit) -> 'a t -> unit*)
+  (*
+  IndexMap.iter (fun k value -> 
+    printf "%s ==> %s\n" (term2string !ctxt (TVar k)) (term2string !ctxt value)
+  ) s;
+  *)
+  ctxt := context_substitution s !ctxt
 
 (******************************************)
 (*        tests with parser               *)
@@ -2928,7 +2725,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
 			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
 	  let box = token2box token 80 2 in	    
-	  printf "Equation:  %s \n" (box2string box)
+	  printf "Equation: %s \n" (box2string box)
 	    
 	| Term te ->
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)

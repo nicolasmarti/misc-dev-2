@@ -150,4 +150,11 @@ let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
 let _ = process_definition defs ctxt "(:) : right, 10 :: {A :: Type} -> A -> List A -> List A"
 let _ = process_definition defs ctxt "map :: {A B:: Type} -> (f:: A -> B) -> List A -> List B"
+
 let _ = process_definition defs ctxt "map f [] := []"
+let _ = process_definition defs ctxt "map f (hd:tl) := f hd : map f tl"
+
+let _ = process_definition defs ctxt "id :: {A :: Type} -> A -> A "
+let _ = process_definition defs ctxt "id a := a "
+
+let _ = process_definition defs ctxt "map id (Type:[])"
