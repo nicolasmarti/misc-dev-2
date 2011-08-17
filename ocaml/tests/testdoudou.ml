@@ -157,17 +157,24 @@ let _ = process_definition defs ctxt "map f (hd:tl) := f hd : map f tl"
 let _ = process_definition defs ctxt "id :: {A :: Type} -> A -> A "
 let _ = process_definition defs ctxt "id a := a "
 
-let _ = process_definition defs ctxt "map id (Type:List Type:[])"
+let _ = process_definition defs ctxt "map id (Type : List Type : [])"
 
 let _ = process_definition defs ctxt "(@) : right, 5 :: {A :: Type} -> List A -> List A -> List A"
 let _ = process_definition defs ctxt "[] @ l := l"
 let _ = process_definition defs ctxt "l @ [] := l"
 let _ = process_definition defs ctxt "(hd:tl) @ l := hd:(tl @ l)"
 
-let _ = process_definition defs ctxt "(Type:List Type:[]) @ (Type:List Type:[])"
+let _ = process_definition defs ctxt "(Type : List Type : []) @ (Type : List Type : [])"
 
 let _ = process_definition defs ctxt "reverse :: {A :: Type} -> List A -> List A"
 let _ = process_definition defs ctxt "reverse [] := []"
 let _ = process_definition defs ctxt "reverse (hd:tl) := reverse tl @ (hd:[])"
 
-let _ = process_definition defs ctxt "reverse (Type:List Type:[])"
+let _ = process_definition defs ctxt "reverse (Type : List Type : [])"
+
+let _ = process_definition defs ctxt "Nat :: Type"
+let _ = process_definition defs ctxt "O :: Nat"
+let _ = process_definition defs ctxt "S :: Nat -> Nat"
+
+let _ = process_definition defs ctxt "(+) : right, 20 :: Nat -> Nat -> Nat"
+let _ = process_definition defs ctxt "S O + S O"
