@@ -2110,6 +2110,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
 	      try 
+		printf "trying 1 equation for %s\n" (symbol2string c1);
 		let r = unification_pattern_term !ctxt p te in
 		let te = term_substitution r te in
 		let te = shift_term te (- (IndexMap.cardinal r)) in
@@ -2527,12 +2528,16 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  defs := {!defs with hist = s::!defs.hist };
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
-	| Equation (p, te) ->
+
+	| Equation (PCste s as p, te) | Equation (PApp (s, _, _) as p, te) ->
 	  let p, te = typecheck_equation !defs ctxt p te in
+	  let (s, ty, eqs) = Hashtbl.find !defs.store (symbol2string s) in
+	  Hashtbl.add !defs.store (symbol2string s) (s, ty, eqs @ [p, te]);
+	  defs := {!defs with hist = s::!defs.hist };
 	  let token = Box [pattern2token !ctxt p Alone; Space 1; Verbatim ":="; Space 1;
 			   let ctxt = input_pattern !ctxt p in term2token ctxt te Alone] in
 	  let box = token2box token 80 2 in	    
-	  printf "Equation: %s \n" (box2string box)
+	  printf "Equation: %s \n" (box2string box);
 	    
 	| Term te ->
 	  (*printf "Term %s |- %s :: ??? \n" (*(context2string !ctxt)*) "" (term2string !ctxt te); flush Pervasives.stdout;*)
