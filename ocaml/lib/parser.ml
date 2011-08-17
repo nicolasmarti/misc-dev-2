@@ -926,7 +926,9 @@ let parse_primary (p: 'a parsingrule) : 'a parsetree -> ('a parsetree) parsingru
   fun t ->
     (
       fun pb ->
+	let _ = whitespaces pb in
         let res = p pb in
+	let _ = whitespaces pb in
 	(*printf "parsed primary: ??\n";*)
         try
           insert_primary res t
@@ -955,8 +957,10 @@ let parse_prefix (op: 'a opparser) (t: 'a parsetree) :  ('a parsetree) parsingru
   ) list in
   let parser_list = List.map (fun (x, y, z) -> ( 
     (fun pb ->
+      let _ = whitespaces pb in
       let () = notp op.reserved pb in
       let _ = keyword x () pb in
+      let _ = whitespaces pb in
       (*printf "parsed prefix: %s\n" x;*)
       try
         insert_prefix (x, y, z) t
@@ -987,8 +991,10 @@ let parse_postfix (op: 'a opparser) (t: 'a parsetree) :  ('a parsetree) parsingr
   ) list in
   let parser_list = List.map (fun (x, y, z) -> ( 
     (fun pb ->
+      let _ = whitespaces pb in
       let () = notp op.reserved pb in
       let _ = keyword x () pb in
+      let _ = whitespaces pb in
       (*printf "parsed postfix: %s\n" x;*)
       try
         insert_postfix (x, y, z) t
@@ -1019,8 +1025,10 @@ let parse_infix (op: 'a opparser) (t: 'a parsetree) : ('a parsetree) parsingrule
   ) list in
   let parser_list = List.map (fun (x, y, z, w) ->  
     (fun pb ->
+      let _ = whitespaces pb in
       let () = notp op.reserved pb in
       let _ = keyword x () pb in
+      let _ = whitespaces pb in
       (*printf "parsed infix: %s\n" x;*)
       try
         insert_infix (x, y, z, w) t
