@@ -47,6 +47,7 @@ type term = Type
 
 	    | App of term * (term * nature) list
 	    | Impl of (symbol * term * nature) * term
+	    | Lambda of (symbol * term * nature) * term
 
 	    | SrcInfo of pos * term
 
@@ -151,6 +152,7 @@ let rec term2cons (te: term) : string =
     | TName _ -> "TName"
     | App _ -> "App"
     | Impl _ -> "Impl"
+    | Lambda _ -> "Lambda"
     | SrcInfo _ -> "SrcInfo"
 
 (* set the outermost pattern type *)
@@ -277,6 +279,8 @@ let rec fv_term (te: term) : IndexSet.t =
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
     | Impl ((s, ty, n), te) ->
       IndexSet.union (fv_term ty) (fv_term te)
+    | Lambda ((s, ty, n), te) ->
+      IndexSet.union (fv_term ty) (fv_term te)
     | SrcInfo (pos, te) -> (fv_term te)
 
 and fv_pattern (p: pattern) : IndexSet.t =
@@ -294,34 +298,6 @@ let shift_bvterm (s: IndexSet.t) (delta: int) : IndexSet.t =
   IndexSet.fold (fun e acc ->
     if e + delta < 0 then acc else IndexSet.add (e+delta) acc
   ) s IndexSet.empty
-
-let rec bv_term (te: term) : IndexSet.t =
-  match te with
-    | Type | Cste _ | Obj _ -> IndexSet.empty
-    | TVar i when i >= 0 -> IndexSet.singleton i
-    | TVar i when i < 0 -> IndexSet.empty
-    | AVar -> raise (Failure "fv_term catastrophic: AVar")
-    | TName _ -> raise (Failure "fv_term catastrophic: TName")
-    | App (te, args) ->
-      List.fold_left (fun acc (te, _) -> IndexSet.union acc (bv_term te)) (bv_term te) args
-    | Impl ((s, ty, n), te) ->
-      IndexSet.union (bv_term ty) (shift_bvterm (bv_term te) (-1))
-    | SrcInfo (pos, te) -> (bv_term te)
-
-and bv_pattern (p: pattern) : IndexSet.t =
-  match p with
-    | PType | PCste _ -> IndexSet.empty
-    | PVar (n, ty) -> shift_bvterm (bv_term ty) (-1)
-    | PAVar ty -> bv_term ty
-    | PAlias (n, p, ty) -> shift_bvterm (IndexSet.union (bv_term ty) (bv_pattern p)) (-1)
-    | PApp (s, args, ty) ->
-      snd (List.fold_left 
-	     (fun (i, acc) (p, _) -> 
-	       i + pattern_size p, IndexSet.union acc (shift_bvterm (bv_pattern p) i)
-	     ) 
-	     (0, shift_bvterm (bv_term ty) (pattern_size p)) args
-      )
-
 
 (* function like map, but that can skip elements *)
 let rec skipmap (f: 'a -> 'b option) (l: 'a list) : 'b list =
@@ -409,10 +385,26 @@ let error_pos (err: doudou_error) (pos: pos) =
 let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun s acc -> Impl ((s, ty, nature), acc)) symbols body
 
+(* build a Lambda: no shifting in types !!! *)
+let build_lambda (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
+  List.fold_right (fun s acc -> Lambda ((s, ty, nature), acc)) symbols body
+
+(* build a Lambda: no shifting in types !!! *)
+let build_lambdas (qs: (symbol list * term * nature) list) (body: term) : term =
+  List.fold_right (fun (s, ty, n) acc -> build_lambda s ty n acc) qs body
+
 let rec destruct_impl (ty: term) : (symbol * term * nature) list * term =
   match ty with
     | SrcInfo (pos, te) -> destruct_impl te
     | Impl (e, te) ->
+      let l, te = destruct_impl te in
+      e::l, te
+    | _ -> [], ty
+
+let rec lambda_impl (ty: term) : (symbol * term * nature) list * term =
+  match ty with
+    | SrcInfo (pos, te) -> destruct_impl te
+    | Lambda (e, te) ->
       let l, te = destruct_impl te in
       e::l, te
     | _ -> [], ty
@@ -460,6 +452,9 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	   List.map (fun (te, n) -> term_substitution s te, n) args)
     | Impl ((symb, ty, n), te) ->
       Impl ((symb, term_substitution s ty, n),
+	    term_substitution (shift_substitution s 1) te)
+    | Lambda ((symb, ty, n), te) ->
+      Lambda ((symb, term_substitution s ty, n),
 	    term_substitution (shift_substitution s 1) te)
     | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
 
@@ -523,6 +518,9 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
       )
     | Impl ((s, ty, n), te) ->
       Impl ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
+
+    | Lambda ((s, ty, n), te) ->
+      Lambda ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
 
     | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
 
@@ -848,15 +846,6 @@ let add_fvar (ctxt: context ref) (ty: term) : int =
   ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar next_fvar_index)::frame.fvs})::List.tl !ctxt;
   next_fvar_index
 
-
-(* quantify by Impl a term, using a context *)
-let rec quantify_Impl (ctxt: context) (te: term) : term =
-  match ctxt with
-    | [] -> te
-    | hd::tl ->
-      quantify_Impl tl (Impl ((hd.symbol, shift_term hd.ty (-1), hd.nature), te))
-
-
 (******************)
 (* pretty printer *)
 (******************)
@@ -1039,6 +1028,38 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  let newframe = build_new_frame s (shift_term ty 1) in
 	  let rhs = term2token (newframe::ctxt) te Alone in
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
+	)
+
+    (* quantification *)
+    | Lambda ((s, ty, nature), te) ->
+      (* we embed in parenthesis if 
+	 - embed as some arg 
+	 - ??
+      *)
+      (
+	match p with
+	  | InArg Explicit -> withParen
+	  | _ -> fun x -> x
+      )
+	(
+	  (* the lhs of the ->*)
+	  let lhs = 
+	    (* if the symbol is Nofix _ -> we skip the symbol *)
+	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
+	    match s with
+	      | Symbol ("_", Nofix) ->
+		(* we only put brackets if implicit *)
+		(if nature = Implicit then withBracket else fun x -> x)
+		  (term2token ctxt ty (InArg nature))
+	      | _ -> 
+		(* here we put the nature marker *)
+		(if nature = Implicit then withBracket else withParen)
+		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
+	  in 
+	  (* for computing the r.h.s, we need to push a new frame *)
+	  let newframe = build_new_frame s (shift_term ty 1) in
+	  let rhs = term2token (newframe::ctxt) te Alone in
+	  Box [Verbatim "\\"; Space 1; lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
     | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
@@ -1500,6 +1521,20 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     SrcInfo ((startpos, endpos), build_impl names ty nature body)
+  ) 
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let startpos = cur_pos pb in
+    let () = word "\\" pb in
+    let () = whitespaces pb in
+    let qs = many1 (parse_impl_lhs defs leftmost) pb in
+    let () = whitespaces pb in
+    let () = word "->" pb in
+    let () = whitespaces pb in
+    let body = parse_term defs leftmost pb in
+    let endpos = cur_pos pb in
+    let () = whitespaces pb in
+    SrcInfo ((startpos, endpos), build_lambdas qs body)
   ) 
   <|> parse_term_lvl0 defs leftmost
 end pb
@@ -2045,6 +2080,27 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* and we return the term *)
 	Impl ((s1, ty, n1), te)
 
+    (* the Lambda case: only works if both are Lambda *)
+    | Lambda ((s1, ty1, n1), te1), Lambda ((s2, ty2, n2), te2) ->
+      if !debug then printf "unification: case (17)\n"; 
+      (* the symbol is not important, yet the nature is ! *)
+      if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
+	(* we unify the types *)
+	let ty = unification_term_term defs ctxt ty1 ty2 in
+	(* we push a frame *)
+	let frame = build_new_frame s1 (shift_term ty 1) in
+	ctxt := frame::!ctxt;
+	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
+	let s = context2substitution !ctxt in
+	let te1 = term_substitution s te1 in
+	let te2 = term_substitution s te2 in
+	(* we unify *)
+	let te = unification_term_term defs ctxt te1 te2 in
+	(* we pop the frame *)
+	ctxt := fst (pop_frame !ctxt);
+	(* and we return the term *)
+	Lambda ((s1, ty, n1), te)
+
     (* for all the rest: I do not know ! *)
     | _ -> 
       printf "WARNING: unification_term_term: case not explicitely defined\n";
@@ -2101,6 +2157,22 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	Impl ((s, ty, n), te)
 
       ) else Impl ((s, ty, n), te)
+
+    (* Lambda: we reduce the type, and the term only if betastrong *)
+    | Lambda ((s, ty, n), te) -> 
+      let ty = reduction defs ctxt strat ty in
+      if strat.betastrong then (
+	(* we push a frame *)
+	let frame = build_new_frame s (shift_term ty 1) in
+	ctxt := frame::!ctxt;
+	(* we reduce the body *)
+	let te = reduction defs ctxt strat te in
+	(* we pop the frame *)
+	ctxt := fst (pop_frame !ctxt);
+	(* and we return the term *)
+	Lambda ((s, ty, n), te)
+
+      ) else Lambda ((s, ty, n), te)
     
     (* Application: the big part *)
     (* for no only Eager is implemented *)
@@ -2115,6 +2187,14 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	| App (SrcInfo (pos, te), args) ->
 	  reduction defs ctxt strat (App (te, args))
 	  
+	| App (Lambda ((s, ty, n), te), (hd, _)::tl) -> (
+
+	  let hd = reduction defs ctxt strat hd in
+	  let te = shift_term (term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te) (-1) in
+	  App (te, tl)
+
+	)
+
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
 	| App (Cste c1, args) when unfold_constante defs c1 <> [] -> (
@@ -2248,6 +2328,19 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
       Impl ((s, ty, n), te), Type
+
+    | Lambda ((s, ty, n), te) -> 
+      (* first let's be sure that ty :: Type *)
+      let ty, _ = typecheck defs ctxt ty Type in
+      (* then we push the frame for s *)
+      let frame = build_new_frame s (shift_term ty 1) in
+      ctxt := frame::!ctxt;
+      (* we typeinfer te *)
+      let te, tety = typeinfer defs ctxt te in
+      (* we pop the frame for s *)
+      ctxt := fst (pop_frame !ctxt);
+      (* and we returns the term with type Type *)
+      Lambda ((s, ty, n), te), Impl ((s, ty, n), tety)
 
     (* app will have another version in typecheck that might force more unification or creation of free variables *)
     | App (te, args) -> 
