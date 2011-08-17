@@ -222,6 +222,8 @@ let _ = process_definition defs ctxt "T A B (S n) := A -> T A B n"
 
 let _ = process_definition defs ctxt "depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n"
 
+let _ = process_definition defs ctxt "depfold ((+) {Nat} {Nat}) O (S O)"
+
 (*
   these examples are failing
 let _ = process_definition defs ctxt "depfold f acc O := acc"
