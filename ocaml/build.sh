@@ -4,6 +4,7 @@ set -e
 
 TESTS=tests.otarget
 APPS=apps.otarget
+DOUDOU=doudou.otarget
 FLAGS=""
 OCAMLBUILD=ocamlbuild
 
@@ -18,6 +19,7 @@ rule() {
     all)    ocb $TESTS; ocb $APPS;;
     tests)  ocb $TESTS;;	  
     apps)   ocb $APPS;;
+    doudou) ocb $DOUDOU;;
     *)      echo "Unknown action $1";;
   esac;
 }
