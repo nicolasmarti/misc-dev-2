@@ -1899,6 +1899,15 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
 	)  s s12 in*)
 	s
       ) IndexMap.empty (List.combine args1 args2)
+
+    | PApp (s1, args1, ty), App (Cste s2, args2) when s1 <> s2 ->
+      if !debug then printf "unification_pattern_term: not the same symbol\n";
+      raise (DoudouException (NoMatchingPattern (ctxt, PCste s1, Cste s2)))
+
+    | PApp (s1, args1, ty), App (Cste s2, args2) when List.length args1 <> List.length args2 ->
+      if !debug then printf "unification_pattern_term: not the same number of arguments\n";
+      raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
+
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
 and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
@@ -2240,7 +2249,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 		(*if !debug then printf "reduction --> %s\n" (term2string !ctxt te);*)
 		Right (App (te, surplusargs))
 	      with
-		| DoudouException (NoMatchingPattern _) -> Left ()
+		| DoudouException (NoMatchingPattern (ctxt, p, te)) -> 
+		  if !debug then printf "unification_pattern_term failed on %s Vs %s\n" (pattern2string ctxt p) (term2string ctxt te); flush Pervasives.stdout;
+		  Left ()
 	    ) () (unfold_constante defs c1) in
 	  match res with
 	    | Left () -> te
@@ -2677,6 +2688,8 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
       let def = parse_definition !defs pos pb in
       let _ = ( match def with
 	| Signature (s, ty) ->
+	  (* just checking that there is no redefinition *)
+	  if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty Type in	  
 	  (* we flush the free vars so far *)
@@ -2710,10 +2723,12 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
       assert (List.length !ctxt = 1)
     with
       | NoMatch -> 
-	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb)
+	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	raise Pervasives.Exit
       | DoudouException err -> 
 	(* we restore the context and defs *)
 	ctxt := saved_ctxt;
 	defs := saved_defs;
-	printf "typechecking error:\n%s\n" (error2string err)
+	printf "error:\n%s\n" (error2string err);
+	raise Pervasives.Exit
 
