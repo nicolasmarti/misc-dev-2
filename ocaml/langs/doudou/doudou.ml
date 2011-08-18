@@ -509,7 +509,7 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
 	v
 
     | AVar -> raise (Failure "leveled_shift_term catastrophic: AVar")
-    | TName _ -> raise (Failure "leveled_shift_term catastrophic: TName")
+    | TName _ -> te (*raise (Failure "leveled_shift_term catastrophic: TName")*)
 
     | App (te, args) ->
       App (
@@ -887,15 +887,19 @@ type place = InNotation of op * int (* in the sndth place of the application to 
 type pp_option = {
   show_implicit : bool;
   show_indices : bool;
+  show_position : bool;
 }
 
-let pp_option = ref {show_implicit = false; show_indices = false}
+let pp_option = ref {show_implicit = false; show_indices = false; show_position = false}
 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
   match te with
     | SrcInfo (_, te) ->
-      term2token ctxt te p      
+      if !pp_option.show_position then
+	Box [Verbatim "@("; term2token ctxt te p; Verbatim ")"]
+      else
+	term2token ctxt te p
     | Type -> Verbatim "Type"
     | Cste s -> Verbatim (symbol2string s)
     | Obj o -> o#pprint ()
@@ -1062,7 +1066,8 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  Box [Verbatim "\\"; Space 1; lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
-    | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
+    (*| AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")*)
+    | AVar -> Verbatim "_"
     (*| TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")*)
     | TName s -> Box [Verbatim (symbol2string s)]
 
@@ -1862,7 +1867,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
       (* shift it by one (for the n of the alias) *)
       let s = shift_substitution s 1 in
       (* we put in the substitution the shifting of te by |s| + 1 at index 0 *)
-      IndexMap.add 0 (shift_term te (IndexMap.cardinal s + 1)) s
+      IndexMap.add 0 te s
     (* for the application, we only accept same constante as head and same number of arguments 
        this is really conservatives .. we could implement the same mechanism as in subtitution_term_term
     *)
@@ -1872,19 +1877,20 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
 	(* first we unify both args *)
 	let s12 = unification_pattern_term ctxt arg1 arg2 in
 	(* we need to shift the accumulator by the number of introduced free variable == caridnality of s12 *)
-	let s = shift_substitution s (IndexMap.cardinal s12) in
+	let s = IndexMap.fold (fun k value acc -> IndexMap.add (k + IndexMap.cardinal s12) value acc) s s12 in
 	(* and we just return the union (making sure no key are duplicated)
 	   merge : (key -> 'a option -> 'b option -> 'c option) ->
 	   'a t -> 'b t -> 'c t
 	*)
+	(*
 	let res = IndexMap.merge (fun k val1 val2 ->
 	  match val1, val2 with
 	    | None, None -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are None")
 	    | Some _, Some _ -> raise (Failure "unification_pattern_term: catastrophic, both value for a given key are Some ==> it means that a bound variable is duplicated, and thus the shifting in substitution is not properly done!")
 	    | Some v, None -> Some v
 	    | None, Some v -> Some v
-	)  s s12 in
-	res
+	)  s s12 in*)
+	s
       ) IndexMap.empty (List.combine args1 args2)
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
@@ -2097,6 +2103,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
+	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Lambda ((s1, ty, n1), te)
@@ -2170,6 +2177,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
 	(* we pop the frame *)
+	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Lambda ((s, ty, n), te)
@@ -2208,12 +2216,16 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* can we unify the pattern ? *)
 	      try 
 		(* we need to cut arguments *)
+		if !debug then printf "trying equation: %s\n" (equation2string !ctxt (p, body));
 		let PApp (_, pargs, _) = p in
 		let neededargs = take (List.length pargs) args in
 		let surplusargs = drop (List.length pargs) args in
 		let r = unification_pattern_term !ctxt p (App (Cste c1, neededargs)) in
+		if !debug then printf "|r| = %d\n" (IndexMap.cardinal r);
 		let te = term_substitution r body in
-		let te = shift_term te (- (IndexMap.cardinal r)) in
+		if !debug then printf "reduction --> %s\n" (term2string !ctxt te);
+		(*let te = shift_term te (- (IndexMap.cardinal r)) in*)
+		(*if !debug then printf "reduction --> %s\n" (term2string !ctxt te);*)
 		Right (App (te, surplusargs))
 	      with
 		| DoudouException (NoMatchingPattern _) -> Left ()
@@ -2285,7 +2297,7 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
       
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
-  if !debug then printf "(typeinfer) %s\n" (judgment2string !ctxt te (TName (Name "???")));
+  if !debug then printf "(typeinfer) %s |- %s\n" (context2string !ctxt) (judgment2string !ctxt te (TName (Name "???")));
   (*if !debug then printf "typeinfer\n"; flush Pervasives.stdout;*)
   (* save the context *)
   let saved_ctxt = !ctxt in
@@ -2340,6 +2352,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       (* we typeinfer te *)
       let te, tety = typeinfer defs ctxt te in
       (* we pop the frame for s *)
+      let [te; tety] = flush_fvars ctxt [te; tety] in
       ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
       Lambda ((s, ty, n), te), Impl ((s, ty, n), tety)
@@ -2579,9 +2592,13 @@ and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: ter
     (term2string !ctxt lhsty);
   *)
   close_context ctxt;
+
+  let rhs, rhsty = typeinfer defs ctxt rhs in
   (*
-  printf "%s |- \n" 
-    (context2string !ctxt);
+    printf "%s |- %s :?: %s\n" 
+    (context2string !ctxt)
+    (term2string !ctxt rhs)
+    (term2string !ctxt rhsty);
   *)
   let rhs, rhsty = typecheck defs ctxt rhs lhsty in
 

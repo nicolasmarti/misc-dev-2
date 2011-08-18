@@ -96,7 +96,7 @@ plusType Nat Nat := Nat
 depfold {Nat} (+) O (S (S 0)) :?: 
 (* :?: Nat -> Nat -> Nat *)
 "
-(*
+
 let _ = process_definition defs ctxt "Bool :: Type"
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
@@ -144,7 +144,6 @@ let _ = process_definition defs ctxt "\\ (b :: Bool) -> b || False"
 
 
 let _ = process_definition defs ctxt "map (\\ (b :: Bool) -> b || False) (True:False:[])"
-*)
 
 let _ = process_definition defs ctxt "List :: Type -> Type"
 let _ = process_definition defs ctxt "[[]] :: {A :: Type} -> List A"
@@ -215,18 +214,15 @@ let _ = process_definition defs ctxt "foldl f acc [] := acc"
 let _ = process_definition defs ctxt "foldl f acc (hd:tl) := foldl f (f acc hd) tl"
 
 let _ = process_definition defs ctxt "foldl ((+) {Nat} {Nat}) O (O : S O : [])"
+  
 
 let _ = process_definition defs ctxt "T :: Type -> Type -> Nat -> Type"
 let _ = process_definition defs ctxt "T A B O := B"
 let _ = process_definition defs ctxt "T A B (S n) := A -> T A B n"
 
 let _ = process_definition defs ctxt "depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n"
-
-let _ = process_definition defs ctxt "depfold ((+) {Nat} {Nat}) O (S O)"
-
-(*
-  these examples are failing
 let _ = process_definition defs ctxt "depfold f acc O := acc"
-let _ = process_definition defs ctxt "depfold f acc (S n) := (x := depfold f (f acc x) n)"
-*)
+let _ = process_definition defs ctxt "depfold {A} {B} f acc (S n) := \\ (x :: A) -> depfold f (f acc x) n)"
+
+let _ = process_definition defs ctxt "depfold ((+) {Nat} {Nat}) O (S (S O))"
 
