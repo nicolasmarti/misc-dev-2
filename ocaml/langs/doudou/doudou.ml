@@ -25,18 +25,23 @@ type index = int
 type nature = Explicit
 	      | Implicit
 
-class virtual ['a] tObj =
+(* but in our case we only use 
+   'a = term
+   'b = context
+   'c = defs
+*)
+class virtual ['a, 'b, 'c] tObj =
 object 
   method uuid: int = 0
   method virtual get_name: string
   method virtual get_type: 'a
   method virtual pprint: unit -> token
-  method virtual apply: ('a * nature) list -> 'a
+  method virtual apply: 'c -> 'b -> ('a * nature) list -> 'a
 end
 
 type term = Type
 	    | Cste of symbol
-	    | Obj of term tObj
+	    | Obj of (term, context, defs) tObj
 
 	    (* the Left name is only valid after parsing, and removed by typecheck*)
 	    | TVar of index
@@ -63,7 +68,7 @@ and equation = pattern * term
 
 (* context of a term *)
 (* N.B.: all terms are of the level in which they appear *)
-type frame = {
+and frame = {
   (* the symbol of the frame *)
   symbol : symbol;
   (* its type *)
@@ -87,6 +92,17 @@ type frame = {
   
 }
 
+(* context *)
+and context = frame list
+
+(* definitions *)
+and defs = {
+  (* here we store all id in a string *)
+  (* id -> (symbol * type * equations) *)
+  store : (string, (symbol * term * equation list)) Hashtbl.t;
+  hist : symbol list;
+}
+
 let empty_frame = {
   symbol = Symbol ("_", Nofix);
   ty = Type;
@@ -98,18 +114,9 @@ let empty_frame = {
   patternstack = [];
 }
 
-type context = frame list
-
 (* the context must a least have one frame, for pushing/poping stack elements *)
 let empty_context = empty_frame::[]
 	   
-(* definitions *)
-type defs = {
-  (* here we store all id in a string *)
-  (* id -> (symbol * type * equations) *)
-  store : (string, (symbol * term * equation list)) Hashtbl.t;
-  hist : symbol list;
-}
 
 let empty_defs = { store = Hashtbl.create 30; hist = [] }
 
@@ -2201,8 +2208,13 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
 	  let hd = reduction defs ctxt strat hd in
 	  let te = shift_term (term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te) (-1) in
-	  App (te, tl)
+	  reduction defs ctxt strat (App (te, tl))
 
+	)
+
+	| App (Obj o, args) -> (
+	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
+	  reduction defs ctxt strat (o#apply defs !ctxt args)
 	)
 
 	(* a first subcase for app: with a Cste as head *)
