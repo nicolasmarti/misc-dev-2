@@ -1287,7 +1287,7 @@ let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
     let endp = cur_pos pb in
     (res, (startp, endp))
 
-let doudou_keywords = ["Type"; "::"; ":="; "->"; "\\"]
+let doudou_keywords = ["Type"; "::"; ":="; "->"]
 
 open Str;;
 
@@ -1335,7 +1335,7 @@ let parseassoc : associativity parsingrule =
 
 let parse_symbol_name_def : symbol parsingrule = 
   let symbols = ["\\+"; "\\*"; "\\["; "\\]";
-		 "@"; "-"; ":"; "|"; "\\&"; "="
+		 "@"; "-"; ":"; "|"; "\\&"; "="; "~"; "\\\\"; "/"
 		] in
   let format_symbols = String.concat "" ["\\("; 
 					 String.concat "\\|" symbols;
