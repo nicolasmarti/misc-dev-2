@@ -68,6 +68,8 @@ let cur_pos pb = pos_coo pb pb.beginpointer
 type pos = ((int * int) * (int * int))
 ;;
 
+let nopos = (-1, -1), (-1, -1)
+
 exception NoMatch;;
 
 (* match a regular expression on a buffer:
@@ -528,9 +530,10 @@ type priority = int;;
 
 type 'a opparser = {
   primary: 'a parsingrule;
-  prefixes: (string, (priority * ('a -> 'a))) Hashtbl.t;
-  infixes: (string, (priority * associativity * ('a -> 'a -> 'a))) Hashtbl.t;
-  postfixes: (string, (priority * ('a -> 'a))) Hashtbl.t;  
+  (* pos prefix -> the position of the operator *)
+  prefixes: (string, (priority * (pos -> 'a -> 'a))) Hashtbl.t;
+  infixes: (string, (priority * associativity * (pos -> 'a -> 'a -> 'a))) Hashtbl.t;
+  postfixes: (string, (priority * (pos -> 'a -> 'a))) Hashtbl.t;  
   reserved: unit parsingrule;
 };;
 
@@ -959,11 +962,13 @@ let parse_prefix (op: 'a opparser) (t: 'a parsetree) :  ('a parsetree) parsingru
     (fun pb ->
       let _ = whitespaces pb in
       let () = notp op.reserved pb in
+      let startp = cur_pos pb in
       let _ = keyword x () pb in
+      let endp = cur_pos pb in
       let _ = whitespaces pb in
       (*printf "parsed prefix: %s\n" x;*)
       try
-        insert_prefix (x, y, z) t
+        insert_prefix (x, y, z (startp, endp)) t
       with
         | _ -> raise NoMatch
     )
@@ -993,11 +998,13 @@ let parse_postfix (op: 'a opparser) (t: 'a parsetree) :  ('a parsetree) parsingr
     (fun pb ->
       let _ = whitespaces pb in
       let () = notp op.reserved pb in
+      let startp = cur_pos pb in
       let _ = keyword x () pb in
+      let endp = cur_pos pb in
       let _ = whitespaces pb in
       (*printf "parsed postfix: %s\n" x;*)
       try
-        insert_postfix (x, y, z) t
+        insert_postfix (x, y, z (startp, endp)) t
       with
         | _ -> raise NoMatch
     )
@@ -1027,11 +1034,13 @@ let parse_infix (op: 'a opparser) (t: 'a parsetree) : ('a parsetree) parsingrule
     (fun pb ->
       let _ = whitespaces pb in
       let () = notp op.reserved pb in
+      let startp = cur_pos pb in
       let _ = keyword x () pb in
+      let endp = cur_pos pb in
       let _ = whitespaces pb in
       (*printf "parsed infix: %s\n" x;*)
       try
-        insert_infix (x, y, z, w) t
+        insert_infix (x, y, z, w (startp, endp)) t
       with
         | _ -> raise NoMatch
     )

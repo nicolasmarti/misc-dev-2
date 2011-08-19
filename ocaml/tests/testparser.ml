@@ -67,17 +67,17 @@ let rec print_expr (e: expr) =
       | Exp (e1, e2) -> printf "("; print_expr e1; printf " ^ "; print_expr e2; printf ")"
 ;;
 
-let prefixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
-Hashtbl.add prefixes "-" (2, fun x -> Neg x);;
+let prefixes: (string, (priority * (pos -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
+Hashtbl.add prefixes "-" (2, fun _ x -> Neg x);;
 
-let postfixes: (string, (priority * (expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
-Hashtbl.add postfixes "&" (3, fun x -> Lazy x);;
+let postfixes: (string, (priority * (pos -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
+Hashtbl.add postfixes "&" (3, fun _ x -> Lazy x);;
 
-let infixes: (string, (priority * associativity * (expr -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
-Hashtbl.add infixes "+" (1, LeftAssoc, fun x y -> Plus (x, y));;
-Hashtbl.add infixes "-" (2, LeftAssoc, fun x y -> Minus (x, y));;
-Hashtbl.add infixes "*" (4, RightAssoc, fun x y -> Mult (x, y));;
-Hashtbl.add infixes "/" (4, RightAssoc, fun x y -> Div (x, y));;
+let infixes: (string, (priority * associativity * (pos -> expr -> expr -> expr))) Hashtbl.t = Hashtbl.create 10;;
+Hashtbl.add infixes "+" (1, LeftAssoc, fun _ x y -> Plus (x, y));;
+Hashtbl.add infixes "-" (2, LeftAssoc, fun _ x y -> Minus (x, y));;
+Hashtbl.add infixes "*" (4, RightAssoc, fun _ x y -> Mult (x, y));;
+Hashtbl.add infixes "/" (4, RightAssoc, fun _ x y -> Div (x, y));;
 
 
 let valparser : expr Parser.parsingrule = 
