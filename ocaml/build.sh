@@ -16,7 +16,7 @@ ocb()
 rule() {
   case $1 in
     clean)  ocb -clean;;
-    all)    ocb $TESTS; ocb $APPS;;
+    all)    ocb $TESTS; ocb $APPS; ocb $DOUDOU;;
     tests)  ocb $TESTS;;	  
     apps)   ocb $APPS;;
     doudou) ocb $DOUDOU;;
