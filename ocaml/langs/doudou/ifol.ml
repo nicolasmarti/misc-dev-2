@@ -34,17 +34,17 @@ let _ = process_definition defs ctxt "right :: {A B :: Type} -> B -> A \\/ B"
 let _ = process_definition defs ctxt "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
 
 (*
-  
-  example of formula:
+  examples of formula:
   -------------------
-
-  {A B :: Type} -> (A /\\ B) -> (B /\\ A)
-
-  should generate a term like:
-
-  \\ {A B :: Type} (H: A /\\ B) ->
-  conj (proj2 H) (proj1 H)
-
 *)
 
+(* {A B :: Type} -> (A /\\ B) -> (B /\\ A) *)
+
 let _ = process_definition defs ctxt "\\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H)"
+
+(* {A B :: Type} -> (A \\/ B) -> (B \\/ A) *)
+
+let _ = process_definition defs ctxt "
+\\ {A B :: Type} (H :: A \\/ B) -> 
+disj {A} {B} {A \\/ B} H (\\ a -> right a) (\\ b -> left b)
+"
