@@ -346,6 +346,41 @@ and fv_pattern (p: pattern) : IndexSet.t =
     | PApp (_, args, ty, _) ->
       List.fold_left (fun acc (p, _) -> IndexSet.union acc (fv_pattern p)) (fv_term ty) args
 
+(* shift a set of variable *)
+let shift_vars (vars: IndexSet.t) (delta: int) : IndexSet.t =
+  IndexSet.fold (fun e acc ->
+    if (e >= 0 && e + delta < 0) || e < 0 then acc
+    else IndexSet.add (e + delta) acc      
+  ) vars IndexSet.empty
+
+
+(* the set of bound variable in a term *)
+let rec bv_term (te: term) : IndexSet.t =
+  match te with
+    | Type _ | Cste _ | Obj _ -> IndexSet.empty
+    | TVar (i, _) when i >= 0 -> IndexSet.singleton i
+    | TVar (i, _) when i < 0 -> IndexSet.empty
+    | AVar _ -> raise (Failure "fv_term catastrophic: AVar")
+    | TName _ -> raise (Failure "fv_term catastrophic: TName")
+    | App (te, args, _) ->
+      List.fold_left (fun acc (te, _) -> IndexSet.union acc (bv_term te)) (bv_term te) args
+    | Impl ((s, ty, n, pos), te, _) ->
+      IndexSet.union (bv_term ty) (shift_vars (bv_term te) (-1))
+    | Lambda ((s, ty, n, pos), te, _) ->
+      IndexSet.union (bv_term ty) (shift_vars (bv_term te) (-1))
+
+and bv_pattern (p: pattern) : IndexSet.t =
+  match p with
+    | PType _ | PCste _ -> IndexSet.empty
+    | PVar (_, ty, _) -> (shift_vars (bv_term ty) (-1))
+    | PAVar (ty, _) -> (shift_vars (bv_term ty) (-1))
+    | PAlias (_, p, ty, _) -> IndexSet.union (shift_vars (bv_term ty) (- (pattern_size p))) (bv_pattern p)
+    | PApp (_, args, ty, _) ->
+      let i, vars = List.fold_left (fun (i, acc) (p, _) ->
+	i - pattern_size p, IndexSet.union acc (shift_vars (bv_pattern p) i)
+      ) (0, IndexSet.empty) args in
+      IndexSet.union vars (shift_vars (bv_term ty) i)
+
 (* function like map, but that can skip elements *)
 let rec skipmap (f: 'a -> 'b option) (l: 'a list) : 'b list =
   match l with
@@ -977,7 +1012,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    (* if the symbol is Nofix _ -> we skip the symbol *)
 	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
 	    match s with
-	      | Symbol ("_", Nofix) ->
+	      | Symbol ("_", Nofix) | _ when not (IndexSet.mem 0 (bv_term te))->
 		(* we only put brackets if implicit *)
 		(if nature = Implicit then withBracket else fun x -> x)
 		  (term2token ctxt ty (InArg nature))
