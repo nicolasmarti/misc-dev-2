@@ -328,8 +328,8 @@ let rec fv_term (te: term) : IndexSet.t =
     | Type _ | Cste _ | Obj _ -> IndexSet.empty
     | TVar (i, _) when i >= 0 -> IndexSet.empty
     | TVar (i, _) when i < 0 -> IndexSet.singleton i
-    | AVar _ -> raise (Failure "fv_term catastrophic: AVar")
-    | TName _ -> raise (Failure "fv_term catastrophic: TName")
+    | AVar _ -> IndexSet.empty
+    | TName _ -> IndexSet.empty
     | App (te, args, _) ->
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
     | Impl ((s, ty, n, pos), te, _) ->
@@ -360,8 +360,8 @@ let rec bv_term (te: term) : IndexSet.t =
     | Type _ | Cste _ | Obj _ -> IndexSet.empty
     | TVar (i, _) when i >= 0 -> IndexSet.singleton i
     | TVar (i, _) when i < 0 -> IndexSet.empty
-    | AVar _ -> raise (Failure "fv_term catastrophic: AVar")
-    | TName _ -> raise (Failure "fv_term catastrophic: TName")
+    | AVar _ -> IndexSet.empty
+    | TName _ -> IndexSet.empty
     | App (te, args, _) ->
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (bv_term te)) (bv_term te) args
     | Impl ((s, ty, n, pos), te, _) ->
@@ -1521,7 +1521,7 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
     let startpos = cur_pos pb in
     let () = word "\\" pb in
     let () = whitespaces pb in
-    let qs = many1 (parse_impl_lhs defs leftmost) pb in
+    let qs = many1 (parse_lambda_lhs defs leftmost) pb in
     let () = whitespaces pb in
     let () = word "->" pb in
     let () = whitespaces pb in
@@ -1583,6 +1583,59 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((s
     let ty = bracket (parse_term_lvl0 defs leftmost) pb in
     ([Symbol ("_", Nofix), nopos], ty, Implicit)        
   )
+end pb
+
+and parse_lambda_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((symbol * pos) list * term * nature) = begin
+  (* first case 
+     with paren
+  *)
+  tryrule (paren (fun pb ->
+    let names = many1 (fun pb ->
+      let () = whitespaces pb in
+      let startpos = cur_pos pb in
+      let n = name_parser pb in
+      let endpos = cur_pos pb in
+      let () = whitespaces pb in
+      n, (startpos, endpos)
+    ) pb in
+    let () = whitespaces pb in
+    let () = word "::" pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs leftmost pb in
+    (List.map (fun (n, p) -> Name n, p) names, ty, Explicit)
+   )
+  )
+  (* or the same but with bracket *)
+  <|> tryrule (bracket (fun pb ->
+    let names = many1 (fun pb ->
+    let () = whitespaces pb in
+    let startpos = cur_pos pb in
+    let n = name_parser pb in
+    let endpos = cur_pos pb in
+    let () = whitespaces pb in
+    n, (startpos, endpos)
+    ) pb in
+    let ty = match (mayberule (fun pb ->
+      let () = whitespaces pb in
+      let () = word "::" pb in
+      let () = whitespaces pb in
+      let ty = parse_term defs leftmost pb in
+      ty
+    ) pb) with
+      | None -> AVar nopos
+      | Some ty -> ty in
+    (List.map (fun (n, p) -> Name n, p) names, ty, Implicit)
+  )
+  )
+  <|> (fun pb -> 
+    let () = whitespaces pb in
+    let startpos = cur_pos pb in
+    let n = name_parser pb in
+    let endpos = cur_pos pb in
+    let () = whitespaces pb in
+    ([Name n, (startpos, endpos)], AVar nopos, Explicit)        
+  )
+
 end pb
 
 (* this is operator-ed terms with term_lvl1 as primary
