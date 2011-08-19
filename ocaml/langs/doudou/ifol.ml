@@ -48,5 +48,5 @@ let _ = process_definition defs ctxt "\\ {A B :: Type} (H :: A /\\ B) -> conj (p
 
 let _ = process_definition defs ctxt "
 \\ {A B :: Type} (H :: A \\/ B) -> 
-disj {A} {B} {A \\/ B} H (\\ a -> right a) (\\ b -> left b)
+disj H (\\ a -> right a) (\\ b -> left b)
 "

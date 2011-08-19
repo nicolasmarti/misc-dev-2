@@ -778,7 +778,7 @@ let pop_frame (ctxt: context) : context * frame =
   match List.hd ctxt with
     | { fvs = []; termstack = []; naturestack = []; patternstack = []; _} ->
       List.tl ctxt, List.hd ctxt
-    | { termstack = []; naturestack = []; patternstack = []; _} ->
+    | { fvs = _::_; termstack = []; naturestack = []; patternstack = []; _} ->
       raise (Failure "Case not yet supported, pop_frame with still fvs")
     | _ -> raise (DoudouException (PoppingNonEmptyFrame (List.hd ctxt)))
 
@@ -788,22 +788,6 @@ let rec pop_frames (ctxt: context) (nb: int) : context * context =
     let ctxt, frame = pop_frame ctxt in 
     let ctxt, frames = pop_frames ctxt (nb - 1) in
     ctxt, frame::frames
-
-(* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
-let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
-  let hd, tl = List.hd !ctxt, List.tl !ctxt in
-  let (terms, fvs) = List.fold_left (fun (terms, fvs) (i, te, ty) ->
-    match te with
-      | TVar (i, _) ->
-      (* there is not value for this free variable -> keep it *)
-	terms, fvs @ [i, te, ty]
-      | _ -> 
-      (* there is a value, we can get rid of the free var *)
-	let terms = List.map (fun hd -> term_substitution (IndexMap.singleton i te) hd) terms in
-	terms, fvs
-  ) (l, []) hd.fvs in
-  ctxt := ({hd with fvs = fvs})::tl;
-  terms
 
 (* we add a free variable *)
 let add_fvar (ctxt: context ref) (ty: term) : int =
@@ -1847,6 +1831,48 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
 
 let debug = ref false
 
+(* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
+let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
+  if !debug then printf "before flush_vars: %s\n" (context2string !ctxt);
+  let hd, tl = List.hd !ctxt, List.tl !ctxt in
+  (* we compute the fvars of the terms *)
+  let lfvs = List.fold_left (fun acc te -> IndexSet.union acc (fv_term te)) IndexSet.empty l in
+  (* and traverse the free variables *)
+  let (terms, fvs) = fold_cont (fun (terms, fvs) ((i, ty, te)::tl) ->
+    match te with
+      | TVar (i', _) when not (IndexSet.mem i' lfvs) ->
+	(* there is no value for this free variable, and it does not appears in the terms --> remove it *)
+	tl, (terms, fvs)
+      | TVar (i', _) when IndexSet.mem i' lfvs ->
+	(* there is no value for this free variable, but it does not appears in the terms --> keep it *)
+	tl, (terms, fvs @ [i, ty, te])
+      | _ -> 
+      (* there is a value, we can get rid of the free var *)
+	if !debug then printf "flush_vars, rewrite %s --> %s\n" (term2string !ctxt (TVar (i, nopos))) (term2string !ctxt te);
+	let s = (IndexMap.singleton i te) in
+	let terms = List.map (fun hd -> term_substitution s hd) terms in
+	let tl = List.map (fun (i, ty, te) -> i, term_substitution s ty, term_substitution s te) tl in
+	tl, (terms, fvs)
+  ) (l, []) (List.rev hd.fvs) in
+  (* here we are removing the free vars and putting them bellow only if they have no TVar 0 in their term/type *)
+  (* first we shift them *)
+  let fvs = List.fold_left (fun acc (i, ty, te) ->
+    try 
+      acc @ [i, shift_term ty (-1), shift_term te (-1)]
+    with
+      | DoudouException (Unshiftable_term _) ->
+	(* we have a free variable that has a type / value containing the symbol in hd -> game over we failed *)
+	raise (DoudouException (FreeError "we failed to infer a free variable that cannot be out-scoped"))
+  ) [] (List.rev fvs) in
+  (match tl with
+    (* we are in toplevel do nothing *)
+    | [] -> ctxt := ({hd with fvs = fvs})::tl
+    (* we are not in toplevel -> we copy the fvs (that have been shifted), to the previous level *)
+    | hd'::tl -> ctxt := ({hd with fvs = []})::({hd' with fvs = fvs @ hd'.fvs})::tl
+  ); 
+  if !debug then printf "after flush_vars: %s\n" (context2string !ctxt);
+  terms
+      
 (*
   reduction of terms
   several strategy are possible:
@@ -1932,6 +1958,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
 
 and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
   if !debug then printf "unification: %s Vs %s\n" (term2string !ctxt te1) (term2string !ctxt te2);
+  let res = (
   match te1, te2 with
 
     (* the error cases for AVar and TName *)
@@ -2117,6 +2144,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
+	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Impl ((s1, ty, n1, pq1), te, p1)
@@ -2145,9 +2173,13 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     (* for all the rest: I do not know ! *)
     | _ -> 
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+  ) in
+  if !debug then printf "unification result: %s\n" (term2string !ctxt res);
+  res
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
   if !debug then printf "reduction: %s\n" (term2string !ctxt te);
+  let res = (
   match te with
 
     | Type _ -> te
@@ -2185,6 +2217,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
 	(* we pop the frame *)
+	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
 	Impl ((s, ty, n, pq1), te, p1)
@@ -2273,6 +2306,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args, p)
 
     )
+  ) in
+  if !debug then printf "reduction result: %s\n" (term2string !ctxt res);
+  res
 
 (*
   helper function that detect if the number of explicit arguments
@@ -2285,6 +2321,7 @@ and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
   if !debug then printf "typecheck: %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);
+  let res = (
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -2321,9 +2358,13 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       ctxt := saved_ctxt;
       let te, inferedty = typeinfer defs ctxt te in
       raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
-      
+  ) in
+  if !debug then printf "typecheck result: %s :: %s\n" (term2string !ctxt (fst res)) (term2string !ctxt (snd res));
+  res
+
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
-  (*printf "typecheck: %s :: ???\n" (term2string !ctxt te);*)
+  if !debug then printf "typeinfer: %s :: ???\n" (term2string !ctxt te);
+  let res = (
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -2360,6 +2401,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       (* we typecheck te :: Type *)
       let te, ty' = typecheck defs ctxt te (Type nopos) in
       (* we pop the frame for s *)
+      let [te] = flush_fvars ctxt [te] in
       ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
       Impl ((s, ty, n, pq), te, p), ty'
@@ -2424,9 +2466,12 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      (* we compute the type of the application:
 		 we substitute the bound var 0 (s) by the free variable, and then reshift the whole term by - 1
 	      *)	      
+	      if !debug then printf "typeinfer: missing an Implicit var => intorducing %s :: %s\n" (term2string !ctxt (TVar (fv, nopos))) (term2string !ctxt ty);
+
 	      let ty = term_substitution (IndexMap.singleton 0 (TVar (fv, nopos))) te in
 	      let ty = shift_term ty (-1) in
-	      
+
+
 	      (* we push the arg and its nature *)
 	      push_terms ctxt [TVar (fv, nopos)];
 	      push_nature ctxt Implicit;
@@ -2470,7 +2515,9 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     | DoudouException err ->
       ctxt := saved_ctxt;
       raise (DoudouException (CannotInfer (!ctxt, te, err)))
-
+  ) in 
+  if !debug then printf "typeinfer result : %s :: %s\n" (term2string !ctxt (fst res)) (term2string !ctxt (snd res));
+  res
 and typecheck_pattern (defs: defs) (ctxt: context ref) (p: pattern) (ty: term) : pattern * term * term =
   let p', pte, pty = typeinfer_pattern defs ctxt p in
   
