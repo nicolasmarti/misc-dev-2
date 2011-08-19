@@ -93,11 +93,16 @@ and frame = {
 (* context *)
 and context = frame list
 
+and value = Inductive of (symbol * term) list
+	    | Axiom
+	    | Constructor
+	    | Equation of equation list
+
 (* definitions *)
 and defs = {
   (* here we store all id in a string *)
   (* id -> (symbol * type * equations) *)
-  store : (string, (symbol * term * equation list)) Hashtbl.t;
+  store : (string, (symbol * term * value)) Hashtbl.t;
   hist : symbol list;
 }
 
@@ -713,7 +718,7 @@ let pop_nature (ctxt: context ref) : nature =
   List.hd hd.naturestack
 
 (* unfold a constante *)
-let unfold_constante (defs: defs) (s: symbol) : equation list =
+let unfold_constante (defs: defs) (s: symbol) : value =
   try 
     (fun (_, _, value) -> value) (Hashtbl.find defs.store (symbol2string s))
   with
@@ -781,6 +786,31 @@ let add_fvar (ctxt: context ref) (ty: term) : int =
   ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar (next_fvar_index, nopos))::frame.fvs})::List.tl !ctxt;
   next_fvar_index
 
+(* add definitions to a defs *)
+
+let addAxiom (defs: defs ref) (s: symbol) (ty: term) : unit =
+  (* just checking that there is no redefinition *)
+  if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
+
+  (* update the definitions *)
+  Hashtbl.add !defs.store (symbol2string s) (s, ty, Axiom);
+  defs := {!defs with hist = s::!defs.hist }
+
+let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
+  (* just checking that there is a definition *)
+  if not (Hashtbl.mem !defs.store (symbol2string s)) then raise (DoudouException (FreeError (String.concat "" ["symbol: "; (symbol2string s); " is not defined!"])));
+
+  (* we verify that it is either an equation or an axioms*)
+  let eqs = (match unfold_constante !defs s with
+    | Axiom -> []
+    | Equation eqs -> eqs
+    | Inductive _ -> raise (DoudouException (FreeError (String.concat "" ["symbol: "; (symbol2string s); " is an Inductive Type!"])))
+    | Constructor -> raise (DoudouException (FreeError (String.concat "" ["symbol: "; (symbol2string s); " is a constructor!"])))
+  ) in
+  (* update the definitions *)
+  Hashtbl.add !defs.store (symbol2string s) (s, constante_type !defs s, Equation (eqs @ [eq]));
+  defs := {!defs with hist = s::!defs.hist }
+  
 (******************)
 (* pretty printer *)
 (******************)
@@ -1203,6 +1233,16 @@ let equation2token (ctxt: context) (eq: equation) : token =
   Box [pattern2token ctxt p Alone; Space 1; Verbatim ":="; Space 1;
        let ctxt = input_pattern ctxt p in term2token ctxt te Alone]
 
+let defs2token (defs: defs) : token =
+  (* fold : ('a -> 'b -> 'c -> 'c) -> ('a, 'b) t -> 'c -> 'c *)
+  Box (
+    Hashtbl.fold (fun key value acc ->
+      match value with
+	| (s, ty, _) ->
+	  acc @ [Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token [] ty Alone]; Newline]
+    ) defs.store []
+  )  
+
 (* make a string from an error *)
 let error2string (err: doudou_error) : string =
   let token = error2token err in
@@ -1221,6 +1261,11 @@ let context2string (ctxt: context) : string =
 
 let equation2string (ctxt: context) (eq: equation) : string =
   let token = equation2token ctxt eq in
+  let box = token2box token 80 2 in
+  box2string box
+
+let defs2string (defs: defs) : string =
+  let token = defs2token defs in
   let box = token2box token 80 2 in
   box2string box
 
@@ -1677,9 +1722,9 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
   <|> (paren (parse_pattern defs leftmost))
 end pb
 
-type definition = Signature of symbol * term
-		  | Equation of pattern * term
-		  | Term of term
+type definition = DefSignature of symbol * term
+		  | DefEquation of pattern * term
+		  | DefTerm of term
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
   (* a signature *)
@@ -1690,7 +1735,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = word "::" pb in
     let () = whitespaces pb in
     let ty = parse_term defs leftmost pb in
-    Signature (s, ty)
+    DefSignature (s, ty)
   )
   (* here we should have the Destructor parser *)
   <|> tryrule (fun pb ->
@@ -1700,17 +1745,19 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = word ":=" pb in
     let () = whitespaces pb in
     let te = parse_term defs leftmost pb in
-    Equation (p, te)
+    DefEquation (p, te)
   )
   (* finally a free term *)
   <|> tryrule (fun pb ->
-    Term (parse_term defs leftmost pb)
+    DefTerm (parse_term defs leftmost pb)
   )
     
 
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
 (*************************************************************)
+
+let debug = ref false
 
 (*
   reduction of terms
@@ -1796,7 +1843,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
 and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
-  (*printf "unification: %s Vs %s\n" (term2string !ctxt te1) (term2string !ctxt te2);*)
+  if !debug then printf "unification: %s Vs %s\n" (term2string !ctxt te1) (term2string !ctxt te2);
   match te1, te2 with
 
     (* the error cases for AVar and TName *)
@@ -1810,14 +1857,6 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     | Type p1, Type p2 -> Type (best_pos p1 p2)
     | Obj (o1, p1), Obj (o2, p2) when o1 = o2 -> Obj (o1, best_pos p1 p2)
     | Cste (c1, p1), Cste (c2, p2) when c1 = c2 -> Cste (c1, best_pos p1 p2)
-
-    | Cste (c1, pos), _ when List.length (unfold_constante defs c1) = 1 && 
-			  set_pattern_pos (fst (List.nth (unfold_constante defs c1) 0)) nopos = PCste (c1, nopos) ->
-      unification_term_term defs ctxt (snd (List.nth (unfold_constante defs c1) 0)) te2
-
-    | _, Cste (c2, pos) when List.length (unfold_constante defs c2) = 1 && 
-		   set_pattern_pos (fst (List.nth (unfold_constante defs c2) 0)) nopos = PCste (c2, nopos) ->
-      unification_term_term defs ctxt te1 (snd (List.nth (unfold_constante defs c2) 0))
 
     (* the trivial case for variable *)
     | TVar (i1, p1), TVar (i2, p2) when i1 = i2 -> TVar (i1, best_pos p1 p2)
@@ -1849,6 +1888,45 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       let s = IndexMap.singleton i2 te1 in
       ctxt := context_substitution s (!ctxt);
       te1
+
+    (* cases for constantes *)
+    | Cste (c1, pos), _ -> (
+      match unfold_constante defs c1 with
+	(* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
+	| Inductive _ | Axiom | Constructor -> 
+	  if set_term_pos (reduction defs ctxt unification_strat te2) nopos = Cste (c1, nopos) then
+	    Cste (c1, pos)
+	  else
+	    raise (DoudouException (NoUnification (!ctxt, te1, te2)))
+	(* if just one equation, we might want to unfold *)
+	| Equation [PCste (c2, _), te] when c1 = c2 ->
+	  unification_term_term defs ctxt te te2
+	(* these case is impossible *)
+	| Equation [PCste (c2, _), te] when c1 <> c2 ->
+	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
+	(* more than one equation ... we do not now *)
+	| Equation _ ->
+	  raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+    )
+
+    | _, Cste (c2, pos) -> (
+      match unfold_constante defs c2 with
+	(* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
+	| Inductive _ | Axiom | Constructor -> 
+	  if set_term_pos (reduction defs ctxt unification_strat te1) nopos = Cste (c2, nopos) then
+	    Cste (c2, pos)
+	  else
+	    raise (DoudouException (NoUnification (!ctxt, te1, te2)))
+	(* if just one equation, we might want to unfold *)
+	| Equation [PCste (c1, _), te] when c1 = c2 ->
+	  unification_term_term defs ctxt te1 te 
+	(* these case is impossible *)
+	| Equation [PCste (c1, _), te] when c1 <> c2 ->
+	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
+	(* more than one equation ... we do not now *)
+	| Equation _ ->
+	  raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+    )
 
     (* the case of two application: with not the same arity *)
     | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
@@ -1981,7 +2059,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
-  (*printf "reduction: %s\n" (term2string !ctxt te);*)
+  if !debug then printf "reduction: %s\n" (term2string !ctxt te);
   match te with
 
     | Type _ -> te
@@ -1992,7 +2070,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     (* with delta reduction we unfold *)
     | Cste (c1, _) when strat.delta -> (
       match unfold_constante defs c1 with
-	| [PCste (c1, _), te] -> te
+	| Equation [PCste (c2, _), te] when c1 = c2 -> te
+	| Equation [PCste (c2, _), te] when c1 <> c2 ->
+	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
 	| _ -> te
     )
 
@@ -2067,30 +2147,34 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
-	| App (Cste (c1, pos), args, pos2) when unfold_constante defs c1 <> [] -> (
-	  (* we reduce the arguments *)
-	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
-	  (* we try all the possible equations *)
-	  let res = fold_stop (fun () (p, body) ->
+	| App (Cste (c1, pos), args, pos2) -> (
+	  match unfold_constante defs c1 with
+	    | Equation eqs -> (
+	      (* we reduce the arguments *)
+	      let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
+	      (* we try all the possible equations *)
+	      let res = fold_stop (fun () (p, body) ->
 	      (* we could check that n = argn, but it should have been already checked *)
 	      (* can we unify the pattern ? *)
-	      try 
-		(* we need to cut arguments *)
-		let PApp (_, pargs, _, _) = p in
-		let neededargs = take (List.length pargs) args in
-		let surplusargs = drop (List.length pargs) args in
-		let r = unification_pattern_term !ctxt p (App (Cste (c1, pos), neededargs, nopos)) in
-		let te = term_substitution r body in
-		match surplusargs with
-		  | [] -> Right te
-		  | _ -> Right (App (te, surplusargs, (fst (get_term_pos te), snd (get_term_pos (fst (last surplusargs))))))
-	      with
-		| DoudouException (NoMatchingPattern (ctxt, p, te)) -> 
-		  Left ()
-	    ) () (unfold_constante defs c1) in
-	  match res with
-	    | Left () -> te
-	    | Right te -> reduction defs ctxt strat te
+		try 
+		  (* we need to cut arguments *)
+		  let PApp (_, pargs, _, _) = p in
+		  let neededargs = take (List.length pargs) args in
+		  let surplusargs = drop (List.length pargs) args in
+		  let r = unification_pattern_term !ctxt p (App (Cste (c1, pos), neededargs, nopos)) in
+		  let te = term_substitution r body in
+		  match surplusargs with
+		    | [] -> Right te
+		    | _ -> Right (App (te, surplusargs, (fst (get_term_pos te), snd (get_term_pos (fst (last surplusargs))))))
+		with
+		  | DoudouException (NoMatchingPattern (ctxt, p, te)) -> 
+		    Left ()
+	      ) () eqs in
+	      match res with
+		| Left () -> te
+		| Right te -> reduction defs ctxt strat te
+	    )
+	    | _ -> App (Cste (c1, pos), List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args, pos2)
 	)
 
 	(* App is right associative ... *)
@@ -2112,7 +2196,7 @@ and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
     | _ -> 0
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
-  (*printf "typecheck: %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);*)
+  if !debug then printf "typecheck: %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
@@ -2443,33 +2527,28 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
     try
       let def = parse_definition !defs pos pb in
       let _ = ( match def with
-	| Signature (s, ty) ->
-	  (* just checking that there is no redefinition *)
-	  if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
-
-	  printf "Definition: %s :: %s \n" (symbol2string s) (term2string !ctxt ty);
+	| DefSignature (s, ty) ->
 
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty (Type nopos) in	  
 	  (* we flush the free vars so far *)
 	  let [ty] = flush_fvars ctxt [ty] in
-	  (* update the definitions *)
-	  Hashtbl.add !defs.store (symbol2string s) (s, ty, []);
-	  defs := {!defs with hist = s::!defs.hist };
+	  (* add to the defs *)
+	  addAxiom defs s ty;
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 
-	| Equation (PCste (s, spos) as p, te) | Equation (PApp ((s, spos), _, _, _) as p, te) ->
+	| DefEquation (PCste (s, spos) as p, te) | DefEquation (PApp ((s, spos), _, _, _) as p, te) ->
+
 	  let p, te = typecheck_equation !defs ctxt p te in
-	  let (s, ty, eqs) = Hashtbl.find !defs.store (symbol2string s) in
-	  Hashtbl.add !defs.store (symbol2string s) (s, ty, eqs @ [p, te]);
-	  defs := {!defs with hist = s::!defs.hist };
 	  (* we flush the free vars so far *)
 	  let [] = flush_fvars ctxt [] in
+	  (* add to the defs *)
+	  addEquation defs s (p, te);
 	  (* just print that everything is fine *)
 	  printf "Equation: %s \n" (equation2string !ctxt (p, te));
 	    
-	| Term te ->
+	| DefTerm te ->
 	  (* we infer the term type *)
 	  let te, ty = typeinfer !defs ctxt te in
 	  let te = reduction !defs ctxt clean_term_strat te in

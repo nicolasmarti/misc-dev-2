@@ -1,5 +1,7 @@
 open Doudou
 
+open Printf
+
 (********************************************)
 (* example of source that should be process *)
 (********************************************)
@@ -100,11 +102,15 @@ depfold {Nat} (+) O (S (S 0)) :?:
 (* Boolean *)
 
 let _ = process_definition defs ctxt "Bool :: Type"
+
 let _ = process_definition defs ctxt "True :: Bool"
 let _ = process_definition defs ctxt "False :: Bool"
 
 let _ = process_definition defs ctxt "(||) : left, 20 :: Bool -> Bool -> Bool"
+
 let _ = process_definition defs ctxt "True || _ := True"
+
+
 let _ = process_definition defs ctxt "_ || True := True"
 let _ = process_definition defs ctxt "False || False := False"
 
