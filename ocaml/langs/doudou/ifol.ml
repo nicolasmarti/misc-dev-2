@@ -22,7 +22,8 @@ let _ = process_definition defs ctxt "true :: Type"
 let _ = process_definition defs ctxt "I :: true"
 
 let _ = process_definition defs ctxt "[~) : 50 :: Type -> Type"
-let _ = process_definition defs ctxt "~ P := P -> false"
+let _ = process_definition defs ctxt "contradiction :: {P :: Type} -> P -> ~ P -> false"
+let _ = process_definition defs ctxt "absurd :: {P :: Type} -> false -> P"
 
 let _ = process_definition defs ctxt "(/\\) : left, 40 :: Type -> Type -> Type"
 let _ = process_definition defs ctxt "conj :: {A B :: Type} -> A -> B -> A /\\ B"
