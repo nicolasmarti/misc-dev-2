@@ -146,6 +146,9 @@ let _ = process_definition defs ctxt "foldl :: {A B :: Type} -> (B -> A -> B) ->
 let _ = process_definition defs ctxt "foldl f acc [] := acc"
 let _ = process_definition defs ctxt "foldl f acc (hd:tl) := foldl f (f acc hd) tl"
 
+let _ = process_definition defs ctxt "foldr :: {A B :: Type} -> (A -> B -> B) -> List A -> B -> B"
+let _ = process_definition defs ctxt "foldr f [] acc := acc"
+let _ = process_definition defs ctxt "foldr f (hd:tl) acc := f hd (foldr f tl acc)"
 
 (* Nat *)
 

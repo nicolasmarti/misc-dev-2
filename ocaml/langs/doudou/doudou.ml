@@ -39,30 +39,28 @@ object
   method virtual apply: 'c -> 'b -> ('a * nature) list -> 'a
 end
 
-type term = Type
-	    | Cste of symbol
-	    | Obj of (term, context, defs) tObj
+type term = Type of pos
+	    | Cste of symbol * pos
+	    | Obj of (term, context, defs) tObj * pos
 
 	    (* the Left name is only valid after parsing, and removed by typecheck*)
-	    | TVar of index
+	    | TVar of index * pos
 		
 	    (* these constructors are only valide after parsing, and removed by typechecking *)
-	    | AVar
-	    | TName of symbol
+	    | AVar of pos
+	    | TName of symbol * pos
 
-	    | App of term * (term * nature) list
-	    | Impl of (symbol * term * nature) * term
-	    | Lambda of (symbol * term * nature) * term
-
-	    | SrcInfo of pos * term
+	    | App of term * (term * nature) list * pos
+	    | Impl of (symbol * term * nature * pos) * term * pos
+	    | Lambda of (symbol * term * nature * pos) * term * pos
 
 (* N.B.: all types are properly scoped w.r.t. bounded var introduce by "preceding" pattern *)
-and pattern = PType
-	      | PVar of name * term
-	      | PAVar of term
-	      | PCste of symbol
-	      | PAlias of name * pattern * term
-	      | PApp of symbol * (pattern * nature) list * term
+and pattern = PType of pos 
+	      | PVar of name * term * pos
+	      | PAVar of term * pos
+	      | PCste of symbol * pos
+	      | PAlias of name * pattern * term * pos
+	      | PApp of (symbol * pos) * (pattern * nature) list * term * pos
 
 and equation = pattern * term
 
@@ -105,9 +103,9 @@ and defs = {
 
 let empty_frame = {
   symbol = Symbol ("_", Nofix);
-  ty = Type;
+  ty = Type nopos;
   nature = Explicit;
-  value = TVar 0;
+  value = TVar (0, nopos);
   fvs = [];
   termstack = [];
   naturestack = [];
@@ -122,9 +120,6 @@ let empty_defs = { store = Hashtbl.create 30; hist = [] }
 
 type doudou_error = NegativeIndexBVar of index
 		    | Unshiftable_term of term * int * int
-
-		    | ErrorPosPair of pos option * pos option * doudou_error
-		    | ErrorPos of pos * doudou_error
 
 		    | UnknownCste of symbol
 		    | UnknownBVar of index * context
@@ -149,14 +144,12 @@ exception DoudouException of doudou_error
 (*      misc      *)
 (******************)
 
-(* set the outermost pattern type *)
-let set_pattern_type (p: pattern) (ty: term) : pattern =
-  match p with
-    | PVar (n, _) -> PVar (n, ty)
-    | PAVar _ -> PAVar ty
-    | PAlias (n, p, _) -> PAlias (n, p, ty)
-    | PApp (s, args, _) -> PApp (s, args, ty)
-    | _ -> p    
+(* the last element of the list *)
+let rec last (l: 'a list) : 'a =
+  match l with 
+    | [] -> raise (Failure "last: empty list")
+    | hd::[] -> hd
+    | hd :: tl -> last tl
 
 (* take and drop as in haskell *)
 let rec take (n: int) (l: 'a list) :'a list =
@@ -239,18 +232,26 @@ let pos_in (pos1: pos) (pos2: pos) : bool =
   (* and the end of pos2 must be equal or before the end of pos 1*)
   && ((end_line2 < end_line1) || (end_line1 = end_line2 && end_col2 <= end_col1))
 
+(* choose a position between two possibilities *)
+let best_pos (p1: pos) (p2: pos) : pos =
+  match p1, p2 with
+    | _ when p1 = nopos -> p2
+    | _ when p2 = nopos  -> p1
+    | _ when pos_in p1 p2 -> p2
+    | _ -> p1
+
 (* returns the numbers of bvars introduced by a pattern 
    we should always have 
    pattern_size p = List.length (fst (pattern_bvars p)))
 *)
 let rec pattern_size (p: pattern) : int =
   match p with
-    | PType -> 0
-    | PVar (n, ty) -> 1
-    | PAVar ty -> 1
-    | PCste s -> 0
-    | PAlias (n, p, ty) -> 1 + pattern_size p
-    | PApp (s, args, ty) -> 
+    | PType _-> 0
+    | PVar _ -> 1
+    | PAVar _ -> 1
+    | PCste _ -> 0
+    | PAlias (_, p, _, _) -> 1 + pattern_size p
+    | PApp (_, args, _, _) -> 
       List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
 
 (* computation of free variable in a term *)
@@ -261,29 +262,83 @@ module IndexSet = Set.Make(
   end
 );;
 
+(* set the outermost pattern type *)
+let set_pattern_type (p: pattern) (ty: term) : pattern =
+  match p with
+    | PVar (n, _, pos) -> PVar (n, ty, pos)
+    | PAVar (_, pos) -> PAVar (ty, pos)
+    | PAlias (n, p, _, pos) -> PAlias (n, p, ty, pos)
+    | PApp (s, args, _, pos) -> PApp (s, args, ty, pos)
+    | _ -> p    
+
+(* set the outermost pattern position *)
+let set_pattern_pos (p: pattern) (pos: pos) : pattern =
+  match p with
+    | PType _ -> PType pos
+    | PVar (n, ty, _) -> PVar (n, ty, pos)
+    | PAVar (ty, _) -> PAVar (ty, pos)
+    | PCste (s, _) -> PCste (s, pos)
+    | PAlias (n, p, ty, _) -> PAlias (n, p, ty, pos)
+    | PApp (s, args, ty, _) -> PApp (s, args, ty, pos)
+
+(* get the outermost pattern position *)
+let get_pattern_pos (p: pattern) : pos =
+  match p with
+    | PType pos -> pos
+    | PVar (_, _, pos) -> pos
+    | PAVar (_, pos) -> pos
+    | PCste (_, pos) -> pos
+    | PAlias (_, _, _, pos) -> pos
+    | PApp (_, _, _, pos) -> pos
+
+(* set the outermost term position *)
+let set_term_pos (te: term) (p: pos) : term =
+    match te with
+      | Type _ -> Type p
+      | Cste (s, _) -> Cste (s, p)
+      | Obj (o, _) -> Obj (o, p)
+      | TVar (i, _) -> TVar (i, p)
+      | AVar _ -> AVar p
+      | TName (s, _) -> TName (s, p)
+      | App (f, args, _) -> App (f, args, p)
+      | Impl (q, te, _) -> Impl (q, te, p)
+      | Lambda (q, te, _) -> Lambda (q, te, p)
+
+(* set the outermost term position *)
+let get_term_pos (te: term) : pos =
+    match te with
+      | Type p -> p
+      | Cste (_, p) -> p
+      | Obj (_, p) -> p
+      | TVar (_, p) -> p
+      | AVar p -> p
+      | TName (_, p) -> p
+      | App (_, _, p) -> p
+      | Impl (_, _, p) -> p
+      | Lambda (_, _, p) -> p
+
 (* the set of free variable in a term *)
 let rec fv_term (te: term) : IndexSet.t =
   match te with
-    | Type | Cste _ | Obj _ -> IndexSet.empty
-    | TVar i when i >= 0 -> IndexSet.empty
-    | TVar i when i < 0 -> IndexSet.singleton i
-    | AVar -> raise (Failure "fv_term catastrophic: AVar")
+    | Type _ | Cste _ | Obj _ -> IndexSet.empty
+    | TVar (i, _) when i >= 0 -> IndexSet.empty
+    | TVar (i, _) when i < 0 -> IndexSet.singleton i
+    | AVar _ -> raise (Failure "fv_term catastrophic: AVar")
     | TName _ -> raise (Failure "fv_term catastrophic: TName")
-    | App (te, args) ->
+    | App (te, args, _) ->
       List.fold_left (fun acc (te, _) -> IndexSet.union acc (fv_term te)) (fv_term te) args
-    | Impl ((s, ty, n), te) ->
+    | Impl ((s, ty, n, pos), te, _) ->
       IndexSet.union (fv_term ty) (fv_term te)
-    | Lambda ((s, ty, n), te) ->
+    | Lambda ((s, ty, n, pos), te, _) ->
       IndexSet.union (fv_term ty) (fv_term te)
-    | SrcInfo (pos, te) -> (fv_term te)
 
 and fv_pattern (p: pattern) : IndexSet.t =
   match p with
-    | PType | PCste _ -> IndexSet.empty
-    | PVar (n, ty) -> fv_term ty
-    | PAVar ty -> fv_term ty
-    | PAlias (n, p, ty) -> IndexSet.union (fv_term ty) (fv_pattern p)
-    | PApp (s, args, ty) ->
+    | PType _ | PCste _ -> IndexSet.empty
+    | PVar (_, ty, _) -> fv_term ty
+    | PAVar (ty, _) -> fv_term ty
+    | PAlias (_, p, ty, _) -> IndexSet.union (fv_term ty) (fv_pattern p)
+    | PApp (_, args, ty, _) ->
       List.fold_left (fun acc (p, _) -> IndexSet.union acc (fv_pattern p)) (fv_term ty) args
 
 (* function like map, but that can skip elements *)
@@ -332,67 +387,31 @@ let op_priority (o: op) : int =
 (* returns only the elements that are explicit *)
 let filter_explicit (l: ('a * nature) list) : 'a list =
   List.map fst (List.filter (fun (_, n) -> n = Explicit) l)
-    
 
 (* utilities for DoudouException *)
-
-(* makes error more precise *)
-let error_left_pos (err: doudou_error) (pos: pos) =
-  match err with
-    (* there is no pos information for first element *)
-    | ErrorPosPair (None, pos2, err) -> ErrorPosPair (Some pos, pos2, err)
-    (* our source information is better *)
-    | ErrorPosPair (Some pos1, pos2, err) when pos_in pos1 pos -> ErrorPosPair (Some pos, pos2, err)
-    (* the given source information is better *)
-    | ErrorPosPair (Some pos1, pos2, err) when pos_in pos pos1 -> ErrorPosPair (Some pos1, pos2, err)
-    (* else ... *)
-    | err -> ErrorPosPair (Some pos, None, err)
-
-let error_right_pos (err: doudou_error) (pos: pos) =
-  match err with
-    (* there is no pos information for first element *)
-    | ErrorPosPair (pos1, None, err) -> ErrorPosPair (pos1, Some pos, err)
-    (* our source information is better *)
-    | ErrorPosPair (pos1, Some pos2, err) when pos_in pos2 pos -> ErrorPosPair (pos1, Some pos, err)
-    (* the given source information is better *)
-    | ErrorPosPair (pos1, Some pos2, err) when pos_in pos pos2 -> ErrorPosPair (pos1, Some pos2, err)
-    (* else ... *)
-    | err -> ErrorPosPair (Some pos, None, err)
-
-let error_pos (err: doudou_error) (pos: pos) =
-  match err with
-    (* our source information is better *)
-    | ErrorPos (pos1, err) when pos_in pos1 pos -> ErrorPos (pos, err)
-    (* the given source information is better *)
-    | ErrorPos (pos1, err) when pos_in pos pos1 -> ErrorPos (pos1, err)
-    (* else ... *)
-    | err -> ErrorPos (pos, err)
-
 (* build an implication: no shifting in types !!! *)
-let build_impl (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
-  List.fold_right (fun s acc -> Impl ((s, ty, nature), acc)) symbols body
+let build_impl (symbols: (symbol * pos) list) (ty: term) (nature: nature) (body: term) : term =
+  List.fold_right (fun (s, pos) acc -> Impl ((s, ty, nature, pos), acc, (fst pos, snd (get_term_pos acc)))) symbols body
 
 (* build a Lambda: no shifting in types !!! *)
-let build_lambda (symbols: symbol list) (ty: term) (nature: nature) (body: term) : term =
-  List.fold_right (fun s acc -> Lambda ((s, ty, nature), acc)) symbols body
+let build_lambda (symbols: (symbol * pos) list) (ty: term) (nature: nature) (body: term) : term =
+  List.fold_right (fun (s, pos) acc -> Lambda ((s, ty, nature, pos), acc, (fst pos, snd (get_term_pos acc)))) symbols body
 
 (* build a Lambda: no shifting in types !!! *)
-let build_lambdas (qs: (symbol list * term * nature) list) (body: term) : term =
+let build_lambdas (qs: ((symbol * pos) list * term * nature) list) (body: term) : term =
   List.fold_right (fun (s, ty, n) acc -> build_lambda s ty n acc) qs body
 
 (* recursive destrution of impl and lanbdas *)
-let rec destruct_impl (ty: term) : (symbol * term * nature) list * term =
+let rec destruct_impl (ty: term) : (symbol * term * nature * pos) list * term =
   match ty with
-    | SrcInfo (pos, te) -> destruct_impl te
-    | Impl (e, te) ->
+    | Impl (e, te, _) ->
       let l, te = destruct_impl te in
       e::l, te
     | _ -> [], ty
 
-let rec lambda_impl (ty: term) : (symbol * term * nature) list * term =
+let rec lambda_impl (ty: term) : (symbol * term * nature * pos) list * term =
   match ty with
-    | SrcInfo (pos, te) -> destruct_impl te
-    | Lambda (e, te) ->
+    | Lambda (e, te, _) ->
       let l, te = destruct_impl te in
       e::l, te
     | _ -> [], ty
@@ -417,41 +436,43 @@ type substitution = term IndexMap.t;;
 (* substitution *)
 let rec term_substitution (s: substitution) (te: term) : term =
   match te with
-    | Type | Cste _ | Obj _ -> te
-    | TVar i as v -> 
+    | Type _ | Cste _ | Obj _ -> te
+    | TVar (i, _) as v -> 
       (
 	try 
 	  IndexMap.find i s 
 	with
 	  | Not_found -> v
       )
-    | AVar -> raise (Failure "term_substitution catastrophic: AVar")
+    | AVar _ -> raise (Failure "term_substitution catastrophic: AVar")
     | TName _ -> raise (Failure "term_substitution catastrophic: TName")
-    | App (te, args) ->
+    | App (te, args, pos) ->
       App (term_substitution s te,
-	   List.map (fun (te, n) -> term_substitution s te, n) args)
-    | Impl ((symb, ty, n), te) ->
-      Impl ((symb, term_substitution s ty, n),
-	    term_substitution (shift_substitution s 1) te)
-    | Lambda ((symb, ty, n), te) ->
-      Lambda ((symb, term_substitution s ty, n),
-	    term_substitution (shift_substitution s 1) te)
-    | SrcInfo (pos, te) -> SrcInfo (pos, term_substitution s te)
+	   List.map (fun (te, n) -> term_substitution s te, n) args,
+	   pos)
+    | Impl ((symb, ty, n, p), te, pos) ->
+      Impl ((symb, term_substitution s ty, n, p),
+	    term_substitution (shift_substitution s 1) te,
+	    pos)
+    | Lambda ((symb, ty, n, p), te, pos) ->
+      Lambda ((symb, term_substitution s ty, n, p),
+	      term_substitution (shift_substitution s 1) te,
+	      pos)
 
 and pattern_substitution (s: substitution) (p: pattern) : pattern =
   match p with
-    | PType -> PType
-    | PVar (n, ty) -> PVar (n, term_substitution s ty)
-    | PCste s -> PCste s
-    | PAlias (n, p, ty) -> PAlias (n, pattern_substitution s p, term_substitution (shift_substitution s (pattern_size p)) ty)
-    | PApp (symb, args, ty) ->
+    | PType _ | PCste _ -> p
+    | PVar (n, ty, pos) -> PVar (n, term_substitution s ty, pos)
+    | PAlias (n, p, ty, pos) -> PAlias (n, pattern_substitution s p, term_substitution (shift_substitution s (pattern_size p)) ty, pos)
+    | PApp (symb, args, ty, pos) ->
       PApp (symb,
 	    fst (
 	      List.fold_left (fun (args, s) (p, n) ->
 		args @ [pattern_substitution s p, n], shift_substitution s (pattern_size p)
 	      ) ([], s) args
 	    ),
-	    term_substitution (shift_substitution s (pattern_size p)) ty)
+	    term_substitution (shift_substitution s (pattern_size p)) ty,
+	    pos)
 
 (* shift vars index in a substitution 
    only bound variable of the l.h.s. of the map are shifted too
@@ -474,51 +495,45 @@ and shift_term (te: term) (delta: int) : term =
 (* shift bvar index in a term, above a given index *)
 and leveled_shift_term (te: term) (level: int) (delta: int) : term =
   match te with
-    | Type -> Type
-    | Cste s -> Cste s
-    | Obj o -> Obj o
-    | TVar i when i < 0 -> te
-    | TVar i as v when i >= 0 ->
+    | Type _ | Cste _ | Obj _ | AVar _ | TName _ -> te
+    | TVar (i, _) when i < 0 -> te
+    | TVar (i, pos) as v when i >= 0 ->
       if i >= level then
 	if i + delta < level then (
 	  raise (DoudouException (Unshiftable_term (te, level, delta)))
 	)
 	else
-	  TVar (i + delta)
+	  TVar (i + delta, pos)
       else
 	v
 
-    | AVar -> raise (Failure "leveled_shift_term catastrophic: AVar")
-    | TName _ -> raise (Failure "leveled_shift_term catastrophic: TName")
-
-    | App (te, args) ->
+    | App (te, args, pos) ->
       App (
 	leveled_shift_term te level delta,
-	List.map (fun (te, n) -> leveled_shift_term te level delta, n) args
+	List.map (fun (te, n) -> leveled_shift_term te level delta, n) args,
+	pos
       )
-    | Impl ((s, ty, n), te) ->
-      Impl ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
+    | Impl ((s, ty, n, p), te, pos) ->
+      Impl ((s, leveled_shift_term ty level delta, n, p), leveled_shift_term te (level + 1) delta,
+	    pos)
 
-    | Lambda ((s, ty, n), te) ->
-      Lambda ((s, leveled_shift_term ty level delta, n), leveled_shift_term te (level + 1) delta)
-
-    | SrcInfo (pos, te) -> SrcInfo (pos, leveled_shift_term te level delta)
+    | Lambda ((s, ty, n, p), te, pos) ->
+      Lambda ((s, leveled_shift_term ty level delta, n, p), leveled_shift_term te (level + 1) delta, pos)
 
 and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
   match p with
-    | PType -> PType
-    | PCste s -> PCste s
-    | PVar (n, ty) -> PVar (n, leveled_shift_term ty level delta)
-    | PAVar ty -> PAVar (leveled_shift_term ty level delta)
-    | PAlias (s, p, ty) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty (level + pattern_size p) delta)
-    | PApp (s, args, ty) ->
+    | PType _ | PCste _ -> p
+    | PVar (n, ty, pos) -> PVar (n, leveled_shift_term ty level delta, pos)
+    | PAVar (ty, pos) -> PAVar (leveled_shift_term ty level delta, pos)
+    | PAlias (s, p, ty, pos) -> PAlias (s, leveled_shift_pattern p level delta, leveled_shift_term ty (level + pattern_size p) delta, pos)
+    | PApp (s, args, ty, pos) ->
       PApp (s,
 	    fst (
 	      List.fold_left (fun (args, level) (p, n) ->
 		args @ [leveled_shift_pattern p level delta, n], level + pattern_size p
 	      ) ([], level) args
 	    ),
-	    leveled_shift_term ty (level + pattern_size p) delta)
+	    leveled_shift_term ty (level + pattern_size p) delta, pos)
 
 
 (********************************)
@@ -528,7 +543,7 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (* build a new frame 
    value is optional
 *)
-let build_new_frame (s: symbol) ?(value: term = TVar 0) ?(nature: nature = Explicit) (ty: term) : frame =
+let build_new_frame (s: symbol) ?(value: term = TVar (0, nopos)) ?(nature: nature = Explicit) (ty: term) : frame =
 { 
   symbol = s;
   ty = ty;
@@ -559,16 +574,16 @@ let push_pattern_bvars (ctxt: context) (l: (name * term * term) list) : context 
 
 let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
   match p with
-    | PType -> [], Type
-    | PVar (n, ty) -> [n, ty, TVar 0], TVar 0
-    | PAVar ty -> ["_", ty, TVar 0], TVar 0
-    | PCste s -> [] , Cste s
-    | PAlias (n, p, ty) -> 
+    | PType pos -> [], Type pos
+    | PVar (n, ty, pos) -> [n, ty, TVar (0, pos)], TVar (0, pos)
+    | PAVar (ty, pos) -> ["_", ty, TVar (0, pos)], TVar (0, pos)
+    | PCste (s, pos) -> [] , Cste (s, pos)
+    | PAlias (n, p, ty, pos) -> 
       let l, te = pattern_bvars p in
       (* the value is shift by one (under the alias-introduced var) *)
       let te = shift_term te 1 in
-	(l @ [n, ty, te], te)
-    | PApp (s, args, ty) -> 
+	(l @ [n, ty, te], TVar (0, pos))
+    | PApp ((s, p), args, ty, pos) -> 
       let (delta, l, rev_values) = 
 	(* for sake of optimization the value list is in reverse order *)
 	List.fold_left (fun (delta, l, rev_values) (p, n) ->
@@ -579,7 +594,7 @@ let rec pattern_bvars (p: pattern) : (name * term * term) list * term =
 	  (* we update the delta value, and returns the concatenation *)
 	  (delta + List.length l, l @ pl, (te, n)::rev_values)
 	) (0, [], []) args in
-      (l, App (Cste s, List.rev rev_values))
+      (l, App (Cste (s, p), List.rev rev_values, pos))
 
 
 (* compute the context under a pattern *)
@@ -738,13 +753,14 @@ let rec pop_frames (ctxt: context) (nb: int) : context * context =
 let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
   let hd, tl = List.hd !ctxt, List.tl !ctxt in
   let (terms, fvs) = List.fold_left (fun (terms, fvs) (i, te, ty) ->
-    if te = TVar i then
+    match te with
+      | TVar (i, _) ->
       (* there is not value for this free variable -> keep it *)
-      terms, fvs @ [i, te, ty]
-    else
+	terms, fvs @ [i, te, ty]
+      | _ -> 
       (* there is a value, we can get rid of the free var *)
-      let terms = List.map (fun hd -> term_substitution (IndexMap.singleton i te) hd) terms in
-      terms, fvs
+	let terms = List.map (fun hd -> term_substitution (IndexMap.singleton i te) hd) terms in
+	terms, fvs
   ) (l, []) hd.fvs in
   ctxt := ({hd with fvs = fvs})::tl;
   terms
@@ -762,7 +778,7 @@ let add_fvar (ctxt: context ref) (ty: term) : int =
       | Right i -> i
   in
   let frame = List.hd !ctxt in
-  ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar next_fvar_index)::frame.fvs})::List.tl !ctxt;
+  ctxt := ({ frame with fvs = (next_fvar_index, ty, TVar (next_fvar_index, nopos))::frame.fvs})::List.tl !ctxt;
   next_fvar_index
 
 (******************)
@@ -814,26 +830,21 @@ let pp_option = ref {show_implicit = false; show_indices = false; show_position 
 (* transform a term into a box *)
 let rec term2token (ctxt: context) (te: term) (p: place): token =
   match te with
-    | SrcInfo (_, te) ->
-      if !pp_option.show_position then
-	Box [Verbatim "@("; term2token ctxt te p; Verbatim ")"]
-      else
-	term2token ctxt te p
-    | Type -> Verbatim "Type"
-    | Cste s -> Verbatim (symbol2string s)
-    | Obj o -> o#pprint ()
-    | TVar i when i >= 0 -> 
+    | Type _ -> Verbatim "Type"
+    | Cste (s, _) -> Verbatim (symbol2string s)
+    | Obj (o, _) -> o#pprint ()
+    | TVar (i, _) when i >= 0 -> 
       let frame = get_bvar_frame ctxt i in
       if !pp_option.show_indices then
 	Box [Verbatim (symbol2string (frame.symbol)); Verbatim "["; Verbatim (string_of_int i); Verbatim "]"]
       else
 	Verbatim (symbol2string (frame.symbol))
-    | TVar i when i < 0 -> 
+    | TVar (i, _) when i < 0 -> 
       Verbatim (String.concat "" ["?["; string_of_int i;"]"])
 
     (* we need to split App depending on the head *)
     (* the case for notation Infix *)
-    | App (Cste (Symbol (s, Infix (myprio, myassoc))), args) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
+    | App (Cste (Symbol (s, Infix (myprio, myassoc)), _), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -862,7 +873,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | App (Cste (Symbol (s, (Prefix myprio))), args) when not !pp_option.show_implicit &&List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Prefix myprio)), _), args, _) when not !pp_option.show_implicit &&List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -882,7 +893,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
        )
 
     (* the case for Postfix *)
-    | App (Cste (Symbol (s, (Postfix myprio))), args) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | App (Cste (Symbol (s, (Postfix myprio)), _), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -902,11 +913,11 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
        )
 
     (* if we have only implicit argument (and if we don't want to print them, then we are not really considered as a App  *)
-    | App (te, args) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
+    | App (te, args, _) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
       term2token ctxt te p
 
     (* general case *)
-    | App (te, args) ->
+    | App (te, args, _) ->
       (* we only embed in parenthesis if
 	 - we are an argument of an application
       *)
@@ -920,7 +931,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
        )
 
     (* implication *)
-    | Impl ((s, ty, nature), te) ->
+    | Impl ((s, ty, nature, _), te, _) ->
       (* we embed in parenthesis if 
 	 - embed as some arg 
 	 - ??
@@ -952,7 +963,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	)
 
     (* quantification *)
-    | Lambda ((s, ty, nature), te) ->
+    | Lambda ((s, ty, nature, _), te, _) ->
       (* we embed in parenthesis if 
 	 - embed as some arg 
 	 - ??
@@ -983,19 +994,23 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  Box [Verbatim "\\"; Space 1; lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
-    | AVar -> raise (Failure "term2token - catastrophic: still an AVar in the term")
+	(*
+    | AVar _ -> raise (Failure "term2token - catastrophic: still an AVar in the term")
     | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
+	*)
+    | AVar _ -> Verbatim "_"
+    | TName (s, _) -> Verbatim (symbol2string s)
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
   match pattern with
-    | PType -> Verbatim "Type"
-    | PVar (n, _) -> Verbatim n
+    | PType _ -> Verbatim "Type"
+    | PVar (n, _, _) -> Verbatim n
     | PAVar _ -> Verbatim "_"
-    | PCste s -> Verbatim (symbol2string s)
-    | PAlias (n, pattern, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
+    | PCste (s, _) -> Verbatim (symbol2string s)
+    | PAlias (n, pattern, _, _) -> Box [Verbatim n; Verbatim "@"; pattern2token ctxt pattern InAlias]
 
     (* for the append we have several implementation that mimics the ones for terms *)
-    | PApp (Symbol (s, Infix (myprio, myassoc)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
+    | PApp ((Symbol (s, Infix (myprio, myassoc)), _), args, _, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 2->
       (* we should put parenthesis in the following condition: *)
       (match p with
 	(* if we are an argument *)
@@ -1026,7 +1041,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
        )
     (* the case for Prefix *)
-    | PApp (Symbol (s, (Prefix myprio)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | PApp ((Symbol (s, (Prefix myprio)), _), args, _, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a postfix notation more binding than us
@@ -1048,7 +1063,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
        )
 
     (* the case for Postfix *)
-    | PApp (Symbol (s, (Postfix myprio)), args, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
+    | PApp ((Symbol (s, (Postfix myprio)), _), args, _, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
       (* we put parenthesis when
 	 - as the head or argument of an application
 	 - in a prefix notation more binding than us
@@ -1069,11 +1084,11 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
        )
 
-    | PApp (s, args, _) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
-      term2token ctxt (Cste s) p
+    | PApp ((s, pos), args, _, _) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
+      term2token ctxt (Cste (s, pos)) p
 
     (* general case *)
-    | PApp (s, args, _) ->
+    | PApp ((s, _), args, _, _) ->
       (* we only embed in parenthesis if
 	 - we are an argument of an application
 	 - we are in a notation (no !!! application more binding than operators)
@@ -1107,15 +1122,18 @@ let pattern2string (ctxt: context) (p: pattern) : string =
 
 (* pretty printing for errors *)
 let pos2token (p: pos) : token =
-  let startp, endp = p in
-  Box [Verbatim (string_of_int (fst startp)); 
-       Verbatim ":"; 
-       Verbatim (string_of_int (snd startp)); 
-       Verbatim "-"; 
-       Verbatim (string_of_int (fst endp)); 
-       Verbatim ":"; 
-       Verbatim (string_of_int (snd endp)); 
-      ]
+  match p with
+    | ((-1, -1), (-1, -1)) -> Verbatim ""
+    | (startp, endp) ->
+      Box [Verbatim (string_of_int (fst startp)); 
+	   Verbatim ":"; 
+	   Verbatim (string_of_int (snd startp)); 
+	   Verbatim "-"; 
+	   Verbatim (string_of_int (fst endp)); 
+	   Verbatim ":"; 
+	   Verbatim (string_of_int (snd endp)); 
+	  ]
+
     
 let context2token (ctxt: context) : token =
   Box ([Verbatim "{"] 
@@ -1147,55 +1165,33 @@ let rec error2token (err: doudou_error) : token =
     | UnknownBVar (i, ctxt) -> Box [Verbatim "unknown bounded var:"; Space 1; Verbatim (string_of_int i); Space 1; context2token ctxt]
     | UnknownFVar (i, ctxt) -> Verbatim "UnknownFVar"
 
-    | ErrorPosPair (Some pos1, Some pos2, err) ->
-      Box [
-	pos2token pos1; Space 1; Verbatim "/"; Space 1; pos2token pos2; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (None, Some pos2, err) ->
-      Box [
-	pos2token pos2; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (Some pos1, None, err) ->
-      Box [
-	pos2token pos1; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
-    | ErrorPosPair (None, None, err) ->
-      error2token err
-    | ErrorPos (pos, err) ->
-      Box [
-	pos2token pos; Space 1; Verbatim ":"; Newline;
-	error2token err
-      ]
     | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
       Box [
-	Verbatim "Cannot unify:"; Newline;
-	term2token ctxt te1 Alone; Newline;
-	  term2token ctxt te2 Alone;
+	Verbatim "Cannot unify"; Newline;
+	pos2token (get_term_pos te1); Space 1; term2token ctxt te1 Alone; Newline;
+	pos2token (get_term_pos te2); Space 1; term2token ctxt te2 Alone; Newline
       ]
     | NoMatchingPattern (ctxt, p, te) ->
       Box [
-	Verbatim "Cannot unify:"; Newline;
-	pattern2token ctxt p Alone; Newline;
-	  term2token ctxt te Alone;
+	Verbatim "Cannot unify:"; Newline;	
+	pos2token (get_pattern_pos p); Space 1; pattern2token ctxt p Alone; Newline;
+	pos2token (get_term_pos te); Space 1; term2token ctxt te Alone;
       ]
     | CannotInfer (ctxt, te, err) ->
       Box [
 	Verbatim "cannot infer type for:"; Space 1;
-	term2token ctxt te Alone; Newline;
+	pos2token (get_term_pos te); Space 1; term2token ctxt te Alone; Newline;
 	Verbatim "reason:"; Newline;
 	error2token err
       ]
     | CannotTypeCheck (ctxt, te, inferedty, ty, err) ->
       Box [
 	Verbatim "the term:"; Space 1;
-	term2token ctxt te Alone; Newline;
+	pos2token (get_term_pos te); Space 1; term2token ctxt te Alone; Newline;
 	Verbatim "of infered type:"; Space 1;
 	term2token ctxt inferedty Alone; Newline;
 	Verbatim "cannot be typecheck with type:"; Space 1;
-	term2token ctxt ty Alone; Newline;
+	pos2token (get_term_pos ty); Space 1; term2token ctxt ty Alone; Newline;
 	Verbatim "reason:"; Newline;
 	error2token err
       ]
@@ -1401,9 +1397,9 @@ let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparse
     match s with
       | Name _ -> ()
       | Symbol (n, Nofix) -> ()
-      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> App (Cste s, [te, Explicit]))
-      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> App (Cste s, [te1, Explicit; te2, Explicit]))
-      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> App (Cste s, [te, Explicit]))
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> App (Cste (s, pos), [te, Explicit], (fst pos, snd (get_term_pos te))))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> App (Cste (s, pos), [te1, Explicit; te2, Explicit], (fst (get_term_pos te1), snd (get_term_pos te2))))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> App (Cste (s, pos), [te, Explicit], (fst (get_term_pos te), snd pos)))
   ) defs.hist in
   res
 
@@ -1418,9 +1414,9 @@ let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : patter
     match s with
       | Name _ -> ()
       | Symbol (n, Nofix) -> ()
-      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
-      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun te1 te2 -> PApp (s, [te1, Explicit; te2, Explicit], AVar))
-      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun te -> PApp (s, [te, Explicit], AVar))
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> PApp ((s, pos), [te, Explicit], AVar nopos, (fst pos, snd (get_pattern_pos te))))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> PApp ((s, pos), [te1, Explicit; te2, Explicit], AVar nopos, (fst (get_pattern_pos te1), snd (get_pattern_pos te2))))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> PApp ((s, pos), [te, Explicit], AVar nopos, (fst (get_pattern_pos te), snd pos)))
   ) defs.hist in
   res
 
@@ -1438,7 +1434,7 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
     let body = parse_term defs leftmost pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
-    SrcInfo ((startpos, endpos), build_impl names ty nature body)
+    set_term_pos (build_impl names ty nature body) (startpos, endpos)
   ) 
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
@@ -1452,56 +1448,60 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
     let body = parse_term defs leftmost pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
-    SrcInfo ((startpos, endpos), build_lambdas qs body)
+    set_term_pos (build_lambdas qs body) (startpos, endpos)
   ) 
   <|> parse_term_lvl0 defs leftmost
 end pb
 
-and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (symbol list * term * nature) = begin
+and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((symbol * pos) list * term * nature) = begin
   (* first case 
      with paren
   *)
   tryrule (paren (fun pb ->
     let names = many1 (fun pb ->
       let () = whitespaces pb in
+      let startpos = cur_pos pb in
       let n = name_parser pb in
+      let endpos = cur_pos pb in
       let () = whitespaces pb in
-      n
+      n, (startpos, endpos)
     ) pb in
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
     let ty = parse_term defs leftmost pb in
-    (List.map (fun n -> Name n) names, ty, Explicit)
+    (List.map (fun (n, p) -> Name n, p) names, ty, Explicit)
    )
   )
   (* or the same but with bracket *)
   <|> tryrule (bracket (fun pb ->
     let names = many1 (fun pb ->
     let () = whitespaces pb in
+    let startpos = cur_pos pb in
     let n = name_parser pb in
+    let endpos = cur_pos pb in
     let () = whitespaces pb in
-    n
+    n, (startpos, endpos)
     ) pb in
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
     let ty = parse_term defs leftmost pb in
-    (List.map (fun n -> Name n) names, ty, Implicit)
+    (List.map (fun (n, p) -> Name n, p) names, ty, Implicit)
   )
   )
   (* or just a type -> anonymous arguments *)
   <|> (fun pb -> 
     let ty = parse_term_lvl0 defs leftmost pb in
-    ([Symbol ("_", Nofix)], ty, Explicit)        
+    ([Symbol ("_", Nofix), nopos], ty, Explicit)        
   )
   <|> (fun pb -> 
     let ty = paren (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", Nofix)], ty, Explicit)        
+    ([Symbol ("_", Nofix), nopos], ty, Explicit)        
   )
   <|> (fun pb -> 
     let ty = bracket (parse_term_lvl0 defs leftmost) pb in
-    ([Symbol ("_", Nofix)], ty, Implicit)        
+    ([Symbol ("_", Nofix), nopos], ty, Implicit)        
   )
 end pb
 
@@ -1528,7 +1528,7 @@ and parse_term_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
     match args with
       | [] -> head
       | _ -> 
-	SrcInfo ((startpos, endpos), App (head, args))
+	App (head, args, (startpos, endpos))
 end pb
 
 (* arguments: term_lvl2 with possibly brackets *)
@@ -1549,25 +1549,25 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
     let () = whitespaces pb in
     let (), pos = with_pos (word "Type") pb in
     let () = whitespaces pb in
-    SrcInfo (pos, Type)
+    Type pos
   ) 
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
     let (), pos = with_pos parse_avar pb in
     let () =  whitespaces pb in
-    SrcInfo (pos, AVar)
+    AVar pos
   ) 
   <|> tryrule (fun pb -> 
     let () =  whitespaces pb in
     let s, pos = with_pos (parse_symbol_name defs) pb in
     let () =  whitespaces pb in    
-    SrcInfo (pos, TName s)
+    TName (s, pos)
   )
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let n, pos = with_pos name_parser pb in
     let () = whitespaces pb in
-    SrcInfo (pos, TName (Name n))
+    TName (Name n, pos)
   )
   <|> (paren (parse_term defs leftmost))
 end pb
@@ -1580,7 +1580,7 @@ end pb
 and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrule =
   tryrule (fun pb -> 
     (* first we parse the application head *)
-    let s = parse_symbol defs pb in    
+    let s, pos = with_pos (parse_symbol defs) pb in    
     let () = whitespaces pb in
     (* then we parse the arguments *)
     let args = List.flatten (
@@ -1588,9 +1588,10 @@ and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrul
 	fun pb ->
 	  parse_pattern_arguments defs leftmost pb
       ) whitespaces pb) in
+    let endpos = cur_pos pb in
     match args with
-      | [] -> PCste s
-      | _ -> PApp (s, args, AVar)	  
+      | [] -> PCste (s, pos)
+      | _ -> PApp ((s, pos), args, AVar nopos, (fst pos, endpos))	  
   )
   <|> tryrule (parse_pattern_lvl2 defs leftmost)
 
@@ -1642,34 +1643,36 @@ end pb
 and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
   (fun pb -> 
     let () = whitespaces pb in
-    let () = word "Type" pb in
+    let (), pos = with_pos (word "Type") pb in
     let () = whitespaces pb in
-    PType
+    PType pos
   ) 
   <|> (fun pb ->
     let () =  whitespaces pb in
-    let () = parse_avar pb in
+    let (), pos = with_pos parse_avar pb in
     let () =  whitespaces pb in
-    PAVar AVar
+    PAVar (AVar nopos, pos) 
   ) 
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
-    let s = parse_symbol defs pb in
+    let s, pos = with_pos (parse_symbol defs) pb in
     let () =  whitespaces pb in
-    PCste s
+    PCste (s, pos)
   )
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
+    let startpos = cur_pos pb in
     let name = name_parser pb in
     let () = word "@" pb in
     let p = parse_pattern defs leftmost pb in
-    PAlias (name, p, AVar)
+    let endpos = cur_pos pb in
+    PAlias (name, p, AVar nopos, (startpos, endpos))
   )
   <|> (fun pb -> 
     let () =  whitespaces pb in
-    let name = name_parser pb in
+    let name, pos = with_pos name_parser pb in
     let () =  whitespaces pb in    
-    PVar (name, AVar)
+    PVar (name, AVar nopos, pos)
   )
   <|> (paren (parse_pattern defs leftmost))
 end pb
@@ -1766,12 +1769,12 @@ exception IotaReductionFailed
 *)
 let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
   match p, te with
-    | PType, Type -> IndexMap.empty
-    | PVar (n, ty), te -> IndexMap.singleton 0 te
+    | PType _, Type _-> IndexMap.empty
+    | PVar (n, ty, _), te -> IndexMap.singleton 0 te
     | PAVar _, te -> IndexMap.empty
-    | PCste s1, Cste s2 when s1 = s2 -> IndexMap.empty
-    | PCste s1, Cste s2 when s1 <> s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
-    | PAlias (n, p, ty), te ->
+    | PCste (s1, _), Cste (s2, _) when s1 = s2 -> IndexMap.empty
+    | PCste (s1, _), Cste (s2, _) when s1 <> s2 -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
+    | PAlias (n, p, ty, _), te ->
       (* grab the substitution *)
       let s = unification_pattern_term ctxt p te in
       (* shift it by one (for the n of the alias) *)
@@ -1781,7 +1784,7 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     (* for the application, we only accept same constante as head and same number of arguments 
        this is really conservatives .. we could implement the same mechanism as in subtitution_term_term
     *)
-    | PApp (s1, args1, ty), App (Cste s2, args2) when List.length args1 = List.length args2 && s1 = s2 ->
+    | PApp ((s1, _), args1, ty, _), App (Cste (s2, _), args2, _) when List.length args1 = List.length args2 && s1 = s2 ->
       (* we unify arguments one by one (with proper shifting) *)
       List.fold_left (fun s ((arg1, n1), (arg2, n2)) -> 
 	(* first we unify both args *)
@@ -1793,79 +1796,80 @@ let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substi
     | _ -> raise (DoudouException (NoMatchingPattern (ctxt, p, te)))
 
 and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : term =
+  (*printf "unification: %s Vs %s\n" (term2string !ctxt te1) (term2string !ctxt te2);*)
   match te1, te2 with
 
-    (* first the cases for SrcInfo *)
-
-    | SrcInfo (pos, te1), _ -> (
-      try 
-	unification_term_term defs ctxt te1 te2
-      with
-	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
-    )
-
-    | _, SrcInfo (pos, te2) -> (
-      try 
-	unification_term_term defs ctxt te1 te2
-      with
-	| DoudouException err -> raise (DoudouException (error_right_pos err pos))
-    )
-
     (* the error cases for AVar and TName *)
-    | AVar, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
-    | _, AVar -> raise (Failure "unification_term_term catastrophic: AVar in te2 ")
+    | AVar _, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
+    | _, AVar _ -> raise (Failure "unification_term_term catastrophic: AVar in te2 ")
     | TName _, _ -> raise (Failure "unification_term_term catastrophic: TName in te1 ")
     | _, TName _ -> raise (Failure "unification_term_term catastrophic: TName in te2 ")
 
 
     (* the trivial cases for Type, Cste and Obj *)
-    | Type, Type -> Type
-    | Obj o1, Obj o2 when o1 = o2 -> Obj o1
-    | Cste c1, Cste c2 when c1 = c2 -> Cste c1
+    | Type p1, Type p2 -> Type (best_pos p1 p2)
+    | Obj (o1, p1), Obj (o2, p2) when o1 = o2 -> Obj (o1, best_pos p1 p2)
+    | Cste (c1, p1), Cste (c2, p2) when c1 = c2 -> Cste (c1, best_pos p1 p2)
 
-    | Cste c1, _ when List.length (unfold_constante defs c1) = 1 && fst (List.nth (unfold_constante defs c1) 0) = PCste c1 ->
+    | Cste (c1, pos), _ when List.length (unfold_constante defs c1) = 1 && 
+			  set_pattern_pos (fst (List.nth (unfold_constante defs c1) 0)) nopos = PCste (c1, nopos) ->
       unification_term_term defs ctxt (snd (List.nth (unfold_constante defs c1) 0)) te2
 
-    | _, Cste c2 when List.length (unfold_constante defs c2) = 1 && fst (List.nth (unfold_constante defs c2) 0) = PCste c2 ->
+    | _, Cste (c2, pos) when List.length (unfold_constante defs c2) = 1 && 
+		   set_pattern_pos (fst (List.nth (unfold_constante defs c2) 0)) nopos = PCste (c2, nopos) ->
       unification_term_term defs ctxt te1 (snd (List.nth (unfold_constante defs c2) 0))
 
     (* the trivial case for variable *)
-    | TVar i1, TVar i2 when i1 = i2 -> TVar i1
+    | TVar (i1, p1), TVar (i2, p2) when i1 = i2 -> TVar (i1, best_pos p1 p2)
 
-    | TVar i1, TVar i2 when i1 < 0 && i2 < 0 -> 
+    | TVar (i1, p1), TVar (i2, p2) when i1 < 0 && i2 < 0 -> 
       let imin = min i1 i2 in
       let imax = max i1 i2 in
-      let s = IndexMap.singleton imin (TVar imax) in
+      let s = IndexMap.singleton imin (TVar (imax, best_pos p1 p2)) in
       ctxt := context_substitution s (!ctxt);
-      TVar imax
+      TVar (imax, best_pos p1 p2)
 
     (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
-    | TVar i1, _ when i1 >= 0 && bvar_value !ctxt i1 <> TVar i1 ->
+    | TVar (i1, p1), _ when i1 >= 0 && set_term_pos (bvar_value !ctxt i1) nopos <> TVar (i1, nopos) ->
       let _ = unification_term_term defs ctxt (bvar_value !ctxt i1) te2 in
-      TVar i1
+      TVar (i1, p1)
 
-    | _, TVar i2 when i2 >= 0 && bvar_value !ctxt i2 <> TVar i2 ->
+    | _, TVar (i2, p2) when i2 >= 0 && set_term_pos (bvar_value !ctxt i2) nopos <> TVar (i2, nopos) ->
       let _ = unification_term_term defs ctxt te1 (bvar_value !ctxt i2) in
-      TVar i2
+      TVar (i2, p2)
 
     (* the case for free variables *)
     (* we need the free var to not be a free var of the term *)
-    | TVar i1, _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
+    | TVar (i1, p1), _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
       let s = IndexMap.singleton i1 te2 in
       ctxt := context_substitution s (!ctxt);
       te2      
     )
-    | _, TVar i2 when i2 < 0 && not (IndexSet.mem i2 (fv_term te1))->
+    | _, TVar (i2, p2) when i2 < 0 && not (IndexSet.mem i2 (fv_term te1))->
       let s = IndexMap.singleton i2 te1 in
       ctxt := context_substitution s (!ctxt);
       te1
 
     (* the case of two application: with not the same arity *)
-    | App (hd1, args1), App (hd2, args2) when List.length args1 <> List.length args2 ->
+    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
       (* first we try to change them such that they have the same number of arguments and try to match them *)
       let min_arity = min (List.length args1) (List.length args2) in
-      let te1' = if List.length args1 = min_arity then te1 else App (App (hd1, take (List.length args1 - min_arity) args1), drop (List.length args1 - min_arity) args1) in
-      let te2' = if List.length args2 = min_arity then te2 else App (App (hd2, take (List.length args2 - min_arity) args2), drop (List.length args2 - min_arity) args2) in
+      let te1' = if List.length args1 = min_arity then te1 else (
+	let pos1 = fst (get_term_pos hd1) in
+	let largs1 = take (List.length args1 - min_arity) args1 in
+	let largs2 = drop (List.length args1 - min_arity) args1 in
+	let pos2 = snd (get_term_pos (fst (last largs1))) in
+	let pos3 = snd (get_term_pos (fst (last largs2))) in
+	  App (App (hd1, largs1, (pos1, pos2)), largs2, (pos1, pos3))
+      ) in
+      let te2' = if List.length args2 = min_arity then te2 else (
+	let pos1 = fst (get_term_pos hd2) in
+	let largs1 = take (List.length args2 - min_arity) args2 in
+	let largs2 = drop (List.length args2 - min_arity) args2 in
+	let pos2 = snd (get_term_pos (fst (last largs1))) in
+	let pos3 = snd (get_term_pos (fst (last largs2))) in
+	App (App (hd2, largs1, (pos1, pos2)), largs2, (pos1, pos3))
+      ) in
       (* we save the current context somewhere to rollback *)
       let saved_ctxt = !ctxt in
       (try 
@@ -1882,7 +1886,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
       )
     (* the case of two application with same arity *)
-    | App (hd1, args1), App (hd2, args2) when List.length args1 = List.length args2 ->
+    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 ->
       (* first we save the context and try to unify all term component *)
       let saved_ctxt = !ctxt in
       (try
@@ -1910,7 +1914,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	   (arg, n)
 	 ) args1 in
 	 (* finally we have our unified term ! *)
-	 App (hd, args)
+	 App (hd, args, best_pos p1 p2)
 
        with
 	 (* apparently it does not work, so we try to reduce them *)
@@ -1924,15 +1928,15 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
       )	
     (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
-    | App (hd1, args1), _ ->
+    | App (hd1, args1, p1), _ ->
       let te1' = reduction defs ctxt unification_strat te1 in
       if te1 = te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
-    | _, App (hd2, args2) ->
+    | _, App (hd2, args2, p2) ->
       let te2' = reduction defs ctxt unification_strat te2 in
       if te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
 
     (* the impl case: only works if both are impl *)
-    | Impl ((s1, ty1, n1), te1), Impl ((s2, ty2, n2), te2) ->
+    | Impl ((s1, ty1, n1, pq1), te1, p1), Impl ((s2, ty2, n2, pq2), te2, p2) ->
       (* the symbol is not important, yet the nature is ! *)
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
@@ -1942,17 +1946,17 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	ctxt := frame::!ctxt;
 	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	let s = context2substitution !ctxt in
-	let te1 = term_substitution s (reduction defs ctxt unification_strat te1) in
-	let te2 = term_substitution s (reduction defs ctxt unification_strat te2) in
+	let te1 = term_substitution s te1 in
+	let te2 = term_substitution s te2 in
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
 	(* we pop the frame *)
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
-	Impl ((s1, ty, n1), te)
+	Impl ((s1, ty, n1, pq1), te, p1)
 
     (* the Lambda case: only works if both are Lambda *)
-    | Lambda ((s1, ty1, n1), te1), Lambda ((s2, ty2, n2), te2) ->
+    | Lambda ((s1, ty1, n1, pq1), te1, p1), Lambda ((s2, ty2, n2, pq2), te2, p2) ->
       (* the symbol is not important, yet the nature is ! *)
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
@@ -1970,47 +1974,41 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
-	Lambda ((s1, ty, n1), te)
+	Lambda ((s1, ty, n1, pq1), te, p1)
 
     (* for all the rest: I do not know ! *)
     | _ -> 
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 
 and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: term) : term = 
+  (*printf "reduction: %s\n" (term2string !ctxt te);*)
   match te with
-    | SrcInfo (pos, te) -> (
-      try 
-	reduction defs ctxt strat te
-      with
-	| DoudouException err -> raise (DoudouException (error_left_pos err pos))
-    )
 
-    | Type -> Type
+    | Type _ -> te
     (* without delta reduction we do unfold *)
-    | Cste c1 when not strat.delta -> te
+    | Cste (c1, _) when not strat.delta -> te
 
 
     (* with delta reduction we unfold *)
-    | Cste c1 when strat.delta -> (
+    | Cste (c1, _) when strat.delta -> (
       match unfold_constante defs c1 with
-	| [PCste c1, te] -> te
+	| [PCste (c1, _), te] -> te
 	| _ -> te
     )
 
-    | Obj o -> te
+    | Obj _ -> te
 
     (* for both free and bound variables we have their value in the context *)
-    (*| TVar i when i >= 0 && bvar_value !ctxt i <> TVar i -> bvar_value !ctxt i*)
-    | TVar i when i >= 0 -> te
-    | TVar i when i < 0 && fvar_value !ctxt i <> TVar i -> fvar_value !ctxt i
-    | TVar i when i < 0 -> te
+    | TVar (i, _) when i >= 0 -> te
+    | TVar (i, _) when i < 0 && set_term_pos (fvar_value !ctxt i) nopos <> TVar (i, nopos) -> fvar_value !ctxt i
+    | TVar (i, _) when i < 0 -> te
 
     (* trivial error cases *) 
-    | AVar -> raise (Failure "reduction catastrophic: AVar")
+    | AVar _ -> raise (Failure "reduction catastrophic: AVar")
     | TName _ -> raise (Failure "reduction catastrophic: TName")
 
     (* Impl: we reduce the type, and the term only if betastrong *)
-    | Impl ((s, ty, n), te) -> 
+    | Impl ((s, ty, n, pq1), te, p1) -> 
       let ty = reduction defs ctxt strat ty in
       if strat.betastrong then (
 	(* we push a frame *)
@@ -2021,12 +2019,12 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	(* we pop the frame *)
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
-	Impl ((s, ty, n), te)
+	Impl ((s, ty, n, pq1), te, p1)
 
-      ) else Impl ((s, ty, n), te)
+      ) else Impl ((s, ty, n, pq1), te, p1)
 
     (* Lambda: we reduce the type, and the term only if betastrong *)
-    | Lambda ((s, ty, n), te) -> 
+    | Lambda ((s, ty, n, pq), te, p) -> 
       let ty = reduction defs ctxt strat ty in
       if strat.betastrong then (
 	(* we push a frame *)
@@ -2038,9 +2036,9 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
 	(* and we return the term *)
-	Lambda ((s, ty, n), te)
+	Lambda ((s, ty, n, pq), te, p)
 
-      ) else Lambda ((s, ty, n), te)
+      ) else Lambda ((s, ty, n, pq), te, p)
     
     (* Application: the big part *)
     (* for no only Eager is implemented *)
@@ -2049,28 +2047,27 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
       (* we do a case analysis ... *)
       match te with
 
-	| App (hd, []) ->
+	| App (hd, [], _) ->
 	  reduction defs ctxt strat hd
 
-	| App (SrcInfo (pos, te), args) ->
-	  reduction defs ctxt strat (App (te, args))
-	  
-	| App (Lambda ((s, ty, n), te), (hd, _)::tl) -> (
+	| App (Lambda ((s, ty, n, p1), te, p), (hd, _)::tl, p2) -> (
 
 	  let hd = reduction defs ctxt strat hd in
 	  let te = shift_term (term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te) (-1) in
-	  reduction defs ctxt strat (App (te, tl))
+	  match tl with
+	    | [] -> reduction defs ctxt strat te
+	    | _ -> reduction defs ctxt strat (App (te, tl, (fst (get_term_pos te), snd p2)))
 
 	)
 
-	| App (Obj o, args) -> (
+	| App (Obj (o, _), args, _) -> (
 	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
 	  reduction defs ctxt strat (o#apply defs !ctxt args)
 	)
 
 	(* a first subcase for app: with a Cste as head *)
 	(* in case of deltaiota weakness, we need to catch the IotaReductionFailed exception *) 
-	| App (Cste c1, args) when unfold_constante defs c1 <> [] -> (
+	| App (Cste (c1, pos), args, pos2) when unfold_constante defs c1 <> [] -> (
 	  (* we reduce the arguments *)
 	  let args = List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args in
 	  (* we try all the possible equations *)
@@ -2079,12 +2076,14 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	      (* can we unify the pattern ? *)
 	      try 
 		(* we need to cut arguments *)
-		let PApp (_, pargs, _) = p in
+		let PApp (_, pargs, _, _) = p in
 		let neededargs = take (List.length pargs) args in
 		let surplusargs = drop (List.length pargs) args in
-		let r = unification_pattern_term !ctxt p (App (Cste c1, neededargs)) in
+		let r = unification_pattern_term !ctxt p (App (Cste (c1, pos), neededargs, nopos)) in
 		let te = term_substitution r body in
-		Right (App (te, surplusargs))
+		match surplusargs with
+		  | [] -> Right te
+		  | _ -> Right (App (te, surplusargs, (fst (get_term_pos te), snd (get_term_pos (fst (last surplusargs))))))
 	      with
 		| DoudouException (NoMatchingPattern (ctxt, p, te)) -> 
 		  Left ()
@@ -2095,11 +2094,11 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	)
 
 	(* App is right associative ... *)
-	| App (App (te1, args1), arg2) ->
-	  reduction defs ctxt strat (App (te1, args1 @ arg2))
+	| App (App (te1, args1, p1), arg2, p2) ->
+	  reduction defs ctxt strat (App (te1, args1 @ arg2, (fst p1, snd p2)))
 
-	| App (hd, args) ->
-	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args)
+	| App (hd, args, p) ->
+	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args, p)
 
     )
 
@@ -2109,18 +2108,17 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 *)      
 and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
   match reduction defs ctxt unification_strat te with
-    | SrcInfo (pos, te) -> nb_explicite_arguments defs ctxt te
-    | Impl ((_, _, Implicit), te) -> 1 + nb_explicite_arguments defs ctxt te
+    | Impl ((_, _, Implicit, _), te, _) -> 1 + nb_explicite_arguments defs ctxt te
     | _ -> 0
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
+  (*printf "typecheck: %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
   match te, ty with
     (* one basic rule, Type :: Type *)
-    | Type, Type -> Type, Type
-    | SrcInfo (pos, Type), Type -> SrcInfo (pos, Type), Type
+    | Type p1, Type p2 -> Type p1 , Type p2
 
     (* here we should have the case for which you cannot rely on the inference *)
       
@@ -2132,9 +2130,9 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
       if nb_explicite_arguments defs ctxt ty' > nb_explicite_arguments defs ctxt ty then (
 	(* yes, we need to apply the term to a free variable *)
-	let fvty = add_fvar ctxt Type in
-	let fvte = add_fvar ctxt (TVar fvty) in
-	let te = App (te, [TVar fvte, Implicit]) in
+	let fvty = add_fvar ctxt (Type nopos) in
+	let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+	let te = App (te, [TVar (fvte, nopos), Implicit], nopos) in
 	(* and we retypecheck *)
 	typecheck defs ctxt te ty
       ) else (
@@ -2153,53 +2151,50 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
       raise (DoudouException (CannotTypeCheck (!ctxt, te, inferedty, ty, err)))
       
 and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
+  (*printf "typecheck: %s :: ???\n" (term2string !ctxt te);*)
   (* save the context *)
   let saved_ctxt = !ctxt in
   try (
   match te with
-    | SrcInfo (pos, te) ->
-      let te, ty = typeinfer defs ctxt te in
-      SrcInfo (pos, te), ty
+    | Type _ -> te, Type nopos
 
-    | Type -> Type, Type
+    | Cste (c1, _) -> te, constante_type defs c1
 
-    | Cste c1 -> Cste c1, constante_type defs c1
+    | Obj (o, _) -> te, o#get_type
 
-    | Obj o -> Obj o, o#get_type
+    | TVar (i, _) when i >= 0 -> te, bvar_type !ctxt i
+    | TVar (i, _) when i < 0 -> te, fvar_type !ctxt i
 
-    | TVar i when i >= 0 -> TVar i, bvar_type !ctxt i
-    | TVar i when i < 0 -> TVar i, fvar_type !ctxt i
-
-    | TName s -> (
+    | TName (s, pos) -> (
       (* we first look for a bound variable *)
       match bvar_lookup !ctxt s with
 	| Some i -> 
-	  let te = TVar i in
+	  let te = TVar (i, pos) in
 	  let ty = bvar_type !ctxt i in
 	  te, ty
 	| None -> 
 	  (* we look for a constante *)
-	  let te = Cste (constante_symbol defs s) in
+	  let te = Cste (constante_symbol defs s, pos) in
 	  let ty = constante_type defs s in
 	  te, ty
     )
 
-    | Impl ((s, ty, n), te) -> 
+    | Impl ((s, ty, n, pq), te, p) -> 
       (* first let's be sure that ty :: Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in
       (* then we push the frame for s *)
       let frame = build_new_frame s (shift_term ty 1) in
       ctxt := frame::!ctxt;
       (* we typecheck te :: Type *)
-      let te, _ = typecheck defs ctxt te Type in
+      let te, ty' = typecheck defs ctxt te (Type nopos) in
       (* we pop the frame for s *)
       ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
-      Impl ((s, ty, n), te), Type
+      Impl ((s, ty, n, pq), te, p), ty'
 
-    | Lambda ((s, ty, n), te) -> 
+    | Lambda ((s, ty, n, pq), te, p) -> 
       (* first let's be sure that ty :: Type *)
-      let ty, _ = typecheck defs ctxt ty Type in
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in
       (* then we push the frame for s *)
       let frame = build_new_frame s (shift_term ty 1) in
       ctxt := frame::!ctxt;
@@ -2209,10 +2204,10 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let [te; tety] = flush_fvars ctxt [te; tety] in
       ctxt := fst (pop_frame !ctxt);
       (* and we returns the term with type Type *)
-      Lambda ((s, ty, n), te), Impl ((s, ty, n), tety)
+      Lambda ((s, ty, n, pq), te, p), Impl ((s, ty, n, nopos), tety, nopos)
 
     (* app will have another version in typecheck that might force more unification or creation of free variables *)
-    | App (te, args) -> 
+    | App (te, args, pos) -> 
       let te, ty = typeinfer defs ctxt te in
       (* we push the term te, and its type *)
       push_terms ctxt [te];
@@ -2233,16 +2228,16 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
 	    (* lots of cases here *)
 	    (* both nature are the same: this is our arguments *)
-	    | (hd, n1)::tl, Impl ((s, ty, n2), te) when n1 = n2 -> 
+	    | (hd, n1)::tl, Impl ((s, ty, n2, pq), te, p) when n1 = n2 -> 
 	      (* we push an image of the impl, so that we can grab a body which may have been changed by typechecking *)
-	      push_terms ctxt [Impl ((s, ty, n2), te)];
+	      push_terms ctxt [Impl ((s, ty, n2, pq), te, p)];
 	      (* first let see if hd has the proper type *)
 	      let hd, ty = typecheck defs ctxt hd ty in
 	      (* we compute the type of the application:
 		 we grab back from the term stack the te terms
 		 we substitute the bound var 0 (s) by shifting of 1 of hd, and then reshift the whole term by - 1		 
 	      *)
-	      let [Impl (_, te)] = pop_terms ctxt 1 in
+	      let [Impl (_, te, _)] = pop_terms ctxt 1 in
 	      let ty = term_substitution (IndexMap.singleton 0 (shift_term hd 1)) te in
 	      let ty = shift_term ty (-1) in
 	      (* we push the arg and its nature *)
@@ -2251,28 +2246,28 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      (* and we returns the information *)
 	      tl, ty
 	    (* the argument is explicit, but the type want an implicit arguments: we add free variable *)
-	    | (hd, Explicit)::tl, Impl ((s, ty, Implicit), te) -> 
+	    | (hd, Explicit)::tl, Impl ((s, ty, Implicit, _), te, _) -> 
 	    (* we add a free variable of the proper type *)
 	      let fv = add_fvar ctxt ty in
 	      (* we compute the type of the application:
 		 we substitute the bound var 0 (s) by the free variable, and then reshift the whole term by - 1
 	      *)	      
-	      let ty = term_substitution (IndexMap.singleton 0 (TVar fv)) te in
+	      let ty = term_substitution (IndexMap.singleton 0 (TVar (fv, nopos))) te in
 	      let ty = shift_term ty (-1) in
 	      
 	      (* we push the arg and its nature *)
-	      push_terms ctxt [TVar fv];
+	      push_terms ctxt [TVar (fv, nopos)];
 	      push_nature ctxt Implicit;
 	      (* and we returns the information *)
 	      args, ty
-	    | (hd, n)::_, Impl ((s, ty, n2), te) -> 	      
+	    | (hd, n)::_, Impl ((s, ty, n2, _), te, _) -> 	      
 	      let args = List.rev (map_nth (fun i ->
 		let [arg] = pop_terms ctxt 1 in
 		let n = pop_nature ctxt in
 		(arg, n)
 	      ) nb_processed_args) in
 	      let [te] = pop_terms ctxt 1 in
-	      raise (DoudouException (CannotInfer (!ctxt, App (te, args@[hd,n]), (FreeError "terms needs an Explicit argument, but receives an Implicit one"))))
+	      raise (DoudouException (CannotInfer (!ctxt, App (te, args@[hd,n], (fst (get_term_pos te), snd (get_term_pos hd))), (FreeError "terms needs an Explicit argument, but receives an Implicit one"))))
 	) in
 	(* before returning we need to repush the (new) type *)
 	push_terms ctxt [ty];
@@ -2289,13 +2284,13 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       ) nb_args) in
       (* finally we pop the application head *)
       let [te] = pop_terms ctxt 1 in
-      App (te, args), ty
+      App (te, args, pos), ty
     
     (* for the AVar we introduce a free var of type, and a free var of this type *)
-    | AVar -> 
-      let fvty = add_fvar ctxt Type in
-      let fvte = add_fvar ctxt (TVar fvty) in
-      TVar fvte, TVar fvty
+    | AVar pos -> 
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+      TVar (fvte, pos), TVar (fvty, nopos)
 
   ) with
     | DoudouException ((CannotInfer _) as err) ->
@@ -2312,8 +2307,8 @@ and typecheck_pattern (defs: defs) (ctxt: context ref) (p: pattern) (ty: term) :
   (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
   if nb_explicite_arguments defs ctxt pty > nb_explicite_arguments defs ctxt ty then (
     (* we need to add enough implicit arguments *)
-    let new_args = List.map (fun (s, _, _) -> PVar (symbol2string s, AVar), Implicit) (take (nb_explicite_arguments defs ctxt pty - nb_explicite_arguments defs ctxt ty) (fst (destruct_impl pty))) in
-    let p'' = match p with | PCste s -> PApp (s, new_args, AVar) in
+    let new_args = List.map (fun (s, _, _, _) -> PVar (symbol2string s, AVar nopos, nopos), Implicit) (take (nb_explicite_arguments defs ctxt pty - nb_explicite_arguments defs ctxt ty) (fst (destruct_impl pty))) in
+    let p'' = match p with | PCste (s, spos) -> PApp ((s, spos), new_args, AVar nopos, nopos) in
     ctxt := drop (pattern_size p') !ctxt;
     typecheck_pattern defs ctxt p'' ty
   ) else (
@@ -2325,7 +2320,7 @@ and typecheck_pattern (defs: defs) (ctxt: context ref) (p: pattern) (ty: term) :
 
 and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * term * term =
   match p with
-    | PApp (s, args, ty) -> (
+    | PApp ((s, spos), args, ty, pos) -> (
       let sty = constante_type defs s in
       let (appty, te_done, args_done) = fold_cont (fun (appty, te_done, args_done) args ->
 
@@ -2336,61 +2331,61 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
 	) in
 
 	match args, appty with
-	  | (arg, n1)::tl, Impl ((_, ty, n2), _) when n1 = n2 ->	    	    
+	  | (arg, n1)::tl, Impl ((_, ty, n2, _), _, _) when n1 = n2 ->	    	    
 
 	    (* we typecheck the pattern *)
 	    let (arg, argte, argty) = typecheck_pattern defs ctxt arg ty in
 	    (* we compute the type after application of the term *)
-	    let Impl ((_, _, _), te) = shift_term appty (pattern_size arg) in
+	    let Impl ((_, _, _, _), te, _) = shift_term appty (pattern_size arg) in
 	    let appty = term_substitution (context2substitution !ctxt) (shift_term (term_substitution (IndexMap.singleton 0 (shift_term argte 1)) te) (-1)) in
 	    (* we compute the te_done at this level *)
 	    let te_done = List.map (fun (te, n) -> term_substitution (context2substitution !ctxt) (shift_term te (pattern_size arg)), n) te_done in
 	    tl, (appty, te_done @ [argte, n1], args_done @ [arg, n1])	
-	  | (arg, Explicit)::tl, Impl ((s, _, Implicit), _) ->
+	  | (arg, Explicit)::tl, Impl ((s, _, Implicit, _), _, _) ->
 	    (* we just add an implicit *)
-	    (PVar (symbol2string s, AVar), Implicit)::args, (appty, te_done, args_done)
+	    (PVar (symbol2string s, AVar nopos, spos), Implicit)::args, (appty, te_done, args_done)
 	  | _ ->
 	    raise (Failure "bad case")
       ) (sty, [], []) args in
 
-      let p = PApp (s, args_done, appty) in
+      let p = PApp ((s, spos), args_done, appty, pos) in
 
-      let ty, _ = typecheck defs ctxt ty Type in
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in
       let appty = unification_term_term defs ctxt appty ty in
 
-      p, App (Cste s, te_done), appty
+      p, App (Cste (s, spos), te_done, pos), appty
       
     )
-    | PVar (n, ty) ->
-      let fvty = add_fvar ctxt Type in
-      let fvte = add_fvar ctxt (TVar fvty) in
-      ctxt := build_new_frame (Name n) ~value:(TVar fvte) (TVar fvty) :: !ctxt;      
-      let ty, _ = typecheck defs ctxt ty Type in 
-      let ty = unification_term_term defs ctxt ty (TVar fvty) in
-      PVar (n, ty), TVar 0, ty
+    | PVar (n, ty, p) ->
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+      ctxt := build_new_frame (Name n) ~value:(TVar (fvte, p)) (TVar (fvty, nopos)) :: !ctxt;      
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in 
+      let ty = unification_term_term defs ctxt ty (TVar (fvty, nopos)) in
+      PVar (n, ty, p), TVar (0, p), ty
 
-    | PCste s ->
-      PCste s, Cste s, constante_type defs s
+    | PCste (s, p) ->
+      PCste (s, p), Cste (s, p), constante_type defs s
 
-    | PType ->
-      PType, Type, Type
+    | PType p->
+      PType p, Type p, Type nopos
 
-    | PAVar ty ->
-      let fvty = add_fvar ctxt Type in
-      let fvte = add_fvar ctxt (TVar fvty) in
-      ctxt := build_new_frame (Symbol ("_", Nofix)) ~value:(TVar fvte) (TVar fvty) :: !ctxt;      
-      let ty, _ = typecheck defs ctxt ty Type in 
-      let ty = unification_term_term defs ctxt ty (TVar fvty) in
-      PAVar ty, TVar 0, ty
+    | PAVar (ty, p) ->
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+      ctxt := build_new_frame (Symbol ("_", Nofix)) ~value:(TVar (fvte, p)) (TVar (fvty, nopos)) :: !ctxt;      
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in 
+      let ty = unification_term_term defs ctxt ty (TVar (fvty, nopos)) in
+      PAVar (ty, p), TVar (0, p), ty
 
-    | PAlias (s, p, ty) ->
+    | PAlias (s, p, ty, pos) ->
       let p, pte, pty = typeinfer_pattern defs ctxt p in
       let pte = shift_term pte 1 in
       let pty = shift_term pty 1 in
       ctxt := build_new_frame (Name s) ~value:pte pty :: !ctxt;
-      let ty, _ = typecheck defs ctxt ty Type in 
+      let ty, _ = typecheck defs ctxt ty (Type nopos) in 
       let ty = unification_term_term defs ctxt ty pty in
-      PAlias (s, p, ty), TVar 0, ty
+      PAlias (s, p, ty, pos), TVar (0, pos), ty
 
 
 (* typechecking for destructors where type of l.h.s := type of r.h.s *)
@@ -2409,7 +2404,7 @@ and close_context (ctxt: context ref) : unit =
   let s = List.fold_left (fun s frame ->
     let s = shift_substitution s 1 in
     match frame.value with
-      | TVar i when i < 0 && not (IndexMap.mem i s) -> IndexMap.add i (TVar 0) s
+      | TVar (i, p) when i < 0 && not (IndexMap.mem i s) -> IndexMap.add i (TVar (0, p)) s
       | _ -> s
 
   ) IndexMap.empty (List.rev !ctxt) in
@@ -2451,8 +2446,11 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	| Signature (s, ty) ->
 	  (* just checking that there is no redefinition *)
 	  if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
+
+	  printf "Definition: %s :: %s \n" (symbol2string s) (term2string !ctxt ty);
+
 	  (* we typecheck the type against Type *)
-	  let ty, _ = typecheck !defs ctxt ty Type in	  
+	  let ty, _ = typecheck !defs ctxt ty (Type nopos) in	  
 	  (* we flush the free vars so far *)
 	  let [ty] = flush_fvars ctxt [ty] in
 	  (* update the definitions *)
@@ -2461,7 +2459,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* just print that everything is fine *)
 	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 
-	| Equation (PCste s as p, te) | Equation (PApp (s, _, _) as p, te) ->
+	| Equation (PCste (s, spos) as p, te) | Equation (PApp ((s, spos), _, _, _) as p, te) ->
 	  let p, te = typecheck_equation !defs ctxt p te in
 	  let (s, ty, eqs) = Hashtbl.find !defs.store (symbol2string s) in
 	  Hashtbl.add !defs.store (symbol2string s) (s, ty, eqs @ [p, te]);
