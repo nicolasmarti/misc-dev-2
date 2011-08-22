@@ -361,6 +361,45 @@ and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (g
     | None ->
       (* we need here to implement 5) *)
       raise (Failure "5): NYI")
+
+(* some case splitting *)
+and ifol_split_goal_and (defs: defs) (ctxt: context ref) (derived: derived_hyps) (proj1: term) (proj2: term) : term =
+  (* we try each goals and returns the conjunction *)
+  let prf1 = ifol_solver_loop defs ctxt derived proj1 in
+  let prf2 = ifol_solver_loop defs ctxt derived proj2 in
+  let conj = constante_symbol defs (Name "conj") in
+  App (Cste (conj, nopos), 
+       [(proj1, Implicit); (proj2, Implicit); (prf1, Explicit); (prf2, Explicit)],
+       nopos)
+
+and ifol_split_hyp_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (prf: term) (left: term) (right: term) (goal: term) : term =
+  (* this is a sequential version *)
+  (* we will need a version of derived that is shifted *)
+  let derived' = List.map (fun (prf, lemma) -> shift_term prf 1, shift_term lemma 1) derived in
+  (* we will also need the goal shifted *)
+  let goal' = shift_term goal 1 in
+
+  (* we add to the context a quantification on left *)
+  push_quantification (Name "left", left, Explicit, nopos) ctxt;  
+  let prf1 = ifol_solver_loop defs ctxt derived' goal' in
+  (* we pop the quantification and quantify the proof *)
+  let q, [] = pop_quantification ctxt [] in
+  let prf1 = Lambda (q, prf1, nopos) in
+
+  (* we do the same on left *)
+  push_quantification (Name "right", right, Explicit, nopos) ctxt;  
+  let prf2 = ifol_solver_loop defs ctxt derived' goal' in
+  (* we pop the quantification and quantify the proof *)
+  let q, [] = pop_quantification ctxt [] in
+  let prf2 = Lambda (q, prf2, nopos) in
+
+  (* we build the final proof term using the disj *)
+  let disj = constante_symbol defs (Name "disj") in
+  App (Cste (disj, nopos),
+       [(left, Implicit); (right, Implicit); (goal, Implicit); (prf, Explicit); (prf1, Explicit); (prf2, Explicit)],
+       nopos)
+
+
 (*
   try to solve through tautology 
   described as 4) above
@@ -426,9 +465,9 @@ and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps
 	(prf, goal)::(prfA, typeA)::(prfB, typeB)::acc
 	
       (* missing cases
-	 a = b 
-	 P /\\ ~P
-	 modus ponens
+	 - a = b 
+	 - P /\\ ~P
+	 - modus ponens
       *)
       | _ -> 
 	(prf, goal)::acc
