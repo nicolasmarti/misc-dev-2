@@ -348,7 +348,22 @@ and is_term (defs: defs) (te: term) (level: int) : bool =
    any caller of the function is responsible for that
 *)
 and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =  
-  raise (Failure "ifol_solver_loop: NYI")
+  (* first we try to find a tautology *)
+  match ifol_solver_tauto defs ctxt derived goal with
+    | Some prf ->
+      if !force_typecheck then ignore(typecheck defs ctxt prf goal);
+      prf
+    (* we do not have such a tautology *)
+    | None ->
+      (* we need here to implement 5) *)
+      raise (Failure "5): NYI")
+(*
+  try to solve through tautology 
+  described as 4) above
+*)
+and ifol_solver_tauto (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term option =
+  (* not yet implemented *)
+  None
 
 (*
   this function extends a initial set of derived hypothesis with
