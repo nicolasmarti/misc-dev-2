@@ -2639,6 +2639,16 @@ and close_context (ctxt: context ref) : unit =
   ) IndexMap.empty (List.rev !ctxt) in
   ctxt := context_substitution s !ctxt
 
+(* a simple equality: basically we try to unify to term, and look for the empty substitution *)
+and equality_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : bool =
+  try
+    let ctxt' = ref !ctxt in
+    let _ = unification_term_term defs ctxt' te1 te2 in
+    (* here we can use structural equality, because it is exactly what we want *)
+    IndexMap.compare compare (context2substitution !ctxt) (context2substitution !ctxt') = 0
+  with
+    | _ -> false
+
 (******************************************)
 (*        tests with parser               *)
 (******************************************)
