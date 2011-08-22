@@ -50,6 +50,8 @@ type term = Type of pos
 	    | AVar of pos
 	    | TName of symbol * pos
 
+	    (**)
+
 	    | App of term * (term * nature) list * pos
 	    | Impl of (symbol * term * nature * pos) * term * pos
 	    | Lambda of (symbol * term * nature * pos) * term * pos
@@ -119,7 +121,6 @@ let empty_frame = {
 
 (* the context must a least have one frame, for pushing/poping stack elements *)
 let empty_context = empty_frame::[]
-	   
 
 let empty_defs = { store = Hashtbl.create 30; hist = [] }
 
