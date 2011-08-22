@@ -1,3 +1,6 @@
+(* just for nopos *)
+open Parser
+
 open Doudou
 
 (*
@@ -230,70 +233,84 @@ disj H (\\ a -> right a) (\\ b -> left b)
 "
 
 (*
+  a flag that force type checking check all along the solver 
+*)
+let force_typecheck = ref true
+
+(* derived hypothesis are just a list of 
+   term :: type
+*)
+
+type derived_hyps = (term * term) list
+
+(*
   this the entry function for our prover:
-  
-  1) it pushes in a context the hypothesis (verifying that there types is in fo-formula)
-  2) it verifies that the final goal is also in fo-formula
-
-  it then calls the prover loops with the context, and empty derived hypothesis set, and the goal
-
-  finally it returns the resulting proof
-
-  basically, if everything went right
-  step1 defs lemma = proof <-> defs , {} |- proof :: lemma
-
 *)
 let rec ifol_solver_entry (defs: defs) (goal: term) : term =
-  let ctxt, goal = input_hypothesis defs empty_context goal in
-  (* here we use lists ... but it would be better to use some set data-structure 
-     the issue is that the equality function (basically unification with for result IndexMap.empty)
-     depends on the context in which we are, and that I am not sure what semantics should have < and > 
-     (possibly needs to look at optimization of fol theorem prover)
-     
-     our initial set of derived hypothesis is the empty set extends with our formula hypothesis
-  *)
-  let formula_hypothesis = raise (Failure "???") in
+
+  (* we build our working context *)
+  let ctxt = ref empty_context in
+
+  (* pushing all the hypothesis in a context, and recovering the goal *)
+  let goal = input_hypothesis defs ctxt goal in
+  
+  if !force_typecheck then ignore(typecheck defs ctxt goal (Type nopos));
+
+  (* we build the initial derived hypothesis from the formula hypothesis *)
+  let formula_hypothesis = context2hypothesis defs !ctxt in
+  (* we extends the hypothesis *)
   let derived = extends_derived_hyps defs ctxt [] formula_hypothesis in
-  ifol_solver_loop defs ctxt derived goal
+  (* we get a term that type to our goal under ctxt *)
+  let res = ifol_solver_loop defs ctxt derived goal in
+
+  if !force_typecheck then ignore(typecheck defs ctxt res goal);
+  
+  (* we requantify the context *)
+  (* the list is just used as a counter (number of inputted quantification := List.length !ctxt - 1) *)
+  List.fold_left (fun acc _ ->
+    let q, [acc] = pop_quantification ctxt [acc] in
+    Lambda (q, acc, nopos)
+  ) res (List.tl !ctxt)
+
 (*
   this function is responsible to recursively check the types of the hypothesis (\in fo-formula)
   and input them into the context, returning the final goal (and checking it is in fo-formula)
 *)
-and input_hypothesis (defs: defs) (ctxt: context) (goal: term) : context * term =
+and input_hypothesis (defs: defs) (ctxt: context ref) (goal: term) : term =
   match goal with
-    | Impl ((s, ty, n, _), goal, _) when is_fo_formula defs ctxt ty ->
+    | Impl ((_, ty, _, _) as q, goal, _) when is_fo_formula defs ctxt ty ->
       (* here we are sure that the hypothesis is ok *)
-      (* we build a new frame for it *)
-      let frame = build_new_frame s (shift_term ty 1) in
-      (* append it to the context *)
-      let ctxt = frame::ctxt in
+      (* we push the quantification *)
+      push_quantification q ctxt;
       (* and recursively call the function *)
       input_hypothesis defs ctxt goal
     (* we have a fo-formula conclusion *)
     | te when is_fo_formula defs ctxt te ->
-      (ctxt, te)
+      te
     (* otherwise, the formula is not in the fragment the solver can handle *)
     | _ -> raise (DoudouException (
-      FreeError (String.concat "\n" ["the formula:"; term2string ctxt goal; "is not in the grament supported by our prover"])
+      FreeError (String.concat "\n" ["the formula:"; term2string !ctxt goal; "is not in the grament supported by our prover"])
     )
     )
 
 (* the function that verifies that a term is in fo-formula *)
-and is_fo_formula (defs: defs) (ctxt: context) (te: term) : bool =
+and is_fo_formula (defs: defs) (ctxt: context ref) (te: term) : bool =
   raise (Failure "is_fo_formula: NYI")
 
 (* this function is the loop of the solver
    the derived hypothesis are supposed to be satured
    any caller of the function is responsible for that
 *)
-and ifol_solver_loop (defs: defs) (ctxt: context) (derived: (term * term) list) (goal: term) : term =
+and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =
   raise (Failure "ifol_solver_loop: NYI")
 
 (*
   this function extends a initial set of derived hypothesis with
   a new set of derived hypothesis  
 *)
-and extends_derived_hyps (defs: defs) (ctxt: context) (derived: (term * term) list) (new_derived: (term * term) list) : (term * term) list =
+and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps) (new_derived: derived_hyps) : derived_hyps =
   raise (Failure "extends_derived_hyps: NYI")
 
-
+(* this function takes a context (or a prefix of context) and returns a set of derived (actually primary) hypothesis *)
+and context2hypothesis (defs: defs) (ctxt: context) : derived_hyps = 
+    raise (Failure "context2hypothesis: NYI")
