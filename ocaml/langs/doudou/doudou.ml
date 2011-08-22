@@ -453,10 +453,10 @@ let rec destruct_impl (ty: term) : (symbol * term * nature * pos) list * term =
       e::l, te
     | _ -> [], ty
 
-let rec lambda_impl (ty: term) : (symbol * term * nature * pos) list * term =
+let rec destruct_lambda (ty: term) : (symbol * term * nature * pos) list * term =
   match ty with
     | Lambda (e, te, _) ->
-      let l, te = destruct_impl te in
+      let l, te = destruct_lambda te in
       e::l, te
     | _ -> [], ty
 
@@ -583,6 +583,32 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (********************************)
 (*      defs/context/frame      *)
 (********************************)
+
+module NameSet = Set.Make(
+  struct
+    type t = string
+    let compare x y = compare x y
+  end
+);;
+
+(* build the set of names of the frames *)
+let build_name_set (ctxt: context) : NameSet.t =
+  List.fold_left (fun acc hd -> NameSet.add (symbol2string hd.symbol) acc) NameSet.empty ctxt
+
+(* some name freshness *)
+let rec add_string_index (y: string) index =
+  let len = (String.length y - index) in
+  match (String.get y) len with 
+    | c when c >= '0' && c < '9' -> (String.set y len (char_of_int (int_of_char c + 1))); y 
+    | '9' -> (String.set y len '0'); (add_string_index (y: string) (index + 1));
+    | c -> (String.concat "" (y :: "0" :: [])) ;;
+
+let rec fresh_name_context ?(basename: string = "H") (ctxt: context) : string =
+  let nameset = build_name_set ctxt in
+  if NameSet.mem basename nameset then
+    fresh_name_context ~basename:(add_string_index basename 1) ctxt
+  else
+    basename
 
 (* build a new frame 
    value is optional
@@ -1056,27 +1082,29 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       )
 	(
 	  (* the lhs of the ->*)
-	  let lhs = 
+	  let s', lhs = 
 	    (* if the symbol is Nofix _ -> we skip the symbol *)
 	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
 	    match s with
 	      | Symbol ("_", Nofix) | _ when not (IndexSet.mem 0 (bv_term te))->
 		(* we only put brackets if implicit *)
-		(if nature = Implicit then withBracket else fun x -> x)
-		  (term2token ctxt ty (InArg nature))
-	      | _ -> 
+		Symbol ("_", Nofix), (if nature = Implicit then withBracket else fun x -> x) (term2token ctxt ty (InArg nature))
+	      | Name _ -> 
 		(* here we put the nature marker *)
-		(if nature = Implicit then withBracket else withParen)
+		let s = Name (fresh_name_context ~basename:(symbol2string s) ctxt) in
+		s, (if nature = Implicit then withBracket else withParen)
 		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
+	      | _ -> s, (if nature = Implicit then withBracket else withParen)
+		(Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
 	  in 
 	  (* for computing the r.h.s, we need to push a new frame *)
-	  let newframe = build_new_frame s (shift_term ty 1) in
+	  let newframe = build_new_frame s' (shift_term ty 1) in
 	  let rhs = term2token (newframe::ctxt) te Alone in
 	  Box [lhs; Space 1; Verbatim "->"; Space 1; rhs]
 	)
 
     (* quantification *)
-    | Lambda ((s, ty, nature, _), te, _) ->
+    | Lambda ((s, ty, nature, _), _, _) ->
       (* we embed in parenthesis if 
 	 - embed as some arg 
 	 - ??
@@ -1086,13 +1114,24 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  | InArg Explicit -> withParen
 	  | _ -> fun x -> x
       )
-	(
-	  (* the lhs of the ->*)
-	  let lhs = Verbatim (symbol2string s) in 
-	  (* for computing the r.h.s, we need to push a new frame *)
-	  let newframe = build_new_frame s (shift_term ty 1) in
-	  let rhs = term2token (newframe::ctxt) te Alone in
-	  Box [Verbatim "\\"; Space 1; lhs; Space 1; Verbatim "->"; Space 1; rhs]
+	(	  
+	  (* the lhs of the \\ *)
+	  let lhs, rhs = destruct_lambda te in
+	  let ctxt, lhs = 
+	    List.fold_left (fun (ctxt, acc) (s, ty, n, p) ->
+	      let s = 
+		match s with
+		  | _ when not (IndexSet.mem 0 (bv_term rhs)) -> Symbol ("_", Nofix)
+		  | Symbol ("_", Nofix) when IndexSet.mem 0 (bv_term rhs) -> Name (fresh_name_context ctxt)
+		  | Name _ -> Name (fresh_name_context ~basename:(symbol2string s) ctxt)
+		  | _ -> s in
+	      ((build_new_frame s (shift_term ty 1))::ctxt,
+	       acc @ 
+		 [Space 1; (if n = Implicit then withBracket else withParen) (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])]
+	      )
+	    ) (ctxt, []) lhs in
+	  let rhs = term2token ctxt rhs Alone in
+	  Box ([Verbatim "\\"] @ lhs @ [ Space 1; Verbatim "->"; Space 1; rhs])
 	)
 
 	(*
