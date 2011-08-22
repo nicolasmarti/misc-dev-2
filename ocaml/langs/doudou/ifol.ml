@@ -278,14 +278,14 @@ let rec ifol_solver_entry (defs: defs) (goal: term) : term =
 *)
 and input_hypothesis (defs: defs) (ctxt: context ref) (goal: term) : term =
   match goal with
-    | Impl ((_, ty, _, _) as q, goal, _) when is_fo_formula defs ctxt ty ->
+    | Impl ((_, ty, _, _) as q, goal, _) when is_formula defs ty ->
       (* here we are sure that the hypothesis is ok *)
       (* we push the quantification *)
       push_quantification q ctxt;
       (* and recursively call the function *)
       input_hypothesis defs ctxt goal
     (* we have a fo-formula conclusion *)
-    | te when is_fo_formula defs ctxt te ->
+    | te when is_formula defs te ->
       te
     (* otherwise, the formula is not in the fragment the solver can handle *)
     | _ -> raise (DoudouException (
@@ -293,15 +293,61 @@ and input_hypothesis (defs: defs) (ctxt: context ref) (goal: term) : term =
     )
     )
 
-(* the function that verifies that a term is in fo-formula *)
-and is_fo_formula (defs: defs) (ctxt: context ref) (te: term) : bool =
-  raise (Failure "is_fo_formula: NYI")
+(* functions that verifies that a term is in 
+   - formula 
+   - fo-formula
+   - atom
+   - term
+
+   the level keep track of the frontier between free variable of the whole formula and quantified vars
+   
+*)
+and is_formula (defs: defs) ?(level: int = 0) (te: term) : bool =
+  match te with       
+    | Impl ((_, ty, _, _), te, _) ->
+      is_fo_formula defs ty level && is_formula defs ~level:(level + 1) te 
+    | Type _ -> true
+    | _ -> is_fo_formula defs te level
+    
+and is_fo_formula (defs: defs) (te: term) (level: int) : bool =
+  match te with
+    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["(/\\)"; "(\\/)"] && List.length (filter_explicit args) = 2 ->
+      List.fold_left (fun acc hd -> acc && is_fo_formula defs hd level) true (filter_explicit args)
+
+    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["[~)"] && List.length (filter_explicit args) = 1 ->
+      List.fold_left (fun acc hd -> acc && is_fo_formula defs hd level) true (filter_explicit args)
+
+    | _ -> is_atom defs te level
+
+and is_atom (defs: defs) (te: term) (level: int) : bool =
+  match te with
+    | App (Cste (s, _), args, _) when symbol2string s = "(=)" && List.length (filter_explicit args) = 2 ->
+      List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
+
+    | App (Cste (s, _), args, _) ->
+      List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
+
+    | App (TVar (i, _), args, _) when i >= level ->
+      List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
+
+    | TVar (i, _) -> true
+
+    | _ -> false
+
+and is_term (defs: defs) (te: term) (level: int) : bool =
+  match te with
+    | TVar (i, _) -> true
+
+    | App (TVar (i, _), args, _) when i >= level ->
+      List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
+
+    | _ -> false
 
 (* this function is the loop of the solver
    the derived hypothesis are supposed to be satured
    any caller of the function is responsible for that
 *)
-and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =
+and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =  
   raise (Failure "ifol_solver_loop: NYI")
 
 (*
@@ -313,4 +359,40 @@ and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps
 
 (* this function takes a context (or a prefix of context) and returns a set of derived (actually primary) hypothesis *)
 and context2hypothesis (defs: defs) (ctxt: context) : derived_hyps = 
-    raise (Failure "context2hypothesis: NYI")
+  fst (List.fold_left ( fun (hyps, index) frame ->
+    (TVar (index, frame.pos), bvar_type ctxt index):: hyps, index + 1
+  ) ([], 0) ctxt)
+	 
+
+
+(**************************************************)
+(*                some tests                      *)
+(**************************************************)
+
+open Printf
+
+let solve (s: string) : unit = 
+  (* we set the parser *)
+  let lines = stream_of_string s in
+  let pb = build_parserbuffer lines in
+  let pos = cur_pos pb in
+  try 
+    let te = parse_term !defs pos pb in
+    (* we typecheck the fol formula again Type *)
+    let te, _ = typecheck !defs ctxt te (Type nopos) in
+    (* we call the solver *)
+    let proof = ifol_solver_entry !defs te in
+    (* we show the result *)
+    printf "Term |- %s :: %s \n" (term2string !ctxt proof) (term2string !ctxt te)
+  with
+    | NoMatch -> 
+      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+      raise Pervasives.Exit
+    | DoudouException err -> 
+      (* we restore the context and defs *)
+      printf "error:\n%s\n" (error2string err);
+      raise Pervasives.Exit
+
+
+let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
+let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
