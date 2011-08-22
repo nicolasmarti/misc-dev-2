@@ -133,6 +133,9 @@ open Doudou
         ii) by splitting the hypothesis of the form A \\/ B, having to prove the goal with
             a new hypothesis of either A or B (which is a free variables), and joining the proof using disj (warning: in this setup the hypothesis needs to be shift, in order to keep the terms consistent with the new context)
     
+     -) if previous search failed, then we might need to look for a contradiction
+        
+
 
 Rmq: we here keep all hypothesis in the same data structure, because we are working without theories (other than equality). In the case where we deal with theories, we would need to keep subset of H' (sorted by there predicate, and functions (in case of equality on there terms)), in order to call for decision procedure (which basically takes their own Hypothesis + a goal on their predicate)
 
@@ -362,8 +365,41 @@ and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (g
   described as 4) above
 *)
 and ifol_solver_tauto (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term option =
-  (* not yet implemented *)
-  None
+  (* first, a case analysis *)
+  match goal with
+    (* the goal is true -> trivial *)
+    | Cste (s, _) when symbol2string s = "true" ->
+      let proofTrue = constante_symbol defs (Name "I") in
+      Some (Cste (proofTrue, nopos))
+    (* the goal is an equality over the same term *)
+    | App (Cste (s, _), args, _) when symbol2string s = "(=)" 
+				 && equality_term_term defs ctxt (List.nth (filter_explicit args) 0) (List.nth (filter_explicit args) 1) -> 
+      let ty = List.hd args in
+      let te = List.hd (List.tl args) in
+      let refl = constante_symbol defs (Name "I") in
+      Some (App (Cste (refl, nopos), [ty; te], nopos))
+
+    (* not a goal solveable by Ax I or Refl, let's try to take a look at the hypothesis we have *)
+    | _ ->
+      let res = fold_stop (fun () (prf, lemma) ->	
+	(* we do a case analysis on the hypothesis *)
+	match lemma with
+	  (* we have false as an hypothesis *)
+	  | Cste (s, _) when symbol2string s = "true" ->
+	    let absurd = constante_symbol defs (Name "absurd") in
+	    Right (App (Cste (absurd, nopos), [(goal, Implicit); (prf, Explicit)], nopos))
+
+	  (* we test if the lemma is equal to the goal *)
+	  | _ when equality_term_term defs ctxt lemma goal ->
+	    Right prf
+
+	  (* no hypothesis that we can use directly here *)
+	  | _ -> Left ()	
+
+      ) () derived in
+      match res with
+	| Left () -> None
+	| Right prf -> Some prf
 
 (*
   this function extends a initial set of derived hypothesis with
@@ -436,5 +472,5 @@ let solve (s: string) : unit =
       printf "error:\n%s\n" (error2string err);
       raise Pervasives.Exit
 
-let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
-let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
+let _ = solve "{A B :: Type} -> A -> A"
+(*let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"*)
