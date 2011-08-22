@@ -460,6 +460,10 @@ let rec destruct_lambda (ty: term) : (symbol * term * nature * pos) list * term 
       e::l, te
     | _ -> [], ty
 
+let rec construct_lambda (l: (symbol * term * nature * pos) list) (body: term) : term =
+  match l with
+    | [] -> body
+    | hd :: tl -> Lambda (hd, construct_lambda tl body, nopos)
 
 (*************************************)
 (*      substitution/rewriting       *)
@@ -1118,16 +1122,16 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  (* the lhs of the \\ *)
 	  let lhs, rhs = destruct_lambda te in
 	  let ctxt, lhs = 
-	    List.fold_left (fun (ctxt, acc) (s, ty, n, p) ->
+	    fold_cont (fun (ctxt, acc) ((s, ty, n, p)::tl) ->
 	      let s = 
 		match s with
-		  | _ when not (IndexSet.mem 0 (bv_term rhs)) -> Symbol ("_", Nofix)
-		  | Symbol ("_", Nofix) when IndexSet.mem 0 (bv_term rhs) -> Name (fresh_name_context ctxt)
+		  | _ when not (IndexSet.mem 0 (bv_term (construct_lambda tl rhs))) -> Symbol ("_", Nofix)
+		  | Symbol ("_", Nofix) when IndexSet.mem 0 (bv_term (construct_lambda tl rhs)) -> Name (fresh_name_context ctxt)
 		  | Name _ -> Name (fresh_name_context ~basename:(symbol2string s) ctxt)
 		  | _ -> s in
-	      ((build_new_frame s (shift_term ty 1))::ctxt,
-	       acc @ 
-		 [Space 1; (if n = Implicit then withBracket else withParen) (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])]
+	      tl, ((build_new_frame s (shift_term ty 1))::ctxt,
+		   acc @ 
+		     [Space 1; (if n = Implicit then withBracket else withParen) (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])]
 	      )
 	    ) (ctxt, []) lhs in
 	  let rhs = term2token ctxt rhs Alone in
