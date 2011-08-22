@@ -311,11 +311,11 @@ and is_formula (defs: defs) ?(level: int = 0) (te: term) : bool =
     
 and is_fo_formula (defs: defs) (te: term) (level: int) : bool =
   match te with
-    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["(/\\)"; "(\\/)"] && List.length (filter_explicit args) = 2 ->
-      List.fold_left (fun acc hd -> acc && is_fo_formula defs hd level) true (filter_explicit args)
+    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["(/\\)"; "(\\/)"] && List.length args = 2 ->
+      List.fold_left (fun acc (hd, _) -> acc && is_fo_formula defs hd level) true args
 
-    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["[~)"] && List.length (filter_explicit args) = 1 ->
-      List.fold_left (fun acc hd -> acc && is_fo_formula defs hd level) true (filter_explicit args)
+    | App (Cste (s, _), args, _) when List.mem (symbol2string s) ["[~)"] && List.length args = 1 ->
+      List.fold_left (fun acc (hd, _) -> acc && is_fo_formula defs hd level) true args
 
     | _ -> is_atom defs te level
 
@@ -355,12 +355,40 @@ and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (g
   a new set of derived hypothesis  
 *)
 and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps) (new_derived: derived_hyps) : derived_hyps =
-  raise (Failure "extends_derived_hyps: NYI")
+  (* TOREDO!! this is a naive implem 
+     - we add without looking for dups!
+     - we lookup everytime for the symbols 
+  *)
+  List.fold_left (fun acc (prf, goal) ->
+    match goal with
+      (* the A /\\ B case *)
+      | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(/\\)" ->	
+	let proj1 = constante_symbol defs (Name "proj1") in
+	let prfA = App (Cste (proj1, nopos), [(typeA, Implicit); (typeB, Implicit); (prf, Explicit)], nopos) in
+	if !force_typecheck then ignore(typecheck defs ctxt prfA typeA);
+
+	let proj2 = constante_symbol defs (Name "proj2") in
+	let prfB = App (Cste (proj2, nopos), [(typeA, Implicit); (typeB, Implicit); (prf, Explicit)], nopos) in
+	if !force_typecheck then ignore(typecheck defs ctxt prfB typeB);
+	
+	(prf, goal)::(prfA, typeA)::(prfB, typeB)::acc
+	
+      (* missing cases
+	 a = b 
+	 P /\\ ~P
+      *)
+      | _ -> 
+	(prf, goal)::acc
+
+  ) derived new_derived
 
 (* this function takes a context (or a prefix of context) and returns a set of derived (actually primary) hypothesis *)
 and context2hypothesis (defs: defs) (ctxt: context) : derived_hyps = 
+  (* TOREDO!! this is a naive implem *)
   fst (List.fold_left ( fun (hyps, index) frame ->
-    (TVar (index, frame.pos), bvar_type ctxt index):: hyps, index + 1
+    match frame.ty with
+      | Type _ -> hyps, index + 1
+      | _ -> (TVar (index, frame.pos), bvar_type ctxt index):: hyps, index + 1
   ) ([], 0) ctxt)
 	 
 
@@ -392,7 +420,6 @@ let solve (s: string) : unit =
       (* we restore the context and defs *)
       printf "error:\n%s\n" (error2string err);
       raise Pervasives.Exit
-
 
 let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
 let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
