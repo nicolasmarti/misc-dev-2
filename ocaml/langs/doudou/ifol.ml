@@ -246,10 +246,14 @@ disj H (\\ a -> right a) (\\ b -> left b)
 let rec ifol_solver_entry (defs: defs) (goal: term) : term =
   let ctxt, goal = input_hypothesis defs empty_context goal in
   (* here we use lists ... but it would be better to use some set data-structure 
-     the issue is that the comparaison function (basically unification with for result IndexMap.empty)
-     depends on the context in which we are ...
+     the issue is that the equality function (basically unification with for result IndexMap.empty)
+     depends on the context in which we are, and that I am not sure what semantics should have < and > 
+     (possibly needs to look at optimization of fol theorem prover)
+     
+     our initial set of derived hypothesis is the empty set extends with our formula hypothesis
   *)
-  let derived = [] in
+  let formula_hypothesis = raise (Failure "???") in
+  let derived = extends_derived_hyps defs ctxt [] formula_hypothesis in
   ifol_solver_loop defs ctxt derived goal
 (*
   this function is responsible to recursively check the types of the hypothesis (\in fo-formula)
@@ -278,10 +282,18 @@ and input_hypothesis (defs: defs) (ctxt: context) (goal: term) : context * term 
 and is_fo_formula (defs: defs) (ctxt: context) (te: term) : bool =
   raise (Failure "is_fo_formula: NYI")
 
+(* this function is the loop of the solver
+   the derived hypothesis are supposed to be satured
+   any caller of the function is responsible for that
+*)
 and ifol_solver_loop (defs: defs) (ctxt: context) (derived: (term * term) list) (goal: term) : term =
   raise (Failure "ifol_solver_loop: NYI")
 
-
-
+(*
+  this function extends a initial set of derived hypothesis with
+  a new set of derived hypothesis  
+*)
+and extends_derived_hyps (defs: defs) (ctxt: context) (derived: (term * term) list) (new_derived: (term * term) list) : (term * term) list =
+  raise (Failure "extends_derived_hyps: NYI")
 
 
