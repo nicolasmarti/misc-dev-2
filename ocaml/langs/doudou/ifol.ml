@@ -1,7 +1,8 @@
 (* just for nopos *)
 open Parser
-
+open Pprinter
 open Doudou
+open Printf
 
 (*
 
@@ -241,11 +242,23 @@ disj H (\\ a -> right a) (\\ b -> left b)
 *)
 let force_typecheck = ref true
 
+let debug = ref false
+
 (* derived hypothesis are just a list of 
    term :: type
 *)
 
 type derived_hyps = (term * term) list
+
+let derived_hyps2token (ctxt: context) (l: derived_hyps) : token =
+  Box (List.fold_left (fun acc (prf, lemma) ->
+    acc @ [Newline; Box [term2token ctxt prf Alone; Space 1; Verbatim "::"; Space 1; term2token ctxt lemma Alone]]
+  ) [] l)
+
+let derived_hyps2string (ctxt: context) (l: derived_hyps) : string =
+  let token = derived_hyps2token ctxt l in
+  let box = token2box token 80 2 in
+  box2string box
 
 (*
   this the entry function for our prover:
@@ -352,15 +365,56 @@ and is_term (defs: defs) (te: term) (level: int) : bool =
    any caller of the function is responsible for that
 *)
 and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =  
+  
+  if !debug then printf "\n---------------------------------------------\nifol_solver_loop:\n%s |-\n%s |-\n %s\n" (context2string !ctxt) (derived_hyps2string !ctxt derived) (term2string !ctxt goal);
   (* first we try to find a tautology *)
   match ifol_solver_tauto defs ctxt derived goal with
     | Some prf ->
+      if !debug then printf "tauto for goal: %s :: %s\n" (term2string !ctxt prf) (term2string !ctxt goal);
       if !force_typecheck then ignore(typecheck defs ctxt prf goal);
       prf
     (* we do not have such a tautology *)
     | None ->
-      (* we need here to implement 5) *)
-      raise (Failure "5): NYI")
+      if !debug then printf "no tautology\n";
+      (* we try to split on hypothesis *)
+      if !debug then printf "looking for hypothesis to split\n";
+      let res = fold_stop (fun acc (prf, lemma) ->
+	match lemma with
+	  | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(\\/)" ->	
+	    Right acc
+	  | _ -> 
+	    Left (acc +1)
+      ) 0 derived in
+      match res with
+	| Right i ->
+	  let prf, lemma = List.nth derived i in
+	  let derived = take (max 0 (i-1)) derived @ drop (i+1) derived in
+	  let App (Cste (s, _), [(left, Explicit); (right, Explicit)], _) = lemma in
+	  if !debug then printf "split or hypothesis %s :: %s\n" (term2string !ctxt prf) (term2string !ctxt lemma);
+	  ifol_split_hyp_or defs ctxt derived prf left right goal
+	| Left _ ->
+	  (* we try to split on hypothesis *)
+	  match goal with
+	    | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(/\\)" ->	
+	      if !debug then printf "split and goal\n";
+	      ifol_split_goal_and defs ctxt derived typeA typeB
+	    | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(\\/)" ->	
+	      if !debug then printf "split or goal\n";
+	      ifol_split_goal_or defs ctxt derived typeA typeB
+	    | _ ->	  
+	      (* we try our best but we can't solve the goal *)
+	      raise (DoudouException (
+		FreeError (
+		  String.concat "\n" [
+		    "cannot prove:";
+		    term2string !ctxt goal;
+		    "under hypothesis:";
+		    derived_hyps2string !ctxt derived
+		  ]
+		)
+	      )
+	      )
+
 
 (* some case splitting *)
 and ifol_split_goal_and (defs: defs) (ctxt: context ref) (derived: derived_hyps) (proj1: term) (proj2: term) : term =
@@ -372,6 +426,28 @@ and ifol_split_goal_and (defs: defs) (ctxt: context ref) (derived: derived_hyps)
        [(proj1, Implicit); (proj2, Implicit); (prf1, Explicit); (prf2, Explicit)],
        nopos)
 
+and ifol_split_goal_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (proj1: term) (proj2: term) : term =
+  (* we try each goals and returns the conjunction *)
+  (* here we sequentially try *)
+  (* we catch the possible exceptions *)
+  let saved_ctxt = !ctxt in
+  let prf = 
+    try
+      Left (ifol_solver_loop defs ctxt derived proj1)
+    with
+      | DoudouException (FreeError s) -> 
+	if !debug then printf "ifol_split_goal_or left exception: %s\n" s;
+	(* an exception: we could not find a proof, look for the right *)
+	ctxt := saved_ctxt;
+	Right (ifol_solver_loop defs ctxt derived proj2) in
+  match prf with
+    | Left prf ->
+      let left = constante_symbol defs (Name "left") in
+      App (Cste (left, nopos), [(proj1, Implicit); (proj2, Implicit); (prf, Explicit)], nopos)
+    | Right prf ->
+      let right = constante_symbol defs (Name "right") in
+      App (Cste (right, nopos), [(proj1, Implicit); (proj2, Implicit); (prf, Explicit)], nopos)
+
 and ifol_split_hyp_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (prf: term) (left: term) (right: term) (goal: term) : term =
   (* this is a sequential version *)
   (* we will need a version of derived that is shifted *)
@@ -381,14 +457,14 @@ and ifol_split_hyp_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (
 
   (* we add to the context a quantification on left *)
   push_quantification (Name "left", left, Explicit, nopos) ctxt;  
-  let prf1 = ifol_solver_loop defs ctxt derived' goal' in
+  let prf1 = ifol_solver_loop defs ctxt ((TVar (0, nopos), shift_term left 1)::derived') goal' in
   (* we pop the quantification and quantify the proof *)
   let q, [] = pop_quantification ctxt [] in
   let prf1 = Lambda (q, prf1, nopos) in
 
   (* we do the same on left *)
   push_quantification (Name "right", right, Explicit, nopos) ctxt;  
-  let prf2 = ifol_solver_loop defs ctxt derived' goal' in
+  let prf2 = ifol_solver_loop defs ctxt ((TVar (0, nopos), shift_term right 1)::derived') goal' in
   (* we pop the quantification and quantify the proof *)
   let q, [] = pop_quantification ctxt [] in
   let prf2 = Lambda (q, prf2, nopos) in
@@ -489,8 +565,6 @@ and context2hypothesis (defs: defs) (ctxt: context) : derived_hyps =
 (*                some tests                      *)
 (**************************************************)
 
-open Printf
-
 let solve (s: string) : unit = 
   (* we set the parser *)
   let lines = stream_of_string s in
@@ -514,4 +588,5 @@ let solve (s: string) : unit =
       raise Pervasives.Exit
 
 let _ = solve "{A B :: Type} -> A -> A"
-(*let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"*)
+let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
+let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
