@@ -2133,8 +2133,11 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     | Impl ((s1, ty1, n1, pq1), te1, p1), Impl ((s2, ty2, n2, pq2), te2, p2) ->
       (* the symbol is not important, yet the nature is ! *)
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
-	(* we unify the types *)
+	(* we unify the types 
+	   and push the type
+	*)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
+	push_terms ctxt [ty];
 	(* we push a frame *)
 	let frame = build_new_frame s1 (shift_term ty 1) in
 	ctxt := frame::!ctxt;
@@ -2147,6 +2150,8 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* we pop the frame *)
 	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
+	(* and pop the type *)
+	let [ty] = pop_terms ctxt 1 in
 	(* and we return the term *)
 	Impl ((s1, ty, n1, pq1), te, p1)
 
@@ -2154,8 +2159,11 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     | Lambda ((s1, ty1, n1, pq1), te1, p1), Lambda ((s2, ty2, n2, pq2), te2, p2) ->
       (* the symbol is not important, yet the nature is ! *)
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
-	(* we unify the types *)
+	(* we unify the types 
+	   and push the type
+	*)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
+	push_terms ctxt [ty];
 	(* we push a frame *)
 	let frame = build_new_frame s1 (shift_term ty 1) in
 	ctxt := frame::!ctxt;
@@ -2168,6 +2176,8 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* we pop the frame *)
 	let [te] = flush_fvars ctxt [te] in
 	ctxt := fst (pop_frame !ctxt);
+	(* and pop the type *)
+	let [ty] = pop_terms ctxt 1 in
 	(* and we return the term *)
 	Lambda ((s1, ty, n1, pq1), te, p1)
 
@@ -2394,8 +2404,11 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     )
 
     | Impl ((s, ty, n, pq), te, p) -> 
-      (* first let's be sure that ty :: Type *)
+      (* first let's be sure that ty :: Type 
+	 and push the results
+      *)
       let ty, _ = typecheck defs ctxt ty (Type nopos) in
+      push_terms ctxt [ty];
       (* then we push the frame for s *)
       let frame = build_new_frame s (shift_term ty 1) in
       ctxt := frame::!ctxt;
@@ -2403,13 +2416,19 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let te, ty' = typecheck defs ctxt te (Type nopos) in
       (* we pop the frame for s *)
       let [te] = flush_fvars ctxt [te] in
+      (* and pop the type *)
+      let [ty] = pop_terms ctxt 1 in
       ctxt := fst (pop_frame !ctxt);
+
       (* and we returns the term with type Type *)
       Impl ((s, ty, n, pq), te, p), ty'
 
     | Lambda ((s, ty, n, pq), te, p) -> 
-      (* first let's be sure that ty :: Type *)
+      (* first let's be sure that ty :: Type 
+	 and push the results
+      *)
       let ty, _ = typecheck defs ctxt ty (Type nopos) in
+      push_terms ctxt [ty];
       (* then we push the frame for s *)
       let frame = build_new_frame s (shift_term ty 1) in
       ctxt := frame::!ctxt;
@@ -2418,6 +2437,8 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       (* we pop the frame for s *)
       let [te; tety] = flush_fvars ctxt [te; tety] in
       ctxt := fst (pop_frame !ctxt);
+      (* and pop the type *)
+      let [ty] = pop_terms ctxt 1 in
       (* and we returns the term with type Type *)
       Lambda ((s, ty, n, pq), te, p), Impl ((s, ty, n, nopos), tety, nopos)
 
