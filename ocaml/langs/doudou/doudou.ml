@@ -50,6 +50,8 @@ type term = Type of pos
 	    | AVar of pos
 	    | TName of symbol * pos
 
+	    (**)
+
 	    | App of term * (term * nature) list * pos
 	    | Impl of (symbol * term * nature * pos) * term * pos
 	    | Lambda of (symbol * term * nature * pos) * term * pos
@@ -75,6 +77,8 @@ and frame = {
   nature: nature;
   (* its value: most stupid one: itself *)
   value: term;
+  (* its position *)
+  pos: pos;
     
   (* the free variables 
      - the index (redundant information put for sake of optimization)
@@ -111,6 +115,7 @@ let empty_frame = {
   ty = Type nopos;
   nature = Explicit;
   value = TVar (0, nopos);
+  pos = nopos;
   fvs = [];
   termstack = [];
   naturestack = [];
@@ -119,7 +124,6 @@ let empty_frame = {
 
 (* the context must a least have one frame, for pushing/poping stack elements *)
 let empty_context = empty_frame::[]
-	   
 
 let empty_defs = { store = Hashtbl.create 30; hist = [] }
 
@@ -583,12 +587,13 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (* build a new frame 
    value is optional
 *)
-let build_new_frame (s: symbol) ?(value: term = TVar (0, nopos)) ?(nature: nature = Explicit) (ty: term) : frame =
+let build_new_frame (s: symbol) ?(value: term = TVar (0, nopos)) ?(nature: nature = Explicit) ?(pos: pos = nopos) (ty: term) : frame =
 { 
   symbol = s;
   ty = ty;
   nature = nature;
   value = value;
+  pos = pos;
 
   fvs = [];
   termstack = [];
@@ -829,7 +834,66 @@ let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
   (* update the definitions *)
   Hashtbl.add !defs.store (symbol2string s) (s, constante_type !defs s, Equation (eqs @ [eq]));
   defs := {!defs with hist = s::!defs.hist }
-  
+
+(* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
+let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
+  (*if !debug then printf "before flush_vars: %s\n" (context2string !ctxt);*)
+  let hd, tl = List.hd !ctxt, List.tl !ctxt in
+  (* we compute the fvars of the terms *)
+  let lfvs = List.fold_left (fun acc te -> IndexSet.union acc (fv_term te)) IndexSet.empty l in
+  (* and traverse the free variables *)
+  let (terms, fvs) = fold_cont (fun (terms, fvs) ((i, ty, te)::tl) ->
+    match te with
+      | TVar (i', _) when not (IndexSet.mem i' lfvs) ->
+	(* there is no value for this free variable, and it does not appears in the terms --> remove it *)
+	tl, (terms, fvs)
+      | TVar (i', _) when IndexSet.mem i' lfvs ->
+	(* there is no value for this free variable, but it does not appears in the terms --> keep it *)
+	tl, (terms, fvs @ [i, ty, te])
+      | _ -> 
+      (* there is a value, we can get rid of the free var *)
+	(*if !debug then printf "flush_vars, rewrite %s --> %s\n" (term2string !ctxt (TVar (i, nopos))) (term2string !ctxt te);*)
+	let s = (IndexMap.singleton i te) in
+	let terms = List.map (fun hd -> term_substitution s hd) terms in
+	let tl = List.map (fun (i, ty, te) -> i, term_substitution s ty, term_substitution s te) tl in
+	tl, (terms, fvs)
+  ) (l, []) (List.rev hd.fvs) in
+  (* here we are removing the free vars and putting them bellow only if they have no TVar 0 in their term/type *)
+  (* first we shift them *)
+  let fvs = List.fold_left (fun acc (i, ty, te) ->
+    try 
+      acc @ [i, shift_term ty (-1), shift_term te (-1)]
+    with
+      | DoudouException (Unshiftable_term _) ->
+	(* we have a free variable that has a type / value containing the symbol in hd -> game over we failed *)
+	raise (DoudouException (FreeError "we failed to infer a free variable that cannot be out-scoped"))
+  ) [] (List.rev fvs) in
+  (match tl with
+    (* we are in toplevel do nothing *)
+    | [] -> ctxt := ({hd with fvs = fvs})::tl
+    (* we are not in toplevel -> we copy the fvs (that have been shifted), to the previous level *)
+    | hd'::tl -> ctxt := ({hd with fvs = []})::({hd' with fvs = fvs @ hd'.fvs})::tl
+  ); 
+  (*if !debug then printf "after flush_vars: %s\n" (context2string !ctxt);*)
+  terms
+
+(* pushing / poping of quantifications *)
+let push_quantification (q : symbol * term * nature * pos) (ctxt: context ref) : unit =
+  let s, ty, n, p = q in
+  (* we build a frame (shifting the type) *)
+  let new_frame = build_new_frame s ~nature:n ~pos:p (shift_term ty 1) in
+  ctxt := new_frame::!ctxt
+
+let pop_quantification (ctxt: context ref) (tes: term list) : (symbol * term * nature * pos) * term list =
+  (* we flush the free variables *)
+  let tes = flush_fvars ctxt tes in
+  (* we grab the remaining context and the popped frame *)
+  let ctxt', frame = pop_frame (!ctxt) in
+  (* we set the context *)
+  ctxt := ctxt';
+  (* and returns the quantifier *)
+  (frame.symbol, shift_term frame.ty (-1), frame.nature, frame.pos), tes  
+
 (******************)
 (* pretty printer *)
 (******************)
@@ -1024,19 +1088,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       )
 	(
 	  (* the lhs of the ->*)
-	  let lhs = 
-	    (* if the symbol is Nofix _ -> we skip the symbol *)
-	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
-	    match s with
-	      | Symbol ("_", Nofix) ->
-		(* we only put brackets if implicit *)
-		(if nature = Implicit then withBracket else fun x -> x)
-		  (term2token ctxt ty (InArg nature))
-	      | _ -> 
-		(* here we put the nature marker *)
-		(if nature = Implicit then withBracket else withParen)
-		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
-	  in 
+	  let lhs = Verbatim (symbol2string s) in 
 	  (* for computing the r.h.s, we need to push a new frame *)
 	  let newframe = build_new_frame s (shift_term ty 1) in
 	  let rhs = term2token (newframe::ctxt) te Alone in
@@ -1831,48 +1883,6 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
 
 let debug = ref false
 
-(* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
-let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
-  if !debug then printf "before flush_vars: %s\n" (context2string !ctxt);
-  let hd, tl = List.hd !ctxt, List.tl !ctxt in
-  (* we compute the fvars of the terms *)
-  let lfvs = List.fold_left (fun acc te -> IndexSet.union acc (fv_term te)) IndexSet.empty l in
-  (* and traverse the free variables *)
-  let (terms, fvs) = fold_cont (fun (terms, fvs) ((i, ty, te)::tl) ->
-    match te with
-      | TVar (i', _) when not (IndexSet.mem i' lfvs) ->
-	(* there is no value for this free variable, and it does not appears in the terms --> remove it *)
-	tl, (terms, fvs)
-      | TVar (i', _) when IndexSet.mem i' lfvs ->
-	(* there is no value for this free variable, but it does not appears in the terms --> keep it *)
-	tl, (terms, fvs @ [i, ty, te])
-      | _ -> 
-      (* there is a value, we can get rid of the free var *)
-	if !debug then printf "flush_vars, rewrite %s --> %s\n" (term2string !ctxt (TVar (i, nopos))) (term2string !ctxt te);
-	let s = (IndexMap.singleton i te) in
-	let terms = List.map (fun hd -> term_substitution s hd) terms in
-	let tl = List.map (fun (i, ty, te) -> i, term_substitution s ty, term_substitution s te) tl in
-	tl, (terms, fvs)
-  ) (l, []) (List.rev hd.fvs) in
-  (* here we are removing the free vars and putting them bellow only if they have no TVar 0 in their term/type *)
-  (* first we shift them *)
-  let fvs = List.fold_left (fun acc (i, ty, te) ->
-    try 
-      acc @ [i, shift_term ty (-1), shift_term te (-1)]
-    with
-      | DoudouException (Unshiftable_term _) ->
-	(* we have a free variable that has a type / value containing the symbol in hd -> game over we failed *)
-	raise (DoudouException (FreeError "we failed to infer a free variable that cannot be out-scoped"))
-  ) [] (List.rev fvs) in
-  (match tl with
-    (* we are in toplevel do nothing *)
-    | [] -> ctxt := ({hd with fvs = fvs})::tl
-    (* we are not in toplevel -> we copy the fvs (that have been shifted), to the previous level *)
-    | hd'::tl -> ctxt := ({hd with fvs = []})::({hd' with fvs = fvs @ hd'.fvs})::tl
-  ); 
-  if !debug then printf "after flush_vars: %s\n" (context2string !ctxt);
-  terms
-      
 (*
   reduction of terms
   several strategy are possible:
@@ -2134,20 +2144,18 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
-	(* we push a frame *)
-	let frame = build_new_frame s1 (shift_term ty 1) in
-	ctxt := frame::!ctxt;
+	(* we push the quantification *)
+	push_quantification (s1, ty, n1, pq1) ctxt;
 	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	let s = context2substitution !ctxt in
 	let te1 = term_substitution s te1 in
 	let te2 = term_substitution s te2 in
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
-	(* we pop the frame *)
-	let [te] = flush_fvars ctxt [te] in
-	ctxt := fst (pop_frame !ctxt);
+	(* we pop quantification *)
+	let q1, [te] = pop_quantification ctxt [te] in
 	(* and we return the term *)
-	Impl ((s1, ty, n1, pq1), te, p1)
+	Impl (q1, te, p1)
 
     (* the Lambda case: only works if both are Lambda *)
     | Lambda ((s1, ty1, n1, pq1), te1, p1), Lambda ((s2, ty2, n2, pq2), te2, p2) ->
@@ -2155,20 +2163,18 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
       if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
 	(* we unify the types *)
 	let ty = unification_term_term defs ctxt ty1 ty2 in
-	(* we push a frame *)
-	let frame = build_new_frame s1 (shift_term ty 1) in
-	ctxt := frame::!ctxt;
+	(* we push the quantification *)
+	push_quantification (s1, ty, n1, pq1) ctxt;
 	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	let s = context2substitution !ctxt in
 	let te1 = term_substitution s te1 in
 	let te2 = term_substitution s te2 in
 	(* we unify *)
 	let te = unification_term_term defs ctxt te1 te2 in
-	(* we pop the frame *)
-	let [te] = flush_fvars ctxt [te] in
-	ctxt := fst (pop_frame !ctxt);
+	(* we pop quantification *)
+	let q1, [te] = pop_quantification ctxt [te] in
 	(* and we return the term *)
-	Lambda ((s1, ty, n1, pq1), te, p1)
+	Lambda (q1, te, p1)
 
     (* for all the rest: I do not know ! *)
     | _ -> 
@@ -2211,16 +2217,14 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | Impl ((s, ty, n, pq1), te, p1) -> 
       let ty = reduction defs ctxt strat ty in
       if strat.betastrong then (
-	(* we push a frame *)
-	let frame = build_new_frame s (shift_term ty 1) in
-	ctxt := frame::!ctxt;
+	(* we push the quantification *)
+	push_quantification (s, ty, n, pq1) ctxt;
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
-	(* we pop the frame *)
-	let [te] = flush_fvars ctxt [te] in
-	ctxt := fst (pop_frame !ctxt);
+	(* we pop the quantification *)
+	let q1, [te] = pop_quantification ctxt [te] in
 	(* and we return the term *)
-	Impl ((s, ty, n, pq1), te, p1)
+	Impl (q1, te, p1)
 
       ) else Impl ((s, ty, n, pq1), te, p1)
 
@@ -2228,16 +2232,14 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | Lambda ((s, ty, n, pq), te, p) -> 
       let ty = reduction defs ctxt strat ty in
       if strat.betastrong then (
-	(* we push a frame *)
-	let frame = build_new_frame s (shift_term ty 1) in
-	ctxt := frame::!ctxt;
+	(* we push the quantification *)
+	push_quantification (s, ty, n, pq) ctxt;
 	(* we reduce the body *)
 	let te = reduction defs ctxt strat te in
-	(* we pop the frame *)
-	let [te] = flush_fvars ctxt [te] in
-	ctxt := fst (pop_frame !ctxt);
+	(* we pop the quantification *)
+	let q1, [te] = pop_quantification ctxt [te] in
 	(* and we return the term *)
-	Lambda ((s, ty, n, pq), te, p)
+	Lambda (q1, te, p)
 
       ) else Lambda ((s, ty, n, pq), te, p)
     
@@ -2395,30 +2397,26 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     | Impl ((s, ty, n, pq), te, p) -> 
       (* first let's be sure that ty :: Type *)
       let ty, _ = typecheck defs ctxt ty (Type nopos) in
-      (* then we push the frame for s *)
-      let frame = build_new_frame s (shift_term ty 1) in
-      ctxt := frame::!ctxt;
+      (* we push the quantification *)
+      push_quantification (s, ty, n, pq) ctxt;
       (* we typecheck te :: Type *)
       let te, ty' = typecheck defs ctxt te (Type nopos) in
-      (* we pop the frame for s *)
-      let [te] = flush_fvars ctxt [te] in
-      ctxt := fst (pop_frame !ctxt);
+      (* we pop quantification *)
+      let q1, [te] = pop_quantification ctxt [te] in
       (* and we returns the term with type Type *)
-      Impl ((s, ty, n, pq), te, p), ty'
+      Impl (q1, te, p), ty'
 
     | Lambda ((s, ty, n, pq), te, p) -> 
       (* first let's be sure that ty :: Type *)
       let ty, _ = typecheck defs ctxt ty (Type nopos) in
-      (* then we push the frame for s *)
-      let frame = build_new_frame s (shift_term ty 1) in
-      ctxt := frame::!ctxt;
+      (* we push the quantification *)
+      push_quantification (s, ty, n, pq) ctxt;
       (* we typeinfer te *)
       let te, tety = typeinfer defs ctxt te in
-      (* we pop the frame for s *)
-      let [te; tety] = flush_fvars ctxt [te; tety] in
-      ctxt := fst (pop_frame !ctxt);
+      (* we pop quantification *)
+      let q1, [te; tety] = pop_quantification ctxt [te; tety] in
       (* and we returns the term with type Type *)
-      Lambda ((s, ty, n, pq), te, p), Impl ((s, ty, n, nopos), tety, nopos)
+      Lambda (q1, te, p), Impl (q1, tety, nopos)
 
     (* app will have another version in typecheck that might force more unification or creation of free variables *)
     | App (te, args, pos) -> 
@@ -2628,6 +2626,16 @@ and close_context (ctxt: context ref) : unit =
 
   ) IndexMap.empty (List.rev !ctxt) in
   ctxt := context_substitution s !ctxt
+
+(* a simple equality: basically we try to unify to term, and look for the empty substitution *)
+and equality_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) : bool =
+  try
+    let ctxt' = ref !ctxt in
+    let _ = unification_term_term defs ctxt' te1 te2 in
+    (* here we can use structural equality, because it is exactly what we want *)
+    IndexMap.compare compare (context2substitution !ctxt) (context2substitution !ctxt') = 0
+  with
+    | _ -> false
 
 (******************************************)
 (*        tests with parser               *)
