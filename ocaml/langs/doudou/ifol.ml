@@ -226,16 +226,19 @@ let _ = process_definition defs ctxt "congr :: {A :: Type} -> (P :: A -> Type) -
    \\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H) ::
    {A B :: Type} -> (H :: A /\\ B) -> B /\\ A
 
+   let _ = process_definition defs ctxt "\\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H)"
 *)
 
-let _ = process_definition defs ctxt "\\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H)"
 
-(* {A B :: Type} -> (A \\/ B) -> (B \\/ A) *)
+(* 
+   {A B :: Type} -> (A \\/ B) -> (B \\/ A) 
 
-let _ = process_definition defs ctxt "
-\\ {A B :: Type} (H :: A \\/ B) -> 
-disj H (\\ a -> right a) (\\ b -> left b)
-"
+   let _ = process_definition defs ctxt "
+   \\ {A B :: Type} (H :: A \\/ B) -> 
+   disj H (\\ a -> right a) (\\ b -> left b)
+   "
+*)
+
 
 (*
   a flag that force type checking check all along the solver 
