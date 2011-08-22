@@ -114,6 +114,7 @@ open Doudou
      -) if we have A /\\ B in (H U H') we enter the the Hypothesis A and B through proj1 and proj2
      -) for all equality (a = b) we generate new hypothesis using congr
      -) if we have P and ~ P then we derive false
+     -) if we have A -> B and A in (H U H') then we can replace the implication by its conclusion (modus ponens)
 
   4) we try to solve the goal by tautology
      -) using Ax := (\ {A :: Type} (a :: A) -> a)
@@ -427,6 +428,7 @@ and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps
       (* missing cases
 	 a = b 
 	 P /\\ ~P
+	 modus ponens
       *)
       | _ -> 
 	(prf, goal)::acc
