@@ -63,6 +63,7 @@ open Doudou
   Here follow we describe more formally the set of types that we accept as formulae:
 
   formula := (name :: fo-formula) -> formula (* please note that the quantification can be Implicit, this is the forall *)
+             | fo-formula
   fo-formula := atom | fo-formula opbin fo-formula | oppre fo-formula
   opbin := (/\\) | (\//) | (->)  
   oppre := [~)
@@ -174,7 +175,6 @@ let _ = process_definition defs ctxt "(=) : no, 20 :: {A :: Type} -> A -> A -> T
 let _ = process_definition defs ctxt "refl :: {A :: Type} -> (a :: A) -> a = a"
 let _ = process_definition defs ctxt "congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b"
 
-
 (*
   examples of formula:
   -------------------
@@ -228,3 +228,60 @@ let _ = process_definition defs ctxt "
 \\ {A B :: Type} (H :: A \\/ B) -> 
 disj H (\\ a -> right a) (\\ b -> left b)
 "
+
+(*
+  this the entry function for our prover:
+  
+  1) it pushes in a context the hypothesis (verifying that there types is in fo-formula)
+  2) it verifies that the final goal is also in fo-formula
+
+  it then calls the prover loops with the context, and empty derived hypothesis set, and the goal
+
+  finally it returns the resulting proof
+
+  basically, if everything went right
+  step1 defs lemma = proof <-> defs , {} |- proof :: lemma
+
+*)
+let rec ifol_solver_entry (defs: defs) (goal: term) : term =
+  let ctxt, goal = input_hypothesis defs empty_context goal in
+  (* here we use lists ... but it would be better to use some set data-structure 
+     the issue is that the comparaison function (basically unification with for result IndexMap.empty)
+     depends on the context in which we are ...
+  *)
+  let derived = [] in
+  ifol_solver_loop defs ctxt derived goal
+(*
+  this function is responsible to recursively check the types of the hypothesis (\in fo-formula)
+  and input them into the context, returning the final goal (and checking it is in fo-formula)
+*)
+and input_hypothesis (defs: defs) (ctxt: context) (goal: term) : context * term =
+  match goal with
+    | Impl ((s, ty, n, _), goal, _) when is_fo_formula defs ctxt ty ->
+      (* here we are sure that the hypothesis is ok *)
+      (* we build a new frame for it *)
+      let frame = build_new_frame s (shift_term ty 1) in
+      (* append it to the context *)
+      let ctxt = frame::ctxt in
+      (* and recursively call the function *)
+      input_hypothesis defs ctxt goal
+    (* we have a fo-formula conclusion *)
+    | te when is_fo_formula defs ctxt te ->
+      (ctxt, te)
+    (* otherwise, the formula is not in the fragment the solver can handle *)
+    | _ -> raise (DoudouException (
+      FreeError (String.concat "\n" ["the formula:"; term2string ctxt goal; "is not in the grament supported by our prover"])
+    )
+    )
+
+(* the function that verifies that a term is in fo-formula *)
+and is_fo_formula (defs: defs) (ctxt: context) (te: term) : bool =
+  raise (Failure "is_fo_formula: NYI")
+
+and ifol_solver_loop (defs: defs) (ctxt: context) (derived: (term * term) list) (goal: term) : term =
+  raise (Failure "ifol_solver_loop: NYI")
+
+
+
+
+
