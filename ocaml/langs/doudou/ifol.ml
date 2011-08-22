@@ -130,7 +130,7 @@ open Doudou
             a new hypothesis of either A or B (which is a free variables), and joining the proof using disj (warning: in this setup the hypothesis needs to be shift, in order to keep the terms consistent with the new context)
     
 
-Rmq: we here keep all hypothesis in the same data structure, because we are working without theories (other than equality). In the case where we deal with theories, we would need to keep subset of H' (sorted by there predicate, and functions), in order to call for decision procedure (which basically takes their own Hypothesis + a goal on their predicate)
+Rmq: we here keep all hypothesis in the same data structure, because we are working without theories (other than equality). In the case where we deal with theories, we would need to keep subset of H' (sorted by there predicate, and functions (in case of equality on there terms)), in order to call for decision procedure (which basically takes their own Hypothesis + a goal on their predicate)
 
   for the rest of the comments, we will use the following notation:
 
@@ -147,6 +147,8 @@ let fol_ctxt = ref empty_context
 
 (* the definitions of the base logic *)
 let fol_defs = ref empty_defs
+
+(* this is the theorie for FOL in our LF (we take the (->) of our LF for implication) *)
 
 let _ = process_definition defs ctxt "false :: Type"
 let _ = process_definition defs ctxt "true :: Type"
@@ -165,6 +167,8 @@ let _ = process_definition defs ctxt "(\\/) : left, 30 :: Type -> Type -> Type"
 let _ = process_definition defs ctxt "left :: {A B :: Type} -> A -> A \\/ B"
 let _ = process_definition defs ctxt "right :: {A B :: Type} -> B -> A \\/ B"
 let _ = process_definition defs ctxt "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
+
+(* this is the theorie of equality in of LF *)
 
 let _ = process_definition defs ctxt "(=) : no, 20 :: {A :: Type} -> A -> A -> Type"
 let _ = process_definition defs ctxt "refl :: {A :: Type} -> (a :: A) -> a = a"
