@@ -2416,10 +2416,9 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let te, ty' = typecheck defs ctxt te (Type nopos) in
       (* we pop the frame for s *)
       let [te] = flush_fvars ctxt [te] in
+      ctxt := fst (pop_frame !ctxt);
       (* and pop the type *)
       let [ty] = pop_terms ctxt 1 in
-      ctxt := fst (pop_frame !ctxt);
-
       (* and we returns the term with type Type *)
       Impl ((s, ty, n, pq), te, p), ty'
 
