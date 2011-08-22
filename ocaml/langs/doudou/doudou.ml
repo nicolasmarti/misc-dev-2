@@ -1088,19 +1088,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
       )
 	(
 	  (* the lhs of the ->*)
-	  let lhs = 
-	    (* if the symbol is Nofix _ -> we skip the symbol *)
-	    (* IMPORTANT: it means that Symbol ("_", Nofix)  as a special meaning !!!! *)
-	    match s with
-	      | Symbol ("_", Nofix) ->
-		(* we only put brackets if implicit *)
-		(if nature = Implicit then withBracket else fun x -> x)
-		  (term2token ctxt ty (InArg nature))
-	      | _ -> 
-		(* here we put the nature marker *)
-		(if nature = Implicit then withBracket else withParen)
-		  (Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token ctxt ty Alone])
-	  in 
+	  let lhs = Verbatim (symbol2string s) in 
 	  (* for computing the r.h.s, we need to push a new frame *)
 	  let newframe = build_new_frame s (shift_term ty 1) in
 	  let rhs = term2token (newframe::ctxt) te Alone in
