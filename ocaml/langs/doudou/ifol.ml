@@ -593,4 +593,8 @@ let solve (s: string) : unit =
 let _ = solve "{A B :: Type} -> A -> A"
 let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
 let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
+
+(*
+  missing modus ponens
 let _ = solve "{A B :: Type} -> (A -> B) -> A -> B"
+*)
