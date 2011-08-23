@@ -280,23 +280,88 @@ type tactic = Fail
 	      | Msg of string * tactic
 	      | ShowGoal of tactic 
 
+	      | Exact of term
+
+	      | Apply of term
+
 	      | NYD 
+
+(* helper functions *)
+
+(* this function apply to a term a free variable for each of its remaining arguments *)
+let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : term =
+  match ty with
+    | Impl ((_, _, nature, _), ty, _) ->
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+      complete_explicit_arguments ctxt (App (te, [TVar (fvte, nopos), nature], nopos)) ty
+    | _ -> te  
+
+(* the semantics *)
 
 let rec tactic_semantics (t: tactic) : proof_solver = 
   match t with
     | Fail -> raise CannotSolveGoal
+
     | Msg (s, t) -> printf "%s\n" s; tactic_semantics t
+
     | ShowGoal t -> (
       fun ctxt goal ->
 	printf "%s\n\n\n" (proof_state2string ctxt goal); tactic_semantics t ctxt goal
     )
+
+    | Exact prf -> (
+      fun ctxt goal ->
+	let prf, _ = 
+	  try 
+	    typecheck ctxt.defs (ref ctxt.ctxt) prf goal
+	  with
+	    | DoudouException err ->
+	      printf "%s\n" (error2string err);
+	      raise CannotSolveGoal
+	in
+	ctxt, prf	
+    )
+
+    | Apply prf -> (fun ctxt goal ->
+      (* first we typeinfer the term *)
+      let ctxt' = ref ctxt.ctxt in
+      let prf, ty = typeinfer ctxt.defs ctxt' prf in
+      printf "infered apply: %s :: %s\n" (term2string !ctxt' prf) (term2string !ctxt' ty);
+      let prf' = complete_explicit_arguments ctxt' prf ty in
+      printf "completed term: %s\n" (term2string !ctxt' prf');
+      (* we typecheck against the goal to infer the free variables type *)
+      let prf', _ = typecheck ctxt.defs ctxt' prf' goal in
+      IndexSet.iter (fun var ->
+	printf "need to find a goal of type: %s\n" (term2string !ctxt' (fvar_type !ctxt' var))
+      ) (fv_term prf');
+      raise CannotSolveGoal
+    )
     | _ -> raise Exit
 
 
-(* some examples *)
+(* some test *)
 
 let ctxt = (empty_proof_context !Ifol.fol_defs)
 
+(* test the initial proof_context *)
 let _ = ignore(check_proof_context ctxt [])
 
-let _ = tactic_semantics (ShowGoal Fail) ctxt (Type nopos)
+(* test the Show tactic *)
+let _ = tactic_semantics (ShowGoal (Exact (Type nopos))) ctxt (Type nopos)
+
+(* test the Apply tactic *)
+let _ = 
+  try 
+    let absurd = constante_symbol ctxt.defs (Name "absurd") in
+    ignore(tactic_semantics (ShowGoal (Apply (Cste (absurd, nopos)))) ctxt (Type nopos))
+  with
+    | _ -> ()
+
+let _ = 
+  try 
+    let disj = constante_symbol ctxt.defs (Name "disj") in
+    ignore(tactic_semantics (ShowGoal (Apply (Cste (disj, nopos)))) ctxt (Type nopos))
+  with
+    | _ -> ()
+      
