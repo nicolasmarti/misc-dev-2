@@ -17,8 +17,19 @@ open Printf
 type hypothesis = term * term
 
 (*
-  for now we just store them into a map from name to hypothesis
+  BEFORE: for now we just store them into a map from name to hypothesis
+  
+  the hypothesis are stored by their categorie: a string representing their types
+  see the following function for the mapping
 *)
+let term2category (te: term) : string =
+  match te with
+    | Type _ -> "Type"
+    | Cste (s, _) | App (Cste (s, _), _, _) -> symbol2string s
+    | TVar _ -> "Var"
+    | Impl _ -> "(->)"
+    (* other term should not be hypothesis (that we consider in normal formal form (== beta reduced)) *)
+    | _ -> "??"
 
 module NameMap = Map.Make(
   struct
@@ -27,7 +38,8 @@ module NameMap = Map.Make(
   end
 );;
 
-type hypothesises = hypothesis NameMap.t
+(* the first level represent category, the second names of the hypothesis *)
+type hypothesises = (hypothesis NameMap.t) NameMap.t
 
 (*
   few helper functions on hypothesis
@@ -35,25 +47,33 @@ type hypothesises = hypothesis NameMap.t
 
 (* shifting of hypothesises, all hypothesises which cannot be shifted (due to negative shifting) *)
 let shift_hypothesises (hyps: hypothesises) (level: int) =
-  NameMap.fold (fun name (prf, lemma) acc ->
-    try 
-      NameMap.add name (shift_term prf level, shift_term lemma level) acc
-    with
-      | DoudouException (Unshiftable_term _) -> acc
+  NameMap.fold (fun category hyps acc ->
+    NameMap.add category (
+      NameMap.fold (fun name (prf, lemma) acc ->
+	try 
+	  NameMap.add name (shift_term prf level, shift_term lemma level) acc
+	with
+	  | DoudouException (Unshiftable_term _) -> acc
+      ) hyps NameMap.empty
+    ) acc
   ) hyps NameMap.empty
 
 (* a function that check that all hypothesis are well typed *)
 let check_hypothesis (defs: defs) (ctxt: context) (hyps: hypothesises) : unit =
-  NameMap.iter (fun name (prf, lemma) -> 
-    ignore(typecheck defs (ref ctxt) lemma (Type nopos));
-    ignore(typecheck defs (ref ctxt) prf lemma)
+  NameMap.iter (fun category hyps -> 
+    NameMap.iter (fun name (prf, lemma) -> 
+      ignore(typecheck defs (ref ctxt) lemma (Type nopos));
+      ignore(typecheck defs (ref ctxt) prf lemma)
+    ) hyps
   ) hyps
 
 (* hypothesis2 token *)
 let hypothesises2token (ctxt: context) (hyps: hypothesises) : token =
   Box (
-    NameMap.fold (fun key (prf, lemma) acc ->
-	  acc @ [Box [Verbatim key; Space 1; Verbatim "::"; Space 1; term2token ctxt lemma Alone]; Newline]
+    NameMap.fold (fun category hyps acc ->
+      acc @ (NameMap.fold (fun key (prf, lemma) acc ->
+	acc @ [Box [Verbatim key; Space 1; Verbatim "::"; Space 1; term2token ctxt lemma Alone]; Newline]
+      ) hyps [])
     ) hyps []
   )
 (*
