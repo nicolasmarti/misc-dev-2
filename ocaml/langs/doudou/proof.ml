@@ -1,7 +1,7 @@
 open Parser
 open Pprinter
 open Doudou
-
+open Printf
 (*
   This is an attempt to have a facility for step by step proof 
 *)
@@ -49,6 +49,13 @@ let check_hypothesis (defs: defs) (ctxt: context) (hyps: hypothesises) : unit =
     ignore(typecheck defs (ref ctxt) prf lemma)
   ) hyps
 
+(* hypothesis2 token *)
+let hypothesises2token (ctxt: context) (hyps: hypothesises) : token =
+  Box (
+    NameMap.fold (fun key (prf, lemma) acc ->
+	  acc @ [Box [Verbatim key; Space 1; Verbatim "::"; Space 1; term2token ctxt lemma Alone]; Newline]
+    ) hyps []
+  )
 (*
   this is the proof context
 
@@ -62,6 +69,75 @@ type proof_context = {
   defs: defs;
   ctxt: context;
   hyps: hypothesises;
+}
+
+(*
+  pretty print of a proof_context
+*)
+let proof_context2token (ctxt: proof_context) : token =
+  Bar (true,
+    Bar (true, Verbatim " ",
+	 Bar 
+	   (false,
+	    Bar (true, 
+		 Box [Verbatim "   DEFINITIONS:";
+		      Newline; 
+		      Verbatim "-----------------";
+		      Newline; 
+		      defs2token ctxt.defs], 
+		 Box [Verbatim "   CONTEXT:";
+			Newline; 
+			Verbatim "--------------";
+			Newline; 
+			context2token ctxt.ctxt]),
+	    Box [Verbatim "   HYPOTHESIS:"; 
+		 Newline; 
+		 Verbatim "-----------------"; 
+		 Newline; 
+		 hypothesises2token ctxt.ctxt ctxt.hyps])	   
+    ), Verbatim " ")
+
+let proof_context2string (ctxt: proof_context) : string =
+  let token = proof_context2token ctxt in
+  let box = token2box token 100 2 in
+  box2string box
+
+let proof_state2token (ctxt: proof_context) (goal: term) : token =
+  Bar (true,
+    Bar (true, Verbatim " ",
+	 Bar 
+	   (false,
+	    Bar (true, 
+		 Box [Verbatim "   DEFINITIONS:";
+		      Newline; 
+		      Verbatim "-----------------";
+		      Newline; 
+		      defs2token ctxt.defs], 
+		 Box [Verbatim "   CONTEXT:";
+			Newline; 
+			Verbatim "--------------";
+			Newline; 
+			context2token ctxt.ctxt]),
+	    Box [Verbatim "   HYPOTHESIS:"; 
+		 Newline; 
+		 Verbatim "-----------------"; 
+		 Newline; 
+		 hypothesises2token ctxt.ctxt ctxt.hyps])	   
+    ), Box [Verbatim "goal:"; Newline; ISpace 4; term2token ctxt.ctxt goal Alone])
+
+let proof_state2string (ctxt: proof_context) (goal: term) : string =
+  let token = proof_state2token ctxt goal in
+  let box = token2box token 100 2 in
+  box2string box
+
+(*
+  the empty proof_context
+*)
+
+let empty_proof_context (defs: defs) = {
+  defs = defs;
+  ctxt = empty_context;
+  hyps = NameMap.empty;
 }
 
 (*
@@ -197,5 +273,30 @@ let introduce_impl (ctxt: proof_context) (goal: term) (solver: proof_solver) : p
     | _ -> raise CannotSolveGoal
 
 (*
-  
+  tactic: an ast which semantics is a proof_solver
 *)
+
+type tactic = Fail
+	      | Msg of string * tactic
+	      | ShowGoal of tactic 
+
+	      | NYD 
+
+let rec tactic_semantics (t: tactic) : proof_solver = 
+  match t with
+    | Fail -> raise CannotSolveGoal
+    | Msg (s, t) -> printf "%s\n" s; tactic_semantics t
+    | ShowGoal t -> (
+      fun ctxt goal ->
+	printf "%s\n\n\n" (proof_state2string ctxt goal); tactic_semantics t ctxt goal
+    )
+    | _ -> raise Exit
+
+
+(* some examples *)
+
+let ctxt = (empty_proof_context !Ifol.fol_defs)
+
+let _ = ignore(check_proof_context ctxt [])
+
+let _ = tactic_semantics (ShowGoal Fail) ctxt (Type nopos)
