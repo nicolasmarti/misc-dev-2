@@ -2356,12 +2356,12 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
   res
 
 (*
-  helper function that detect if the number of explicit arguments
+  helper function that detect if the number of implicit arguments
   N.B.: no modulo reduction ....
 *)      
-and nb_explicite_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
+and nb_implicit_arguments (defs: defs) (ctxt: context ref) (te: term) : int =
   match reduction defs ctxt unification_strat te with
-    | Impl ((_, _, Implicit, _), te, _) -> 1 + nb_explicite_arguments defs ctxt te
+    | Impl ((_, _, Implicit, _), te, _) -> 1 + nb_implicit_arguments defs ctxt te
     | _ -> 0
 
 and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * term =
@@ -2382,7 +2382,7 @@ and typecheck (defs: defs) (ctxt: context ref) (te: term) (ty: term) : term * te
     | _, _ ->
       let te, ty' = typeinfer defs ctxt te in
       (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
-      if nb_explicite_arguments defs ctxt ty' > nb_explicite_arguments defs ctxt ty then (
+      if nb_implicit_arguments defs ctxt ty' > nb_implicit_arguments defs ctxt ty then (
 	(* yes, we need to apply the term to a free variable *)
 	let fvty = add_fvar ctxt (Type nopos) in
 	let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
@@ -2565,9 +2565,9 @@ and typecheck_pattern (defs: defs) (ctxt: context ref) (p: pattern) (ty: term) :
   let ty' = shift_term ty (pattern_size p') in
 
   (* we try to detect if there is more implicite quantification in the infer type than the typechecked type *)
-  if nb_explicite_arguments defs ctxt pty > nb_explicite_arguments defs ctxt ty then (
+  if nb_implicit_arguments defs ctxt pty > nb_implicit_arguments defs ctxt ty then (
     (* we need to add enough implicit arguments *)
-    let new_args = List.map (fun (s, _, _, _) -> PVar (symbol2string s, AVar nopos, nopos), Implicit) (take (nb_explicite_arguments defs ctxt pty - nb_explicite_arguments defs ctxt ty) (fst (destruct_impl pty))) in
+    let new_args = List.map (fun (s, _, _, _) -> PVar (symbol2string s, AVar nopos, nopos), Implicit) (take (nb_implicit_arguments defs ctxt pty - nb_implicit_arguments defs ctxt ty) (fst (destruct_impl pty))) in
     let p'' = match p with | PCste (s, spos) -> PApp ((s, spos), new_args, AVar nopos, nopos) in
     ctxt := drop (pattern_size p') !ctxt;
     typecheck_pattern defs ctxt p'' ty
