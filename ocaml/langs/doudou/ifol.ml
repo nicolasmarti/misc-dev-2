@@ -541,7 +541,7 @@ and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps
 	let prfB = App (Cste (proj2, nopos), [(typeA, Implicit); (typeB, Implicit); (prf, Explicit)], nopos) in
 	if !force_typecheck then ignore(typecheck defs ctxt prfB typeB);
 	
-	(prf, goal)::(prfA, typeA)::(prfB, typeB)::acc
+	(prfA, typeA)::(prfB, typeB)::acc
 	
       (* missing cases
 	 - a = b 
