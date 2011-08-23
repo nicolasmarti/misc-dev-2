@@ -2679,6 +2679,59 @@ and equality_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: term) 
     IndexMap.compare compare (context2substitution !ctxt) (context2substitution !ctxt') = 0
   with
     | _ -> false
+(* a term rewriting based on unification
+   
+ *)
+and rewrite_term (defs: defs) (ctxt: context) (lhs: term) (rhs: term) (te: term) : term =
+  (* the base case:
+     - we push rhs in the term stack
+     - we try to unify lhs and te 
+     - if it works the free variable in rhs will be substituted so that we pop rhs and return it     
+  *)
+  try 
+    let ctxt' = ref ctxt in
+    push_terms ctxt' [rhs];
+    let _ = unification_term_term defs ctxt' lhs te in
+    let [rhs] = pop_terms ctxt' 1 in
+    rhs
+  with
+    (* if unification fails we will try on sub terms *)
+    | DoudouException (UnknownUnification _) | DoudouException (NoUnification _) ->
+      match te with
+	(* for all cases without subterms, we simply returns the original term *)
+	| Type _ | Cste _ | Obj _ | TVar _ | AVar _ | TName _ -> te
+	(* for app we just apply the rewriting to the head and the arguments *)	  
+	| App (f, args, pos) ->
+	  App (rewrite_term defs ctxt lhs rhs f,
+	       List.map (fun (arg, n) -> rewrite_term defs ctxt lhs rhs arg, n) args,
+	       pos)
+	(* for the quantifications, 
+	   we rewrite the type in the quantification, 
+	   push a frame/shift the rewriting elements,
+	   and rewrite the body
+	*)
+	| Impl ((s, ty, n, p) as q, body, p') ->
+	  Impl ((s, rewrite_term defs ctxt lhs rhs ty, n, p),
+		(let ctxt' = ref ctxt in
+		 push_quantification q ctxt';
+		 let ctxt' = !ctxt' in
+		 let lhs' = shift_term lhs 1 in
+		 let rhs' = shift_term rhs 1 in
+		 rewrite_term defs ctxt' lhs' rhs' body),
+		p'
+	  )
+	| Lambda ((s, ty, n, p) as q, body, p') ->
+	  Lambda ((s, rewrite_term defs ctxt lhs rhs ty, n, p),
+		  (let ctxt' = ref ctxt in
+		   push_quantification q ctxt';
+		   let ctxt' = !ctxt' in
+		   let lhs' = shift_term lhs 1 in
+		   let rhs' = shift_term rhs 1 in
+		   rewrite_term defs ctxt' lhs' rhs' body),
+		  p'
+	  )
+		  
+
 
 (******************************************)
 (*        tests with parser               *)
