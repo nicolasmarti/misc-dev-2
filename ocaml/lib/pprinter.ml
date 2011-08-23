@@ -34,6 +34,8 @@ type token =
   | ISpace of int
   | Grid of token list list
   | Frac of token * (token list)
+  | Bar of bool * token * token (* true = horizontal, false vertical *)
+  
 ;;
 
 type box = {
@@ -244,6 +246,12 @@ let string_to_box s =
     }
 ;;
 
+let fill_box s height width =
+  { data = repeat (String.concat "" (repeat s width )) height;
+    height = height;
+    width = width;
+  };;
+
 exception PprintFailure;;
 
 let rec token2box (t: token) (w: int) (indent: int) : box =
@@ -434,5 +442,15 @@ let rec token2box (t: token) (w: int) (indent: int) : box =
 	in
 	  vertical_concat Center (vertical_concat Center hd middle_bar) bottom
       )
+    | Bar (false, t1, t2) ->
+      let b1 = token2box t1 w indent in
+      let b2 = token2box t2 w indent in
+      let height = max b1.height b2.height in
+      horizontal_concat Top (horizontal_concat Top b1 (fill_box "|" height 1)) b2
+    | Bar (true, t1, t2) ->
+      let b1 = token2box t1 w indent in
+      let b2 = token2box t2 w indent in
+      let width = max b1.width b2.width in
+      vertical_concat Left (vertical_concat Left b1 (fill_box "-" 1 width)) b2
     | _ -> raise PprintFailure
 ;;
