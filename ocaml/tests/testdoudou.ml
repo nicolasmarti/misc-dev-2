@@ -179,29 +179,6 @@ let _ = printf "\n\n------------------------------------------- Tactics Tests --
 (* some test *)
 open Fol
 open Proof
-
-let proof_ctxt = empty_proof_context !fol_defs
-
-(* test the initial proof_context *)
-let _ = ignore(check_proof_context proof_ctxt [])
-
-(* test the Show tactic *)
-let _ = tactic_semantics (ShowGoal (Exact (Type nopos))) proof_ctxt (Type nopos)
-
-(* test the Apply tactic *)
-let _ = 
-  try 
-    let absurd = constante_symbol proof_ctxt.defs (Name "absurd") in
-    ignore(tactic_semantics (ShowGoal (Apply (Cste (absurd, nopos)))) proof_ctxt (Type nopos))
-  with
-    | _ -> ()
-
-let _ = 
-  try 
-    let disj = constante_symbol proof_ctxt.defs (Name "disj") in
-    ignore(tactic_semantics (ShowGoal (Apply (Cste (disj, nopos)))) proof_ctxt (Type nopos))
-  with
-    | _ -> ()
       
 (**********************************)
 (* example of first order solving *)
