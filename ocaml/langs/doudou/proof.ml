@@ -76,6 +76,23 @@ let hypothesises2token (ctxt: context) (hyps: hypothesises) : token =
       ) hyps [])
     ) hyps []
   )
+
+(* input an hypothesis in a proof_context *)
+let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises) : hypothesises =
+  (* grab the proof and the lemma *)
+  let prf, lemma = hyp in
+  (* find the category (create an empty map of hypothesises if it does not exists) *)
+  let category = term2category lemma in
+  let category_hyps = try NameMap.find category hyps with | Not_found -> NameMap.empty in
+  (* grab the names of this category hypothesis, and generate a fresh name from the given one *)
+  let category_hyps_names = NameMap.fold (fun k _ acc -> NameSet.add k acc) category_hyps NameSet.empty in
+  let name = String.concat "." [category; name] in
+  let name = fresh_name ~basename:name category_hyps_names in
+  (* and finally update the map of hypothesis *)
+  (* please note that we do not check for duplicate *)
+  let category_hyps = NameMap.add name hyp category_hyps in
+  NameMap.add category category_hyps hyps
+
 (*
   this is the proof context
 
@@ -361,8 +378,9 @@ let rec tactic_semantics (t: tactic) : proof_solver =
 
 
 (* some test *)
+open Fol
 
-let ctxt = (empty_proof_context !Ifol.fol_defs)
+let ctxt = (empty_proof_context !fol_defs)
 
 (* test the initial proof_context *)
 let _ = ignore(check_proof_context ctxt [])

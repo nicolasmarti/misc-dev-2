@@ -27,9 +27,11 @@
 
 <langs/doudou>: include
 <langs/doudou/doudou.{ml,byte,native}>: pkg_unix, pkg_str
-<tests/testdoudou.{ml,byte,native}>: pkg_unix, pkg_str
-<langs/doudou/ifol.{ml,byte,native}>: pkg_unix, pkg_str
 <langs/doudou/proof.{ml,byte,native}>: pkg_unix, pkg_str
+<langs/doudou/fol.{ml,byte,native}>: pkg_unix, pkg_str
+<langs/doudou/fol_solver.{ml,byte,native}>: pkg_unix, pkg_str
+<tests/testdoudou.{ml,byte,native}>: pkg_unix, pkg_str
+
 
 <finance>: include
 <finance/ibtws>: include
