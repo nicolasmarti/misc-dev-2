@@ -120,7 +120,7 @@ open Proof
 
   Tactic tauto :=
    | _ |- true => exact I
-   | _ |- (?x :: ?A) = ?x => refl {?A} ?x
+   | _ |- ?x = ?x => refl ?x
    | H :: ?A |- ?A => exact prf(H)
    | H :: false |- ?G => exact (absurd {?G} prf(H))
 
