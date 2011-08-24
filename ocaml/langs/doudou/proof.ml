@@ -3,7 +3,7 @@ open Pprinter
 open Doudou
 open Printf
 (*
-  This is an attempt to have a facility for step by step proof 
+  This is an attempt to have a facility for building proof s
 *)
 
 (*
@@ -17,9 +17,7 @@ open Printf
 type hypothesis = term * term
 
 (*
-  BEFORE: for now we just store them into a map from name to hypothesis
-  
-  the hypothesis are stored by their categorie: a string representing their types
+  the hypothesis are stored by their category: a string representing their types
   see the following function for the mapping
 *)
 let term2category (te: term) : string =
@@ -235,88 +233,14 @@ type proof_context_transformer = proof_context -> proof_context
 type goal_transformer = proof_context -> term -> term
 
 (*
-  for witenessing a term we might split a goal in different subgoals which need all to be proved
-
-  prfctxt: the original proof_context
-  goals: a list of sub-goals together with thir solver function
-  merge: a function that merges goals together
-
-  the proof is sequential, in order, the context is shared/extends
-
-*)
-let split_goal_allneeded (ctxt: proof_context) (goals: (term * proof_solver) list) (merge: term list -> term) : proof_context * term =
-  (* we traverse the goals and their provers *)
-  let ctxt, rev_prfs = List.fold_left (fun (ctxt, prfs) (goal, solver) ->
-    let ctxt, prf = solver ctxt goal in
-    if !force_check then check_proof_context ctxt [prf, goal];
-    ctxt, prf::prfs 
-  ) (ctxt, []) goals in
-  (* we merge the proofs in the right order *)
-  let prf = merge (List.rev rev_prfs) in
-  (* checking if we wish to *)
-  if !force_check then check_proof_context ctxt [];
-  (* returning the result*)
-  ctxt, prf
-
-(*
-  for witenessing a term we might split a goal in different possible subgoals of which only one need to be solved
-
-  prfctxt: the original proof_context
-  goals: a list of sub-goals together with their solver function and the function to rebuild the proof
-
-  the contexts are not shared
-
-*)
-let split_goal_oneneeded (ctxt: proof_context) (goals: (term * proof_solver * (term -> term)) list) : proof_context * term =
-  (* we try all the goals *)
-  let res = fold_stop (fun () (goal, solver, prf_builder) ->
-    try
-      let ctxt, prf = solver ctxt goal in
-      if !force_check then check_proof_context ctxt [prf, goal];
-      let prf = prf_builder prf in
-      Right (ctxt, prf)
-    with
-      | CannotSolveGoal -> Left ()
-  ) () goals in
-  match res with
-    (* we cannot find any proof for the goals *)
-    | Left () ->
-      raise CannotSolveGoal
-    | Right res -> res
-
-(*
-  when the goal is an Impl, we might want to introduce the quantification, 
-  prove the goal and quantify it by a Lambda
-*)
-let introduce_impl (ctxt: proof_context) (goal: term) (solver: proof_solver) : proof_context * term =
-  match goal with
-    (* an implication, we can do a introduction *)
-    | Impl (q, body, pos) ->
-      (* quantifying the Impl *)
-      let ctxt = push_quantification ctxt q in
-      (* try to solve the goal *)
-      let ctxt, prf = solver ctxt body in
-      (* do a check *)
-      if !force_check then check_proof_context ctxt [prf, body];
-      (* pop the quantification *)
-      let ctxt, q, prf = pop_quantification ctxt prf in
-      (* rebuilt the proof *)
-      let prf = Lambda (q, prf, nopos) in
-      (* do a check *)
-      if !force_check then check_proof_context ctxt [prf, goal];
-      (* return the result *)
-      ctxt, prf
-    (* not an implication, cannot introduce  *)
-    | _ -> raise CannotSolveGoal
-
-(*
   tactic: an ast which semantics is a proof_solver
+
+  an informal subset of what we want is depicted in fol_solver
 *)
 
 type tactic = Fail
 	      | Msg of string * tactic
 	      | ShowGoal of tactic 
-
 	      | Exact of term
 
 	      | Apply of term
