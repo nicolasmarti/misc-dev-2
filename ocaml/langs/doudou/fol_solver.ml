@@ -228,10 +228,10 @@ let fol_solver (s: string) : unit =
   let pb = build_parserbuffer lines in
   let pos = cur_pos pb in
   try 
-    let te = parse_term !defs pos pb in
+    let te = parse_term !fol_defs pos pb in
     (* we typecheck the fol formula again Type *)
     let ctxt = ref empty_context in
-    let te, _ = typecheck !defs ctxt te (Type nopos) in
+    let te, _ = typecheck !fol_defs ctxt te (Type nopos) in
     (* we ensure there is not free variable *)
     let [te] = flush_fvars ctxt [te] in
     if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));

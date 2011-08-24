@@ -125,7 +125,7 @@ let empty_frame = {
 (* the context must a least have one frame, for pushing/poping stack elements *)
 let empty_context = empty_frame::[]
 
-let empty_defs = { store = Hashtbl.create 30; hist = [] }
+let empty_defs () = { store = Hashtbl.create 30; hist = [] }
 
 type doudou_error = NegativeIndexBVar of index
 		    | Unshiftable_term of term * int * int
@@ -2742,10 +2742,6 @@ and rewrite_term (defs: defs) (ctxt: context) (lhs: term) (rhs: term) (te: term)
 
 open Stream
 
-let ctxt = ref empty_context
-
-let defs = ref empty_defs
-
 (* the strategy to cleanup types *)
 let clean_term_strat : reduction_strategy = {
   beta = Eager;
@@ -2758,7 +2754,7 @@ let clean_term_strat : reduction_strategy = {
   eta = true;
 }
 
-let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
+let process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (s: string) : unit =
     (* we set the parser *)
     let lines = stream_of_string s in
     let pb = build_parserbuffer lines in
@@ -2778,7 +2774,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* add to the defs *)
 	  addAxiom defs s ty;
 	  (* just print that everything is fine *)
-	  printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
+	  if verbose then printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty)
 
 	| DefEquation (PCste (s, spos) as p, te) | DefEquation (PApp ((s, spos), _, _, _) as p, te) ->
 
@@ -2788,7 +2784,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* add to the defs *)
 	  addEquation defs s (p, te);
 	  (* just print that everything is fine *)
-	  printf "Equation: %s \n" (equation2string !ctxt (p, te));
+	  if verbose then printf "Equation: %s \n" (equation2string !ctxt (p, te));
 	    
 	| DefTerm te ->
 	  (* we infer the term type *)
@@ -2798,7 +2794,7 @@ let process_definition (defs: defs ref) (ctxt: context ref) (s: string) : unit =
 	  (* we flush the free vars so far *)
 	  let [te; ty] = flush_fvars ctxt [te; ty] in
 	  (* just print that everything is fine *)
-	  printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
+	  if verbose then printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty)
       ) in
       assert (List.length !ctxt = 1)
     with

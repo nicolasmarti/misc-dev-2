@@ -18,33 +18,33 @@ open Doudou
 let fol_ctxt = ref empty_context
 
 (* the definitions of the base logic *)
-let fol_defs = ref empty_defs
+let fol_defs = ref (empty_defs ())
 
 (* this is the theorie for FOL in our LF (we take the (->) of our LF for implication) *)
 
-let _ = process_definition defs ctxt "false :: Type"
-let _ = process_definition defs ctxt "true :: Type"
-let _ = process_definition defs ctxt "I :: true"
+let _ = process_definition fol_defs fol_ctxt "false :: Type"
+let _ = process_definition fol_defs fol_ctxt "true :: Type"
+let _ = process_definition fol_defs fol_ctxt "I :: true"
 
-let _ = process_definition defs ctxt "[~) : 50 :: Type -> Type"
-let _ = process_definition defs ctxt "contradiction :: {P :: Type} -> P -> ~ P -> false"
-let _ = process_definition defs ctxt "absurd :: {P :: Type} -> false -> P"
+let _ = process_definition fol_defs fol_ctxt "[~) : 50 :: Type -> Type"
+let _ = process_definition fol_defs fol_ctxt "contradiction :: {P :: Type} -> P -> ~ P -> false"
+let _ = process_definition fol_defs fol_ctxt "absurd :: {P :: Type} -> false -> P"
 
-let _ = process_definition defs ctxt "(/\\) : left, 40 :: Type -> Type -> Type"
-let _ = process_definition defs ctxt "conj :: {A B :: Type} -> A -> B -> A /\\ B"
-let _ = process_definition defs ctxt "proj1 :: {A B :: Type} -> A /\\ B -> A"
-let _ = process_definition defs ctxt "proj2 :: {A B :: Type} -> A /\\ B -> B"
+let _ = process_definition fol_defs fol_ctxt "(/\\) : left, 40 :: Type -> Type -> Type"
+let _ = process_definition fol_defs fol_ctxt "conj :: {A B :: Type} -> A -> B -> A /\\ B"
+let _ = process_definition fol_defs fol_ctxt "proj1 :: {A B :: Type} -> A /\\ B -> A"
+let _ = process_definition fol_defs fol_ctxt "proj2 :: {A B :: Type} -> A /\\ B -> B"
 
-let _ = process_definition defs ctxt "(\\/) : left, 30 :: Type -> Type -> Type"
-let _ = process_definition defs ctxt "left :: {A B :: Type} -> A -> A \\/ B"
-let _ = process_definition defs ctxt "right :: {A B :: Type} -> B -> A \\/ B"
-let _ = process_definition defs ctxt "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
+let _ = process_definition fol_defs fol_ctxt "(\\/) : left, 30 :: Type -> Type -> Type"
+let _ = process_definition fol_defs fol_ctxt "left :: {A B :: Type} -> A -> A \\/ B"
+let _ = process_definition fol_defs fol_ctxt "right :: {A B :: Type} -> B -> A \\/ B"
+let _ = process_definition fol_defs fol_ctxt "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
 
 (* this is the theorie of equality in of LF *)
 
-let _ = process_definition defs ctxt "(=) : no, 20 :: {A :: Type} -> A -> A -> Type"
-let _ = process_definition defs ctxt "refl :: {A :: Type} -> (a :: A) -> a = a"
-let _ = process_definition defs ctxt "congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b"
+let _ = process_definition fol_defs fol_ctxt "(=) : no, 20 :: {A :: Type} -> A -> A -> Type"
+let _ = process_definition fol_defs fol_ctxt "refl :: {A :: Type} -> (a :: A) -> a = a"
+let _ = process_definition fol_defs fol_ctxt "congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b"
 
 (* functions that verifies that a term is in 
    - formula 
