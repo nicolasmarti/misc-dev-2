@@ -216,88 +216,72 @@ let pop_quantification (ctxt: proof_context) (prf: term) : proof_context * (symb
   {ctxt with ctxt = ctxt'; hyps = hyps'}, q, prf
 
 (*
-  a proof_solver: a function that takes a proof_context and a goal and returns a proof_context together with a proof of the goal
-*)
-type proof_solver = proof_context -> term -> proof_context * term
-
-(*
-  a proof_context_transformer: a function that modifies the proof_context (such that it stay valid)
+  some abstract datatype / functions needed
+  in order to implement FOL
 *)
 
-type proof_context_transformer = proof_context -> proof_context
+type proof_pattern
 
-(*
-  a goal_transformer: a function that modifies the goal (such that it stay valid under the proof_context)
-*)
+type proof_subst
 
-type goal_transformer = proof_context -> term -> term
+type hypothesises_iterator
 
-(*
-  tactic: an ast which semantics is a proof_solver
+exception NoPatternMatching
 
-  an informal subset of what we want is depicted in fol_solver
-*)
+let match_proof_pattern (p: proof_pattern) (te: term) : proof_subst =
+  raise Exit
 
-type tactic = Fail
-	      | Msg of string * tactic
-	      | ShowGoal of tactic 
-	      | Exact of term
+let proof_pattern2term (p: proof_pattern) : term =
+  raise Exit
 
-	      | Apply of term
+let proof_pattern_subst (p: proof_pattern) (s: proof_subst) : proof_pattern =
+  raise Exit
 
-	      | NYD 
+let make_iterator (hyps: hypothesises) (p: proof_pattern) : hypothesises_iterator =
+  raise Exit
 
-(* helper functions *)
+exception NoMoreHypothesis
 
-(* this function apply to a term a free variable for each of its remaining arguments *)
-let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : term =
-  match ty with
-    | Impl ((_, _, nature, _), ty, _) ->
-      let fvty = add_fvar ctxt (Type nopos) in
-      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
-      complete_explicit_arguments ctxt (App (te, [TVar (fvte, nopos), nature], nopos)) ty
-    | _ -> te  
+let next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
+  raise Exit
 
-(* the semantics *)
 
-let rec tactic_semantics (t: tactic) : proof_solver = 
-  match t with
-    | Fail -> raise CannotSolveGoal
+type tactics = 
+  (* just fail *) 
+  | Fail      
 
-    | Msg (s, t) -> printf "%s\n" s; tactic_semantics t
+  (* printout a message and continue *)
+  | Msg of string * tactics
+  (* printout the goal and continue *)
+  | ShowGoal of tactics
+      
+  (* terminal tactic *)
+  | Exact of proof_pattern
+      
+  (* partial apply of a term, executing the tactics on each subgoals *)
+  | PartApply of proof_pattern * tactics
+		   
+  (* Interactive: asking for the user to enter a tactic *)
+  | Interactive 
 
-    | ShowGoal t -> (
-      fun ctxt goal ->
-	printf "%s\n\n\n" (proof_state2string ctxt goal); tactic_semantics t ctxt goal
-    )
+  (* try several tactics, rolling back after each fails, excpet the last one *)
+  | Or of tactics list
 
-    | Exact prf -> (
-      fun ctxt goal ->
-	let prf, _ = 
-	  try 
-	    typecheck ctxt.defs (ref ctxt.ctxt) prf goal
-	  with
-	    | DoudouException err ->
-	      printf "%s\n" (error2string err);
-	      raise CannotSolveGoal
-	in
-	ctxt, prf	
-    )
+  (* cases on the goal/hypothesises *)
+  | Cases of (proof_pattern * (string * proof_pattern) list * tactics) list
 
-    | Apply prf -> (fun ctxt goal ->
-      (* first we typeinfer the term *)
-      let ctxt' = ref ctxt.ctxt in
-      let prf, ty = typeinfer ctxt.defs ctxt' prf in
-      printf "infered apply: %s :: %s\n" (term2string !ctxt' prf) (term2string !ctxt' ty);
-      let prf' = complete_explicit_arguments ctxt' prf ty in
-      printf "completed term: %s\n" (term2string !ctxt' prf');
-      (* we typecheck against the goal to infer the free variables type *)
-      let prf', _ = typecheck ctxt.defs ctxt' prf' goal in
-      IndexSet.iter (fun var ->
-	printf "need to find a goal of type: %s\n" (term2string !ctxt' (fvar_type !ctxt' var))
-      ) (fv_term prf');
-      raise CannotSolveGoal
-    )
-    | _ -> raise Exit
+  (* tactic name *)
+  | TacticsName of string
+
+  (* tactics call *)
+  | Call of string * tactics list
+
+  (* add an hypothesis *)
+  | AddHyp of string * proof_pattern * proof_pattern * tactics
+
+  (* introduce a quantification *)
+  | Intro of string list * tactics
+
+
 
 
