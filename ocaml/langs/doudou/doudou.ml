@@ -607,18 +607,15 @@ let rec add_string_index (y: string) index =
     | '9' -> (String.set y len '0'); (add_string_index (y: string) (index + 1));
     | c -> (String.concat "" (y :: "0" :: [])) ;;
 
-let rec fresh_name_context ?(basename: string = "H") (ctxt: context) : string =
-  let nameset = build_name_set ctxt in
-  if NameSet.mem basename nameset then
-    fresh_name_context ~basename:(add_string_index basename 1) ctxt
-  else
-    basename
-
 let rec fresh_name ?(basename: string = "H") (s: NameSet.t) : string =
   if NameSet.mem basename s then
     fresh_name ~basename:(add_string_index basename 1) s
   else
     basename
+
+let rec fresh_name_context ?(basename: string = "H") (ctxt: context) : string =
+  let nameset = build_name_set ctxt in
+  fresh_name ~basename:basename nameset
 
 (* build a new frame 
    value is optional
