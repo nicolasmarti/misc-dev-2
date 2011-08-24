@@ -85,7 +85,7 @@ open Proof
         a pattern variable might appear more than once (and all its occurence should have the same unification)
      *)
      we trigger the action for the first pattern hyp that match the proof_context, if the resulting action fails then we rollback
-     to the last one
+     to the next choice
      
      _ |- A -> B => intro; 4)
      _ |- A /\\ B => apply (conj {A} {B}); 4)
@@ -111,26 +111,26 @@ open Proof
 
   here is an attempt at writing the tactic in a string format:
 
-  Tactic sature (cont) :=
-    | H :: A /\\ B |- _ => add H1 := proj1 {A} {B} prf(H) :: A and H2 := proj2 {A} {B} prf(H) :: B in the hypothesis; remove H; sature
-    | H1 :: A -> B, H2 :: A |- _ => add H1' := prf(H1) prf(H2) :: B; remove H1; sature
-    | H1 :: P, H2 :: ~ P |- _ => add H := contradiction {P} H1 H2 :: false; sature
-    | H1 :: x = y, H2 :: P x |- _ => add H := congr {A} P x y H1 :: P y; remove H2; sature
+  Tactic sature(cont) :=
+    | H :: ?A /\\ ?B |- _ => add H1 := proj1 {?A} {?B} prf(H) :: ?A and H2 := proj2 {?A} {?B} prf(H) :: ?B in the hypothesis; remove H; sature(cont)
+    | H1 :: ?A -> ?B, H2 :: ?A |- _ => add H1' := prf(H1) prf(H2) :: ?B; remove H1; sature(cont)
+    | H1 :: ?P, H2 :: ~ ?P |- _ => add H := contradiction {?P} prf(H1) prf(H2) :: false; sature(cont)
+    | H1 :: ?x = ?y, H2 :: ?P ?x |- _ => add H := congr {A} ?P ?x ?y prf(H1) :: ?P ?y; remove H2; sature(cont)
     | cont
 
   Tactic tauto :=
    | _ |- true => exact I
-   | _ |- (x :: A) = x => refl {A} x
-   | H :: A |- A => exact H
-   | H :: false |- G => exact (absurd {G} H)
+   | _ |- (?x :: ?A) = ?x => refl {?A} ?x
+   | H :: ?A |- ?A => exact prf(H)
+   | H :: false |- ?G => exact (absurd {?G} prf(H))
 
   Tactic FOL :=
     sature (
       | _ |- _ => tauto 
-      | _ |- A -> B => intro; FOL
-      | _ |- A /\\ B => apply (conj {A} {B}); FOL
-      | H :: A \\/ B |- _ => apply (disj {A} {B} H); FOL
-      | _ |- A \\/ B => (apply (left {A} {B}); FOL) || (apply (right {A} {B}); FOL)      
+      | _ |- ?A -> ?B => intro; FOL
+      | _ |- ?A /\\ ?B => apply (conj {?A} {?B}); FOL
+      | H :: ?A \\/ ?B |- _ => apply (disj {?A} {?B} prf(H)); FOL
+      | _ |- ?A \\/ ?B => (apply (left {?A} {?B}); FOL) || (apply (right {?A} {?B}); FOL)      
     )
   
 *)
@@ -154,22 +154,8 @@ open Proof
 
 
 (*
-  a flag that force type checking check all along the solver 
+  we are going to implement the solver as a tactic
 *)
-let force_typecheck = ref true
-
-let debug = ref false
-
-
-(*
-  this the entry function for our prover:
-*)
-let rec fol_solver_entry (goal: term) : term =
-
-  (* we build our working context *)
-  let ctxt = empty_proof_context !fol_defs in
-  
-  raise (Failure "Not yet implemented")
 
 
 (*****************************************************************)
@@ -189,10 +175,10 @@ let fol_solver (s: string) : unit =
     (* we ensure there is not free variable *)
     let [te] = flush_fvars ctxt [te] in
     if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
-    (* we call the solver *)
-    let proof = fol_solver_entry te in
-    (* we show the result *)
-    printf "Term |- %s :: %s \n" (term2string !ctxt proof) (term2string !ctxt te)
+    (* we assure that the term is a valid formula *)
+    if not (is_formula !fol_defs te) then raise (DoudouException (FreeError "The lemma is not a valid first order formula"));
+    (* and we use the tactics *)
+    raise (Failure "Not Yet Implemented")
   with
     | NoMatch -> 
       printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
