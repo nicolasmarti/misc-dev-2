@@ -221,8 +221,7 @@ let pop_quantification (ctxt: proof_context) (prf: term) : proof_context * (symb
   {ctxt with ctxt = ctxt'; hyps = hyps'}, q, prf
 
 (*
-  some abstract datatype / functions needed
-  in order to implement FOL
+  pattern matching for the hypothesis / goal
 *)
 
 (* the patterns used to match lemma and build proof *)
@@ -235,8 +234,11 @@ type proof_pattern = PPAVar
 		     | PPType of string
 		     | PPTerm of term
 
-(* substitution *)
+(* substitution of pattern variable to term *)
 type proof_subst = term NameMap.t
+
+(* substitution of hypothesis name  *)
+type hyp_subst = string NameMap.t
 
 (* hypothesis iterator: used in order to traverse hypothesis in pattern matching 
    with side effect
@@ -289,7 +291,7 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
   (*
     we apply the substitution 
   *)
-  let p' = proof_pattern_subst p subst in
+  let p' = proof_pattern_subst p subst NameMap.empty in
   (*
     we create a term with it
   *)
@@ -330,17 +332,19 @@ and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
     | PPTerm te -> te
 
 (* apply substitution into a pattern *)
-and proof_pattern_subst (p: proof_pattern) (s: proof_subst) : proof_pattern =
+and proof_pattern_subst (p: proof_pattern) (s: proof_subst) (h: hyp_subst) : proof_pattern =
   match p with
-    | PPAVar | PPCste _ | PPType _ | PPProof _ | PPTerm _ -> p
+    | PPAVar | PPCste _ | PPTerm _ -> p
+    | PPType n -> (try PPType (NameMap.find n h) with | _ -> p)
+    | PPProof n -> (try PPProof (NameMap.find n h) with | _ -> p)
     | PPVar v -> (
       try
 	PPTerm (NameMap.find v s)
       with
 	| _ -> p
     )
-    | PPApp (p, args) -> PPApp (proof_pattern_subst p s, List.map (fun (arg, n) -> proof_pattern_subst arg s, n) args)
-    | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s, proof_pattern_subst p2 s)
+    | PPApp (p, args) -> PPApp (proof_pattern_subst p s h, List.map (fun (arg, n) -> proof_pattern_subst arg s h, n) args)
+    | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s h, proof_pattern_subst p2 s h)
 
 (* build an iterator over the hypothesises that might be matched with the pattern *)
 let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterator =
@@ -358,42 +362,119 @@ let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterat
   in
   iterator
 
-type tactics = 
+(*
+  the tactic AST
+*)
+
+type tactic = 
   (* just fail *) 
   | Fail      
 
   (* printout a message and continue *)
-  | Msg of string * tactics
+  | Msg of string * tactic
+
   (* printout the goal and continue *)
-  | ShowGoal of tactics
+  | ShowGoal of tactic
       
   (* terminal tactic *)
   | Exact of proof_pattern
       
-  (* partial apply of a term, executing the tactics on each subgoals *)
-  | PartApply of proof_pattern * tactics
+  (* partial apply of a term, executing the tactic on each subgoals *)
+  | PartApply of proof_pattern * tactic
 		   
   (* Interactive: asking for the user to enter a tactic *)
   | Interactive 
 
-  (* try several tactics, rolling back after each fails, excpet the last one *)
-  | Or of tactics list
+  (* try several tactic, rolling back after each fails, excpet the last one *)
+  | Or of tactic list
 
   (* cases on the goal/hypothesises *)
-  | Cases of (proof_pattern * (string * proof_pattern) list * tactics) list
+  | Cases of (proof_pattern * (string * proof_pattern) list * tactic) list
 
   (* tactic name *)
-  | TacticsName of string
+  | TacticName of string
 
-  (* tactics call *)
-  | Call of string * tactics list
+  (* tactic call *)
+  | Call of string * tactic list
 
   (* add an hypothesis *)
-  | AddHyp of string * proof_pattern * proof_pattern * tactics
+  | AddHyp of string * proof_pattern * proof_pattern * tactic
+
+  (* remove an hypothesis *)
+  | DelHyp of string * tactic
 
   (* introduce a quantification *)
-  | Intro of string list * tactics
+  | Intro of string list * tactic
 
+(*
+  we might need to apply a substitution to a tactic
+  h is a substitution for hypothesis names
+*)
+let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
+  match t with
+    (* the cases where we need to propagate the substitution *)
+    | Msg (m, t) -> Msg (m, tactic_subst t s h)
+    | ShowGoal t -> ShowGoal (tactic_subst t s h)
+    | Exact p -> Exact (proof_pattern_subst p s h)
+    | PartApply (p, t) -> PartApply (proof_pattern_subst p s h, tactic_subst t s h)
+    | Or ts -> Or (List.map (fun t -> tactic_subst t s h) ts)
+    | Call (n, ts) -> Call (n, List.map (fun t -> tactic_subst t s h) ts)
+    | AddHyp (n, prf, lemma, t) -> AddHyp (NameMap.find n h, proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
+    | DelHyp (n, t) -> DelHyp (NameMap.find n h, tactic_subst t s h) 
+    | Intro (l, t) -> Intro (l, 
+			     (* from the hyp subst we remove the one comming from the intro *)
+			     tactic_subst t s (List.fold_left (fun acc hd -> NameMap.remove hd acc) h l)
+    )
+    | Cases cases ->
+      Cases (List.map (fun (gp, hp, t) ->
+	(* we remove the patterns vars and hyp names from s and h*)
+	let pattern_vars = List.fold_left (fun acc (_, hd) -> NameSet.union acc (proof_pattern_variable hd)) (proof_pattern_variable gp) hp in
+	let s = NameSet.fold (fun k acc -> NameMap.remove k acc) pattern_vars s in
+	let names = List.map fst hp in
+	let h = List.fold_left (fun acc hd -> NameMap.remove hd acc) h names in
+	gp, hp, tactic_subst t s h
+      ) cases)
+    | Fail | Interactive | TacticName _ -> t
 
+(*
+  a map from string to tactics 
+  used for keeping tactics definitions, and for tactics arguments
+*)
+open Hashtbl
 
+type tactics_dict = (string, name list * tactic) Hashtbl.t
+
+(*
+  valuation of an tactic
+
+  given a proof_context and a goal, it returns a proof
+*)
+
+let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
+  match t with
+    | Fail -> raise CannotSolveGoal
+
+    | Msg (s, t) ->
+      printf "%s\n" s;
+      tactic_semantics t ctxt goal
+
+    | ShowGoal t ->
+      printf "%s\n\n" (proof_state2string ctxt goal); 
+      tactic_semantics t ctxt goal
+
+    | Exact p -> (
+      let prf = proof_pattern2term ctxt p in      
+      try 
+	let prf, _ = typecheck ctxt.defs (ref ctxt.ctxt) prf goal in
+	prf
+      with
+	| DoudouException err ->
+	  printf "%s\n" (error2string err);
+	  raise CannotSolveGoal
+	| _ -> raise CannotSolveGoal
+    )
+
+    | _ -> raise (Failure "tactic not yet implemented")
+
+      
 
