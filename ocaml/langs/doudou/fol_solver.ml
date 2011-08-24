@@ -108,6 +108,30 @@ open Proof
   H :: A |- A => exact H
   H :: false |- G => exact (absurd {G} H)
  
+
+  here is an attempt at writing the tactic in a string format:
+
+  Tactic sature (cont) :=
+    | H :: A /\\ B |- _ => add H1 := proj1 {A} {B} prf(H) :: A and H2 := proj2 {A} {B} prf(H) :: B in the hypothesis; remove H; sature
+    | H1 :: A -> B, H2 :: A |- _ => add H1' := prf(H1) prf(H2) :: B; remove H1; sature
+    | H1 :: P, H2 :: ~ P |- _ => add H := contradiction {P} H1 H2 :: false; sature
+    | H1 :: x = y, H2 :: P x |- _ => add H := congr {A} P x y H1 :: P y; remove H2; sature
+    | cont
+
+  Tactic tauto :=
+   | _ |- true => exact I
+   | _ |- (x :: A) = x => refl {A} x
+   | H :: A |- A => exact H
+   | H :: false |- G => exact (absurd {G} H)
+
+  Tactic FOL :=
+    sature (
+      | _ |- _ => tauto 
+      | _ |- A -> B => intro; FOL
+      | _ |- A /\\ B => apply (conj {A} {B}); FOL
+      | H :: A \\/ B |- _ => apply (disj {A} {B} H); FOL
+      | _ |- A \\/ B => (apply (left {A} {B}); FOL) || (apply (right {A} {B}); FOL)      
+    )
   
 *)
 
