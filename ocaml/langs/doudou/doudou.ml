@@ -614,6 +614,12 @@ let rec fresh_name_context ?(basename: string = "H") (ctxt: context) : string =
   else
     basename
 
+let rec fresh_name ?(basename: string = "H") (s: NameSet.t) : string =
+  if NameSet.mem basename s then
+    fresh_name ~basename:(add_string_index basename 1) s
+  else
+    basename
+
 (* build a new frame 
    value is optional
 *)
