@@ -377,29 +377,3 @@ let rec tactic_semantics (t: tactic) : proof_solver =
     | _ -> raise Exit
 
 
-(* some test *)
-open Fol
-
-let ctxt = (empty_proof_context !fol_defs)
-
-(* test the initial proof_context *)
-let _ = ignore(check_proof_context ctxt [])
-
-(* test the Show tactic *)
-let _ = tactic_semantics (ShowGoal (Exact (Type nopos))) ctxt (Type nopos)
-
-(* test the Apply tactic *)
-let _ = 
-  try 
-    let absurd = constante_symbol ctxt.defs (Name "absurd") in
-    ignore(tactic_semantics (ShowGoal (Apply (Cste (absurd, nopos)))) ctxt (Type nopos))
-  with
-    | _ -> ()
-
-let _ = 
-  try 
-    let disj = constante_symbol ctxt.defs (Name "disj") in
-    ignore(tactic_semantics (ShowGoal (Apply (Cste (disj, nopos)))) ctxt (Type nopos))
-  with
-    | _ -> ()
-      
