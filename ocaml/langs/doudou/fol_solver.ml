@@ -206,268 +206,23 @@ let force_typecheck = ref true
 
 let debug = ref false
 
-(* derived hypothesis are just a list of 
-   term :: type
-*)
-
-type derived_hyps = (term * term) list
 
 (*
   this the entry function for our prover:
 *)
-let rec ifol_solver_entry (defs: defs) (goal: term) : term =
+let rec fol_solver_entry (goal: term) : term =
 
   (* we build our working context *)
   let ctxt = empty_proof_context !fol_defs in
-
-  (* pushing all the hypothesis in a context, and recovering the goal *)
-  let goal = input_hypothesis defs ctxt goal in
   
-  if !force_typecheck then ignore(typecheck defs ctxt goal (Type nopos));
-
-  (* we build the initial derived hypothesis from the formula hypothesis *)
-  let formula_hypothesis = context2hypothesis defs !ctxt in
-  (* we extends the hypothesis *)
-  let derived = extends_derived_hyps defs ctxt [] formula_hypothesis in
-  (* we get a term that type to our goal under ctxt *)
-  let res = ifol_solver_loop defs ctxt derived goal in
-
-  if !force_typecheck then ignore(typecheck defs ctxt res goal);
-  
-  (* we requantify the context *)
-  (* the list is just used as a counter (number of inputted quantification := List.length !ctxt - 1) *)
-  List.fold_left (fun acc _ ->
-    let q, [acc] = pop_quantification ctxt [acc] in
-    Lambda (q, acc, nopos)
-  ) res (List.tl !ctxt)
-
-(*
-  this function is responsible to recursively check the types of the hypothesis (\in fo-formula)
-  and input them into the context, returning the final goal (and checking it is in fo-formula)
-*)
-and input_hypothesis (defs: defs) (ctxt: context ref) (goal: term) : term =
-  match goal with
-    | Impl ((_, ty, _, _) as q, goal, _) when is_formula defs ty ->
-      (* here we are sure that the hypothesis is ok *)
-      (* we push the quantification *)
-      push_quantification q ctxt;
-      (* and recursively call the function *)
-      input_hypothesis defs ctxt goal
-    (* we have a fo-formula conclusion *)
-    | te when is_formula defs te ->
-      te
-    (* otherwise, the formula is not in the fragment the solver can handle *)
-    | _ -> raise (DoudouException (
-      FreeError (String.concat "\n" ["the formula:"; term2string !ctxt goal; "is not in the grament supported by our prover"])
-    )
-    )
-
-(* this function is the loop of the solver
-   the derived hypothesis are supposed to be satured
-   any caller of the function is responsible for that
-*)
-and ifol_solver_loop (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term =  
-  
-  if !debug then printf "\n---------------------------------------------\nifol_solver_loop:\n%s |-\n%s |-\n %s\n" (context2string !ctxt) (derived_hyps2string !ctxt derived) (term2string !ctxt goal);
-  (* first we try to find a tautology *)
-  match ifol_solver_tauto defs ctxt derived goal with
-    | Some prf ->
-      if !debug then printf "tauto for goal: %s :: %s\n" (term2string !ctxt prf) (term2string !ctxt goal);
-      if !force_typecheck then ignore(typecheck defs ctxt prf goal);
-      prf
-    (* we do not have such a tautology *)
-    | None ->
-      if !debug then printf "no tautology\n";
-      (* we try to split on hypothesis *)
-      if !debug then printf "looking for hypothesis to split\n";
-      let res = fold_stop (fun acc (prf, lemma) ->
-	match lemma with
-	  | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(\\/)" ->	
-	    Right acc
-	  | _ -> 
-	    Left (acc +1)
-      ) 0 derived in
-      match res with
-	| Right i ->
-	  let prf, lemma = List.nth derived i in
-	  let derived = take (max 0 (i-1)) derived @ drop (i+1) derived in
-	  let App (Cste (s, _), [(left, Explicit); (right, Explicit)], _) = lemma in
-	  if !debug then printf "split or hypothesis %s :: %s\n" (term2string !ctxt prf) (term2string !ctxt lemma);
-	  ifol_split_hyp_or defs ctxt derived prf left right goal
-	| Left _ ->
-	  (* we try to split on hypothesis *)
-	  match goal with
-	    | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(/\\)" ->	
-	      if !debug then printf "split and goal\n";
-	      ifol_split_goal_and defs ctxt derived typeA typeB
-	    | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(\\/)" ->	
-	      if !debug then printf "split or goal\n";
-	      ifol_split_goal_or defs ctxt derived typeA typeB
-	    | _ ->	  
-	      (* we try our best but we can't solve the goal *)
-	      raise (DoudouException (
-		FreeError (
-		  String.concat "\n" [
-		    "cannot prove:";
-		    term2string !ctxt goal;
-		    "under hypothesis:";
-		    derived_hyps2string !ctxt derived
-		  ]
-		)
-	      )
-	      )
+  raise (Failure "Not yet implemented")
 
 
-(* some case splitting *)
-and ifol_split_goal_and (defs: defs) (ctxt: context ref) (derived: derived_hyps) (proj1: term) (proj2: term) : term =
-  (* we try each goals and returns the conjunction *)
-  let prf1 = ifol_solver_loop defs ctxt derived proj1 in
-  let prf2 = ifol_solver_loop defs ctxt derived proj2 in
-  let conj = constante_symbol defs (Name "conj") in
-  App (Cste (conj, nopos), 
-       [(proj1, Implicit); (proj2, Implicit); (prf1, Explicit); (prf2, Explicit)],
-       nopos)
+(*****************************************************************)
+(*                one solver entry: a string                     *)
+(*****************************************************************)
 
-and ifol_split_goal_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (proj1: term) (proj2: term) : term =
-  (* we try each goals and returns the conjunction *)
-  (* here we sequentially try *)
-  (* we catch the possible exceptions *)
-  let saved_ctxt = !ctxt in
-  let prf = 
-    try
-      Left (ifol_solver_loop defs ctxt derived proj1)
-    with
-      | DoudouException (FreeError s) -> 
-	if !debug then printf "ifol_split_goal_or left exception: %s\n" s;
-	(* an exception: we could not find a proof, look for the right *)
-	ctxt := saved_ctxt;
-	Right (ifol_solver_loop defs ctxt derived proj2) in
-  match prf with
-    | Left prf ->
-      let left = constante_symbol defs (Name "left") in
-      App (Cste (left, nopos), [(proj1, Implicit); (proj2, Implicit); (prf, Explicit)], nopos)
-    | Right prf ->
-      let right = constante_symbol defs (Name "right") in
-      App (Cste (right, nopos), [(proj1, Implicit); (proj2, Implicit); (prf, Explicit)], nopos)
-
-and ifol_split_hyp_or (defs: defs) (ctxt: context ref) (derived: derived_hyps) (prf: term) (left: term) (right: term) (goal: term) : term =
-  (* this is a sequential version *)
-  (* we will need a version of derived that is shifted *)
-  let derived' = List.map (fun (prf, lemma) -> shift_term prf 1, shift_term lemma 1) derived in
-  (* we will also need the goal shifted *)
-  let goal' = shift_term goal 1 in
-
-  (* we add to the context a quantification on left *)
-  push_quantification (Name "left", left, Explicit, nopos) ctxt;  
-  let prf1 = ifol_solver_loop defs ctxt ((TVar (0, nopos), shift_term left 1)::derived') goal' in
-  (* we pop the quantification and quantify the proof *)
-  let q, [] = pop_quantification ctxt [] in
-  let prf1 = Lambda (q, prf1, nopos) in
-
-  (* we do the same on left *)
-  push_quantification (Name "right", right, Explicit, nopos) ctxt;  
-  let prf2 = ifol_solver_loop defs ctxt ((TVar (0, nopos), shift_term right 1)::derived') goal' in
-  (* we pop the quantification and quantify the proof *)
-  let q, [] = pop_quantification ctxt [] in
-  let prf2 = Lambda (q, prf2, nopos) in
-
-  (* we build the final proof term using the disj *)
-  let disj = constante_symbol defs (Name "disj") in
-  App (Cste (disj, nopos),
-       [(left, Implicit); (right, Implicit); (goal, Implicit); (prf, Explicit); (prf1, Explicit); (prf2, Explicit)],
-       nopos)
-
-
-(*
-  try to solve through tautology 
-  described as 4) above
-*)
-and ifol_solver_tauto (defs: defs) (ctxt: context ref) (derived: derived_hyps) (goal: term) : term option =
-  (* first, a case analysis *)
-  match goal with
-    (* the goal is true -> trivial *)
-    | Cste (s, _) when symbol2string s = "true" ->
-      let proofTrue = constante_symbol defs (Name "I") in
-      Some (Cste (proofTrue, nopos))
-    (* the goal is an equality over the same term *)
-    | App (Cste (s, _), args, _) when symbol2string s = "(=)" 
-				 && equality_term_term defs ctxt (List.nth (filter_explicit args) 0) (List.nth (filter_explicit args) 1) -> 
-      let ty = List.hd args in
-      let te = List.hd (List.tl args) in
-      let refl = constante_symbol defs (Name "I") in
-      Some (App (Cste (refl, nopos), [ty; te], nopos))
-
-    (* not a goal solveable by Ax I or Refl, let's try to take a look at the hypothesis we have *)
-    | _ ->
-      let res = fold_stop (fun () (prf, lemma) ->	
-	(* we do a case analysis on the hypothesis *)
-	match lemma with
-	  (* we have false as an hypothesis *)
-	  | Cste (s, _) when symbol2string s = "true" ->
-	    let absurd = constante_symbol defs (Name "absurd") in
-	    Right (App (Cste (absurd, nopos), [(goal, Implicit); (prf, Explicit)], nopos))
-
-	  (* we test if the lemma is equal to the goal *)
-	  | _ when equality_term_term defs ctxt lemma goal ->
-	    Right prf
-
-	  (* no hypothesis that we can use directly here *)
-	  | _ -> Left ()	
-
-      ) () derived in
-      match res with
-	| Left () -> None
-	| Right prf -> Some prf
-
-(*
-  this function extends a initial set of derived hypothesis with
-  a new set of derived hypothesis  
-*)
-and extends_derived_hyps (defs: defs) (ctxt: context ref) (derived: derived_hyps) (new_derived: derived_hyps) : derived_hyps =
-  (* TOREDO!! this is a naive implem 
-     - we add without looking for dups!
-     - we lookup everytime for the symbols 
-  *)
-  List.fold_left (fun acc (prf, goal) ->
-    match goal with
-      (* the A /\\ B case *)
-      | App (Cste (s, _), [(typeA, Explicit); (typeB, Explicit)], _) when symbol2string s = "(/\\)" ->	
-	let proj1 = constante_symbol defs (Name "proj1") in
-	let prfA = App (Cste (proj1, nopos), [(typeA, Implicit); (typeB, Implicit); (prf, Explicit)], nopos) in
-	if !force_typecheck then ignore(typecheck defs ctxt prfA typeA);
-
-	let proj2 = constante_symbol defs (Name "proj2") in
-	let prfB = App (Cste (proj2, nopos), [(typeA, Implicit); (typeB, Implicit); (prf, Explicit)], nopos) in
-	if !force_typecheck then ignore(typecheck defs ctxt prfB typeB);
-	
-	(prfA, typeA)::(prfB, typeB)::acc
-	
-      (* missing cases
-	 - a = b 
-	 - P /\\ ~P
-	 - modus ponens
-      *)
-      | _ -> 
-	(prf, goal)::acc
-
-  ) derived new_derived
-
-(* this function takes a context (or a prefix of context) and returns a set of derived (actually primary) hypothesis *)
-and context2hypothesis (defs: defs) (ctxt: context) : derived_hyps = 
-  (* TOREDO!! this is a naive implem *)
-  fst (List.fold_left ( fun (hyps, index) frame ->
-    match frame.ty with
-      | Type _ -> hyps, index + 1
-      | _ -> (TVar (index, frame.pos), bvar_type ctxt index):: hyps, index + 1
-  ) ([], 0) ctxt)
-	 
-
-
-(**************************************************)
-(*                some tests                      *)
-(**************************************************)
-
-let solve (s: string) : unit = 
+let fol_solver (s: string) : unit = 
   (* we set the parser *)
   let lines = stream_of_string s in
   let pb = build_parserbuffer lines in
@@ -475,9 +230,13 @@ let solve (s: string) : unit =
   try 
     let te = parse_term !defs pos pb in
     (* we typecheck the fol formula again Type *)
+    let ctxt = ref empty_context in
     let te, _ = typecheck !defs ctxt te (Type nopos) in
+    (* we ensure there is not free variable *)
+    let [te] = flush_fvars ctxt [te] in
+    if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
     (* we call the solver *)
-    let proof = ifol_solver_entry !defs te in
+    let proof = fol_solver_entry te in
     (* we show the result *)
     printf "Term |- %s :: %s \n" (term2string !ctxt proof) (term2string !ctxt te)
   with
@@ -488,10 +247,6 @@ let solve (s: string) : unit =
       (* we restore the context and defs *)
       printf "error:\n%s\n" (error2string err);
       raise Pervasives.Exit
-
-let _ = solve "{A B :: Type} -> A -> A"
-let _ = solve "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
-let _ = solve "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
 
 (*
   missing modus ponens
