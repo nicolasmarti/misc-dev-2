@@ -1,0 +1,15 @@
+Doudou, a Logical Framework (LF), based on Higher Order Typed Lambda Calculus
+
+file are organized as follows:
+-------------------------------
+doudou.ml: the core calculus implementation
+  - the definition of the calculus
+  - typechecking, tpyeinference, unification, rewriting, ...
+  - parser and pretty printer
+
+proof.ml: a library of functions and a tactic language for building a term of a given type
+
+fol.ml: an axiomatization of an (intuitionistic) first order logic (without Exists, with equality)
+
+fol_solver.ml: a litlle solver for the logic defined in fol.ml, using the proof.ml library
+	
