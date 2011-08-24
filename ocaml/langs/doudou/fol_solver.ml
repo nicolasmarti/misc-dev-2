@@ -67,79 +67,48 @@ open Proof
 
   The base theory here is FOL (for now intuitionistic, but it might be extends with the excluded middle axiom for the classical variant), which should allow to implement a decision procedure. We also consider the equality, allowing to link underlying theory (like integers, constructors, ...) for SMT in the future
 
-  We will start our reflexion from the following resolution calculus (using sequent calculus notations) 
-  [modulo structural rules, which are the bureaucracy we would like to reduce for proof constructions !! 
-   and that can be all be resume in this rule:
-   X' \in X    Y \in Y'    X' |- Y'
-   --------------------------------  SUB
-               X |- Y
-  ]
-
-  ------- Ax
-  A  |- A 
-
-  X1 |- Z1, Y1  X2, Z2 |- Y2
-  ----------------------------- Res (where sig = MGU(Z1, Z2))
-       (X1, X2 |- Y1, Y2).sig
-
-  ------------ REFL
-    |- a = a
-
-   X1 |- t = u, Y1   X2[t'/u] |- Y2[t'/u]
-  ----------------------------------------- PARA (where sig = MGU(t, t')
-        (X1, X2 |- Y1, Y2).sig
-
-  
+ 
   here is an informal algorithm
-  1) introduce all the quantification of formula in the context such that we have bounded variables
-     corresponding to the hypothesis H, and the goal G
+  (* which actually is the opportunity to informally write the kind of tactics we want *)
 
-     H_i |- G
+  1) build an initially empty hypothesis
 
-     under this context, once we have the proof Prf of G, we just need to lambda quantifiy it with the H_i to have our final proof
+  2) sature the hypothesis (using the axiom of FOL + modus ponens, c.f. details bellow)
+     
+  3) try 
+        solving the goal by tautology (using both hypothesis and the axiom of FOL, c.f. details bellow)
+     if there is such a tautology returns its proof else continue to 4)
 
-  2) we create the (initially empty) set of derived hypothesis H'
+  4) here we present an informal pattern matching on the hypothesis and goal of the form:
+     {H} |- G => action
+     (* intuitively, {H} matches a subset of hypothesis, and G matches the goal 
+        a pattern variable might appear more than once (and all its occurence should have the same unification)
+     *)
+     we trigger the action for the first pattern hyp that match the proof_context, if the resulting action fails then we rollback
+     to the last one
+     
+     _ |- A -> B => intro; 4)
+     _ |- A /\\ B => apply (conj {A} {B}); 4)
+     H :: A \\/ B |- _ => apply (disj {A} {B} H); 4)
+     _ |- A \\/ B => (apply (left {A} {B}); 4)) || (apply (right {A} {B}); 4))
 
-  3) we extend H'
-     (basically, we create aliases for computations, something reminiscent to let ..., but here we avoid to create bounded variables)
-     through the following actions (obviously modulo if the hypothesis is already in (H U H') or if we can replace an hypothesis in H' by a similar one but using a smaller term):
-     -) if we have A /\\ B in (H U H') we enter the the Hypothesis A and B through proj1 and proj2
-     -) for all equality (a = b) we generate new hypothesis using congr
-     -) if we have P and ~ P then we derive false
-     -) if we have A -> B and A in (H U H') then we can replace the implication by its conclusion (modus ponens)
+  * saturation (presented in the same pattern format as 4) above)
+  here prf(H) means the proof term of H, and 
 
-  4) we try to solve the goal by tautology
-     -) using Ax := (\ {A :: Type} (a :: A) -> a)
-     -) using absurd if we generated false in 2)
-     -) using I for the true goal
-     -) using refl in case with have a goal of the form |- x = x
-
-  5) if there is a goal remaining we have options:
-     -) working on the goal:
-        i) splitting a goal of the form |- A /\\ B (trying to solve both) and merging both proof using conj
-        ii) splitting a goal of the form |- A \\/ B (launching to parallel research, using the smallest proof, our the one that finishes)
-        
-     -) working further on the hypothesis:
-        i) either by trying to instantiate a universally quantified hypothesis
-           -) first try to see if the goal and the conclusion "unifies"
-           -) try to solve the needed hypothesis using (H U H'), and making the unresolved ones as goals
-        ii) by splitting the hypothesis of the form A \\/ B, having to prove the goal with
-            a new hypothesis of either A or B (which is a free variables), and joining the proof using disj (warning: in this setup the hypothesis needs to be shift, in order to keep the terms consistent with the new context)
-    
-     -) if previous search failed, then we might need to look for a contradiction
-        
-
-
-Rmq: we here keep all hypothesis in the same data structure, because we are working without theories (other than equality). In the case where we deal with theories, we would need to keep subset of H' (sorted by there predicate, and functions (in case of equality on there terms)), in order to call for decision procedure (which basically takes their own Hypothesis + a goal on their predicate)
-
-  for the rest of the comments, we will use the following notation:
-
-  H |- H' |- Prf :: G
-
-  where H are the hypothesis corresponding to bound variables,
-        H' are the derived hypothesis (ground terms under H |-)
-        Prf is a proof of the goal G (?? noting the Prf that we are currently looking for)
-
+  H :: A /\\ B |- _ => add H1 := proj1 {A} {B} prf(H) :: A and H2 := proj2 {A} {B} prf(H) :: B in the hypothesis; remove H
+  H1 :: A -> B, H2 :: A |- _ => add H1' := prf(H1) prf(H2) :: B; remove H1 
+  H1 :: P, H2 :: ~ P |- _ => add H := contradiction {P} H1 H2 :: false
+  H1 :: x = y, H2 :: P x |- _ => add H := congr {A} P x y H1 :: P y
+  _ |- _ => done (* stop the saturation *)
+  
+  * tautology
+  
+  _ |- true => exact I
+  _ |- (x :: A) = x => refl {A} x
+  H :: A |- A => exact H
+  H :: false |- G => exact (absurd {G} H)
+ 
+  
 *)
 
 (*
@@ -147,55 +116,16 @@ Rmq: we here keep all hypothesis in the same data structure, because we are work
   -------------------
 *)
 
-(* {A B :: Type} -> (A /\\ B) -> (B /\\ A) 
-   
-   1), 2)
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- {} |- ?? :: B /\\ A
-
-   3)
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- ?? :: B /\\ A
-
-   4) we cannot do anything
-
-   5)
-   we split and recursively try to solve
-   
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- ?? :: B 
-
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- ?? :: A
-
-   next steps 4) we solve both
-
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- proj2 H :: B 
-   
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- proj1 H :: A
-
-   returning in 5) we rebuild the proof
-
-   {{A :: Type}; {B :: Type}; (H :: A /\\ B)} |- 
-   {(proj1 H :: A); (proj2 H :: B)} |- conj (proj2 H) (proj1 H) :: B /\\ A
-   
-   the algorithm returns:
-   
-   \\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H) ::
-   {A B :: Type} -> (H :: A /\\ B) -> B /\\ A
-
-   let _ = process_definition defs ctxt "\\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H)"
+(* lemma: {A B :: Type} -> (A /\\ B) -> (B /\\ A) 
+       
+   proof: \\ {A B :: Type} (H :: A /\\ B) -> conj (proj2 H) (proj1 H)
 *)
 
 
 (* 
-   {A B :: Type} -> (A \\/ B) -> (B \\/ A) 
+   lemma {A B :: Type} -> (A \\/ B) -> (B \\/ A) 
 
-   let _ = process_definition defs ctxt "
-   \\ {A B :: Type} (H :: A \\/ B) -> 
-   disj H (\\ a -> right a) (\\ b -> left b)
-   "
+   proof: \\ {A B :: Type} (H :: A \\/ B) ->  disj H (\\ a -> right a) (\\ b -> left b)
 *)
 
 
