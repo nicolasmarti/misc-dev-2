@@ -242,18 +242,25 @@ type proof_subst = term NameMap.t
    with side effect
 *)
 type hypothesises_iterator = 
-    { mutable nexts : (string * hypothesis) list }
+    { mutable next_hyps : hypothesises;
+      mutable next_hyp : hypothesis NameMap.t;
+    }
 
 exception NoMoreHypothesis
 
 (* returns the next hypothesis and update the iterator *)
 
-let next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
-  match it.nexts with
-    | [] -> raise NoMoreHypothesis
-    | hd::tl ->
-      it.nexts <- tl;
-      hd
+let rec next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
+  try 
+    let hyp_name, hyp = NameMap.choose it.next_hyp in
+    it.next_hyp <- NameMap.remove hyp_name it.next_hyp;
+    hyp_name, hyp
+  with
+    | Not_found -> let hyps_name, hyps = NameMap.choose it.next_hyps in
+		   it.next_hyps <- NameMap.remove hyps_name it.next_hyps;
+		   it.next_hyp <- hyps;
+		   next_hypothesis it
+    
 
 (* grab all the pattern variables of a pattern *)
 let rec proof_pattern_variable (p: proof_pattern) : NameSet.t =
@@ -310,24 +317,46 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
   (* and just return the result *)
   subst 
 
+(* we transform a pattern into a term *)
 and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
   match p with
     | PPAVar -> AVar nopos
     | PPCste s -> Cste (s, nopos)
-    | PPVar _ -> raise NoPatternMatching
+    | PPVar _ -> AVar nopos
     | PPImpl (p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
     | PPProof s -> fst (get_hyp_by_name ctxt.hyps s)
     | PPType s -> snd (get_hyp_by_name ctxt.hyps s)
     | PPTerm te -> te
 
+(* apply substitution into a pattern *)
 and proof_pattern_subst (p: proof_pattern) (s: proof_subst) : proof_pattern =
-  raise Exit
+  match p with
+    | PPAVar | PPCste _ | PPType _ | PPProof _ | PPTerm _ -> p
+    | PPVar v -> (
+      try
+	PPTerm (NameMap.find v s)
+      with
+	| _ -> p
+    )
+    | PPApp (p, args) -> PPApp (proof_pattern_subst p s, List.map (fun (arg, n) -> proof_pattern_subst arg s, n) args)
+    | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s, proof_pattern_subst p2 s)
 
-let make_iterator (hyps: hypothesises) (p: proof_pattern) : hypothesises_iterator =
-  raise Exit
-
-
+(* build an iterator over the hypothesises that might be matched with the pattern *)
+let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterator =
+  (* first we create a term from the pattern *)
+  let te = proof_pattern2term ctxt p in
+  (* then we get the category of the term *)
+  let category = term2category te in
+  (* then we filter the hypothesises of interest depending on the category *)
+  let iterator = 
+    match category with
+      (* general pattern -> we take everything *)
+      | "??" -> { next_hyps = ctxt.hyps; next_hyp = NameMap.empty }
+      (* for the rest we take the hypothesis of the same category *)
+      | cat -> try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> raise NoPatternMatching
+  in
+  iterator
 
 type tactics = 
   (* just fail *) 
