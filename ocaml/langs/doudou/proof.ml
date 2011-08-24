@@ -91,6 +91,11 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
   let category_hyps = NameMap.add name hyp category_hyps in
   NameMap.add category category_hyps hyps
 
+(* get an hypothesis by name *)
+let get_hyp_by_name (hyps: hypothesises) (name: string) : hypothesis =
+    let prefix = String.sub name 0 (String.index name '.') in
+    NameMap.find name (NameMap.find prefix hyps)
+
 (*
   this is the proof context
 
@@ -220,30 +225,108 @@ let pop_quantification (ctxt: proof_context) (prf: term) : proof_context * (symb
   in order to implement FOL
 *)
 
-type proof_pattern
+(* the patterns used to match lemma and build proof *)
+type proof_pattern = PPAVar
+		     | PPCste of symbol
+		     | PPVar of string
+		     | PPImpl of proof_pattern * proof_pattern (* no dependant type here, only Explicit *)
+		     | PPApp of proof_pattern * (proof_pattern * nature) list
+		     | PPProof of string
+		     | PPType of string
+		     | PPTerm of term
 
-type proof_subst
+(* substitution *)
+type proof_subst = term NameMap.t
 
-type hypothesises_iterator
+(* hypothesis iterator: used in order to traverse hypothesis in pattern matching 
+   with side effect
+*)
+type hypothesises_iterator = 
+    { mutable nexts : (string * hypothesis) list }
+
+exception NoMoreHypothesis
+
+(* returns the next hypothesis and update the iterator *)
+
+let next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
+  match it.nexts with
+    | [] -> raise NoMoreHypothesis
+    | hd::tl ->
+      it.nexts <- tl;
+      hd
+
+(* grab all the pattern variables of a pattern *)
+let rec proof_pattern_variable (p: proof_pattern) : NameSet.t =
+  match p with
+    | PPVar v -> NameSet.singleton v
+    | PPImpl (hyp, ccl) -> NameSet.union (proof_pattern_variable hyp) (proof_pattern_variable ccl)
+    | PPApp (f, args) ->  List.fold_left (fun acc (arg, _) -> NameSet.union (proof_pattern_variable arg) acc) (proof_pattern_variable f) args
+    | _ -> NameSet.empty
 
 exception NoPatternMatching
 
-let match_proof_pattern (p: proof_pattern) (te: term) : proof_subst =
-  raise Exit
+(* we match proof_pattern with a term *)
+let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) : proof_subst =
+  (* we make a copy of the context *)
+  let ctxt' = ref (ctxt.ctxt) in
+  (* then we grab all the pattern variables *)
+  let vars = proof_pattern_variable p in
+  (* we create a free variable for each vars 
+     and create a substitution
+  *)
+  let subst = NameSet.fold (fun v acc ->
+    let fvty = add_fvar ctxt' (Type nopos) in
+    let fvte = add_fvar ctxt' (TVar (fvty, nopos)) in
+    NameMap.add v (TVar (fvte, nopos)) acc
+  ) vars NameMap.empty in
+  (*
+    we apply the substitution 
+  *)
+  let p' = proof_pattern_subst p subst in
+  (*
+    we create a term with it
+  *)
+  let te' = proof_pattern2term ctxt p' in
+  (*
+    we typeinfer the term and then we unify with te 
+  *)
+  let te' = 
+    try 
+      let te', _ = typeinfer ctxt.defs ctxt' te' in
+      unification_term_term ctxt.defs ctxt' te te'
+    with
+      | DoudouException _ -> raise NoPatternMatching
+  in
+  (*
+    we just check that there is no free variables in the result
+  *)
+  if not (IndexSet.is_empty (fv_term te')) then raise NoPatternMatching;
+  (*
+    now we could recreate a substitution by replace the free variable of 
+    subst to their value, using the context substitution    
+  *)
+  let s = context2substitution !ctxt' in
+  let subst = NameMap.map (term_substitution s) subst in
+  (* and just return the result *)
+  subst 
 
-let proof_pattern2term (p: proof_pattern) : term =
-  raise Exit
+and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
+  match p with
+    | PPAVar -> AVar nopos
+    | PPCste s -> Cste (s, nopos)
+    | PPVar _ -> raise NoPatternMatching
+    | PPImpl (p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
+    | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
+    | PPProof s -> fst (get_hyp_by_name ctxt.hyps s)
+    | PPType s -> snd (get_hyp_by_name ctxt.hyps s)
+    | PPTerm te -> te
 
-let proof_pattern_subst (p: proof_pattern) (s: proof_subst) : proof_pattern =
+and proof_pattern_subst (p: proof_pattern) (s: proof_subst) : proof_pattern =
   raise Exit
 
 let make_iterator (hyps: hypothesises) (p: proof_pattern) : hypothesises_iterator =
   raise Exit
 
-exception NoMoreHypothesis
-
-let next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
-  raise Exit
 
 
 type tactics = 
