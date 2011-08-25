@@ -268,7 +268,16 @@ let rec next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
 		   it.next_hyps <- NameMap.remove hyps_name it.next_hyps;
 		   it.next_hyp <- hyps;
 		   next_hypothesis it
-    
+
+(* iterator loop *)
+let rec iterator_loop (it: hypothesises_iterator) (f: string * hypothesis -> 'a option) : 'a option =
+  try 
+    match f (next_hypothesis it) with
+      | None -> iterator_loop it f
+      | Some res -> Some res
+  with
+    | NoMoreHypothesis -> None
+
 
 (* grab all the pattern variables of a pattern *)
 let rec proof_pattern_variable (p: proof_pattern) : NameSet.t =
@@ -663,7 +672,55 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
     | DelHyp (s, t) ->
       tactic_semantics t {ctxt with hyps = remove_hyp_by_name ctxt.hyps s} goal
 
-    | _ -> raise (Failure "tactic not yet implemented")
+    | Cases cases -> 
+      (* we traverse all the goals until we get a proof of we return an error *)
+      let res = fold_stop (fun () (goal_p, hyps_ps, t) ->
+	try 
+	  (* first we need to pattern match the gaol *)
+	  let subst = match_proof_pattern ctxt goal_p goal in
+	  (* then we try to matches the hypothesises *)
+	  Right (hyps_matching ctxt subst NameMap.empty hyps_ps t goal)
+	with
+	  (* the goal does not match => go to another case *)
+	  | NoPatternMatching -> Left ()
+      ) () cases in
+      match res with
+	| Left () -> raise CannotSolveGoal
+	| Right prf -> prf
 
-      
+and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps: (string * proof_pattern) list) (action: tactic) (goal: term) : term =
+  match hyps_ps with
+    (* all hypothesis patterns have been matched, we need to try apply the tactics *)
+    | [] -> tactic_semantics (tactic_subst action s h) ctxt goal
 
+    (* else we need to try matching the next pattern *)
+    | (n, p)::tl ->
+      (* we first apply the substitutions to the pattern *)
+      let p = proof_pattern_subst p s h in
+      (* we build an iterator for this pattern *)
+      let it = make_iterator ctxt p in
+      (* we try all possibilities until there is none *)
+      let res = iterator_loop it (fun (name, (prf, lemma)) ->
+	try 
+	  (* we try to match the lemma and the pattern *)
+	  let subst' = match_proof_pattern ctxt p lemma in
+	  (* we update the substitution and try further *)
+	  let s = NameMap.merge (fun k v1 v2 ->
+	    match v1, v2 with
+	      | Some v1, None -> Some v1
+	      | None, Some v2 -> Some v2
+	      | _ -> raise (Failure "cannot merge the substitutions")
+	  ) subst' s in
+	  let h = NameMap.singleton n name in
+	  (* trying further *)
+	  Some (hyps_matching ctxt s h tl action goal)
+	with
+	  (* no match for the hypothesis, try another one *)
+	  | NoPatternMatching -> None
+          (* the goal cannot be solved, try another hypothesis *)
+	  | CannotSolveGoal -> None
+      ) in
+      match res with
+	| None -> raise CannotSolveGoal
+	| Some prf -> prf
+	  
