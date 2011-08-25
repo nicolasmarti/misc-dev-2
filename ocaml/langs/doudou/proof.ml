@@ -91,6 +91,12 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
   let category_hyps = NameMap.add name hyp category_hyps in
   NameMap.add category category_hyps hyps
 
+(* remove an hypothesis by name *)
+let remove_hyp_by_name (hyps: hypothesises) (name: string) : hypothesises =
+    let prefix = String.sub name 0 (String.index name '.') in
+    NameMap.add prefix (NameMap.remove name (NameMap.find prefix hyps)) hyps
+
+
 (* get an hypothesis by name *)
 let get_hyp_by_name (hyps: hypothesises) (name: string) : hypothesis =
     let prefix = String.sub name 0 (String.index name '.') in
@@ -599,6 +605,9 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
       let hyps = input_hypothesis (prf, lemma) ctxt.hyps in
       (* continue *)
       tactic_semantics t {ctxt with hyps = hyps} goal
+
+    | DelHyp (s, t) ->
+      tactic_semantics t {ctxt with hyps = remove_hyp_by_name ctxt.hyps s} goal
 
     | _ -> raise (Failure "tactic not yet implemented")
 
