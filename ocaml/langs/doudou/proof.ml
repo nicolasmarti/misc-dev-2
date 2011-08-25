@@ -450,6 +450,22 @@ type tactics_dict = (string, name list * tactic) Hashtbl.t
   given a proof_context and a goal, it returns a proof
 *)
 
+(* this function apply to a term a free variable for each of its remaining arguments *)
+let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : index list * term =
+  match ty with
+    | Impl ((_, _, nature, _), ty, _) ->
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
+      let fvs, te = complete_explicit_arguments ctxt (App (te, [TVar (fvte, nopos), nature], nopos)) ty in
+      fvte::fvs, te
+    | _ -> [], te  
+
+(*
+  first we will have a "global" dict of tactics
+*)
+
+let global_tactics : tactics_dict = Hashtbl.create 50
+
 let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
   match t with
     | Fail -> raise CannotSolveGoal
@@ -474,6 +490,98 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	| _ -> raise CannotSolveGoal
     )
 
+    | PartApply (prf, t) -> 
+      (* first we rebuild the term *)
+      let prf = proof_pattern2term ctxt prf in
+      (* then we typeinfer the term *)
+      let ctxt' = ref ctxt.ctxt in
+      let prf, ty = typeinfer ctxt.defs ctxt' prf in
+      printf "infered apply: %s :: %s\n" (term2string !ctxt' prf) (term2string !ctxt' ty);
+      let fvs, prf' = complete_explicit_arguments ctxt' prf ty in
+      printf "completed term: %s\n" (term2string !ctxt' prf');
+      (* we typecheck against the goal to infer the free variables type *)
+      let prf', _ = typecheck ctxt.defs ctxt' prf' goal in
+      (* then we traverse the free variables in order to solve them *)
+      let _ = List.fold_left (fun () hd ->
+	(* first look if the value of the fvar is itself *)
+	match fvar_value !ctxt' hd with
+	  (* yes, we need to sovle this subgoal *)
+	  | TVar (hd, _) -> 
+	    let goal = fvar_type !ctxt' hd in
+	    (* call the continuation *)
+	    let prf = tactic_semantics t ctxt goal in
+	    (* apply the substitution to the context *)
+	    let s = IndexMap.singleton hd prf in
+	    ctxt' := context_substitution s (!ctxt')
+	  (* no: we do not need to look at it *)
+	  | _ -> ()
+      ) () fvs in
+      (* here we should have every free variables with proper value in ctxt', we just need to substitute in prf' *)
+      let prf = term_substitution (context2substitution !ctxt') prf' in
+      (* just verify that there is no free variable *)
+      if not (IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
+      prf
+
+    | Interactive -> 
+      raise (Failure "tactic Interactive not yet implemented")
+
+    | Or ts -> (
+      (* we just try all the tactics until one returns, else we raise CannotSolveGoal *)
+      let res = fold_stop (fun () t ->
+	try 
+	  Right (tactic_semantics t ctxt goal)
+	with
+	  | CannotSolveGoal -> Left ()
+      ) () ts in
+      match res with
+	| Left () -> raise CannotSolveGoal
+	| Right prf -> prf
+    )
+
+    | Intro ([], t) -> (
+      match goal with
+	(* an implication, we can do a introduction *)
+	| Impl ((s, ty, _, _) as q, body, pos) ->
+	  (* quantifying the Impl *)
+	  let ctxt = push_quantification ctxt q in
+	  (* input a new hypothesis for it *)
+	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ctxt.hyps in
+	  (* try to solve the goal *)
+	  let prf = tactic_semantics t { ctxt with hyps = hyps }  body in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, body];
+	  (* pop the quantification *)
+	  let ctxt, q, prf = pop_quantification ctxt prf in
+	  (* rebuilt the proof *)
+	  let prf = Lambda (q, prf, nopos) in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, goal];
+	  (* return the result *)
+	  prf
+
+	(* not an implication, cannot introduce  *)
+	| _ -> raise CannotSolveGoal
+    )
+
+    | Call (t, ts) -> (
+      (* grab the tactics and its arguments *)
+      let (argsname, t) = Hashtbl.find global_tactics t in
+      (* push in the global dict *)
+      let _ = List.map (fun (name, t) -> Hashtbl.add global_tactics name ([], t)) (List.combine argsname ts) in
+      (* execute the tactics *)
+      let res = 
+	try 
+	  Some (tactic_semantics t ctxt goal)
+	with
+	  | _ -> None
+      in
+      (* pop from the global dict *)
+      let _ = List.map (fun name -> Hashtbl.remove global_tactics name) argsname in
+      match res with
+	| None -> raise CannotSolveGoal
+	| Some prf -> prf
+    )
+	  
     | _ -> raise (Failure "tactic not yet implemented")
 
       
