@@ -544,6 +544,8 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	| Right prf -> prf
     )
 
+    (******** DUP !! *******)
+
     | Intro ([], t) -> (
       match goal with
 	(* an implication, we can do a introduction *)
@@ -568,6 +570,58 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	(* not an implication, cannot introduce  *)
 	| _ -> raise CannotSolveGoal
     )
+
+    | Intro (hd::[], t) -> (
+      match goal with
+	(* an implication, we can do a introduction *)
+	| Impl ((s, ty, _, _) as q, body, pos) ->
+	  (* quantifying the Impl *)
+	  let ctxt = push_quantification ctxt q in
+	  (* input a new hypothesis for it *)
+	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  (* try to solve the goal *)
+	  let prf = tactic_semantics t { ctxt with hyps = hyps }  body in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, body];
+	  (* pop the quantification *)
+	  let ctxt, q, prf = pop_quantification ctxt prf in
+	  (* rebuilt the proof *)
+	  let prf = Lambda (q, prf, nopos) in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, goal];
+	  (* return the result *)
+	  prf
+
+	(* not an implication, cannot introduce  *)
+	| _ -> raise CannotSolveGoal
+    )
+
+    | Intro (hd::tl, t) -> (
+      match goal with
+	(* an implication, we can do a introduction *)
+	| Impl ((s, ty, _, _) as q, body, pos) ->
+	  (* quantifying the Impl *)
+	  let ctxt = push_quantification ctxt q in
+	  (* input a new hypothesis for it *)
+	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  (* try to solve the goal *)
+	  let prf = tactic_semantics (Intro (tl, t)) { ctxt with hyps = hyps }  body in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, body];
+	  (* pop the quantification *)
+	  let ctxt, q, prf = pop_quantification ctxt prf in
+	  (* rebuilt the proof *)
+	  let prf = Lambda (q, prf, nopos) in
+	  (* do a check *)
+	  if !force_check then check_proof_context ctxt [prf, goal];
+	  (* return the result *)
+	  prf
+
+	(* not an implication, cannot introduce  *)
+	| _ -> raise CannotSolveGoal
+    )
+
+    (*************************)
 
     | Call (t, ts) -> (
       (* grab the tactics and its arguments *)
