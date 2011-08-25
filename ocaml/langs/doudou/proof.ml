@@ -581,7 +581,25 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	| None -> raise CannotSolveGoal
 	| Some prf -> prf
     )
-	  
+
+    | TacticName s ->
+      tactic_semantics (snd (Hashtbl.find global_tactics s)) ctxt goal
+
+    | AddHyp (s, prf, lemma, t) ->
+      (* build both terms *)
+      let prf = proof_pattern2term ctxt prf in
+      let lemma = proof_pattern2term ctxt lemma in
+      (* typecheck them *)
+      let ctxt' = ref ctxt.ctxt in
+      let lemma, _ = typecheck ctxt.defs ctxt' lemma (Type nopos) in
+      let prf, lemma = typecheck ctxt.defs ctxt' prf lemma in
+      (* just check that there is no free var *)
+      if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
+      (* add the hypothesis *)
+      let hyps = input_hypothesis (prf, lemma) ctxt.hyps in
+      (* continue *)
+      tactic_semantics t {ctxt with hyps = hyps} goal
+
     | _ -> raise (Failure "tactic not yet implemented")
 
       
