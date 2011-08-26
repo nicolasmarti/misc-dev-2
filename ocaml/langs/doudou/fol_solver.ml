@@ -172,9 +172,8 @@ let cste_proj2 = constante_symbol !fol_defs (Name "proj2")
 let tauto : tactic =
   Msg ("tauto: ",
   Cases [
-    (PPCste cste_true, [], Msg ("tauto: case 1\n", Exact (PPCste cste_I)));
-    (*
-    (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Msg ("tauto: case 2\n", Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit]))));*)
+    (PPCste cste_true, [], Msg ("tauto: case 1\n", Exact (PPCste cste_I)));    
+    (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Msg ("tauto: case 2\n", Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit]))));
     (PPVar "A", ["H", PPVar "A"], Msg ("tauto: case 3\n", Exact (PPProof "H")));
     (PPVar "G", ["H", PPCste cste_false], Msg ("tauto: case 4\n", Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit]))))
   ])
