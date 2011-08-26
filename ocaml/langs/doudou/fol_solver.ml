@@ -201,7 +201,7 @@ let sature : tactic =
     );
 
     PPAVar,
-    ["H1", PPVar "P"; "H2", PPApp (PPCste cste_not, [PPVar "P", Explicit])],
+    ["H2", PPApp (PPCste cste_not, [PPVar "P", Explicit]); "H1", PPVar "P"],
     AddHyp ("H", PPApp (PPCste cste_contradiction, [PPVar "H1", Explicit; PPVar "H2", Explicit]), PPCste cste_false,
 	    DelHyp ("H1", DelHyp ("H2", TacticName "sature"))
     );
@@ -221,8 +221,8 @@ let cste_right = constante_symbol !fol_defs (Name "right")
 
 (* the FOL tactic *)
 let fol_body : tactic = 
-    Cases [
-      PPAVar, [], TacticName "tauto";
+  Or [TacticName "tauto";
+    Cases [     
 
       PPImpl (PPVar "A", PPVar "B"), [], Intro ([], TacticName "FOL");
 
@@ -250,7 +250,7 @@ let fol_body : tactic =
 	)
       ]
     ]
-  
+     ]
   
 let _ = Hashtbl.add global_tactics "fol_body" fol_body
 
