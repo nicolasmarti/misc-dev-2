@@ -253,7 +253,10 @@ open Fol_solver
 
 let _ = fol_solver "true"
 
-(*
-let _ = fol_solver "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
-let _ = fol_solver "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
-*)
+(* we enter constant symbols *)
+let _ = process_definition fol_defs fol_ctxt "A :: Type"
+let _ = process_definition fol_defs fol_ctxt "B :: Type"
+
+let _ = fol_solver "(A /\\ B) -> (B /\\ A)"
+
+let _ = fol_solver "(A \\/ B) -> (B \\/ A)"
