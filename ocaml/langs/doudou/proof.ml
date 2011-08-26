@@ -304,55 +304,61 @@ exception NoPatternMatching
 
 (* we match proof_pattern with a term *)
 let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) : proof_subst =
-  try (
-  (* we make a copy of the context *)
-  let ctxt' = ref (ctxt.ctxt) in
-  (* then we grab all the pattern variables *)
-  let vars = proof_pattern_variable p in
-  (* we create a free variable for each vars 
-     and create a substitution
-  *)
-  let subst = NameSet.fold (fun v acc ->
-    let fvty = add_fvar ctxt' (Type nopos) in
-    let fvte = add_fvar ctxt' (TVar (fvty, nopos)) in
-    NameMap.add v (TVar (fvte, nopos)) acc
-  ) vars NameMap.empty in
-  (*
-    we apply the substitution 
-  *)
-  let p' = proof_pattern_subst p subst NameMap.empty in
-  (*
-    we create a term with it
-  *)
-  let te' = proof_pattern2term ctxt p' in
-  (*
-    we typeinfer the term and then we unify with te 
-  *)
-  let te' = 
-    try 
-      let te', _ = typeinfer ctxt.defs ctxt' te' in
-      unification_term_term ctxt.defs ctxt' te' te
-    with
-      | DoudouException _ -> raise NoPatternMatching
-  in
-  (*
-    we just check that there is no free variables in the result
-  *)
-  if not (IndexSet.is_empty (fv_term te')) then raise NoPatternMatching;
-  (*
-    now we could recreate a substitution by replace the free variable of 
-    subst to their value, using the context substitution    
-  *)
-  let s = context2substitution !ctxt' in
-  let subst = NameMap.map (term_substitution s) subst in
-  (* and just return the result *)
-  subst 
-  ) with
-    | DoudouException err ->
-      printf "%s\n" (error2string err);
-      raise NoPatternMatching
+  (* for sake of optimization we catch all impossible cases before using term unification *)
+  match term2category te, term2category (proof_pattern2term ctxt p) with
+    | cat1, cat2 when cat2 <> "??" && cat1 <> cat2 -> raise NoPatternMatching
+    (* finally here we do not know *)
+    | _ ->
 
-    | _-> raise NoPatternMatching
+      try (
+	(* we make a copy of the context *)
+	let ctxt' = ref (ctxt.ctxt) in
+	(* then we grab all the pattern variables *)
+	let vars = proof_pattern_variable p in
+	(* we create a free variable for each vars 
+	   and create a substitution
+	*)
+	let subst = NameSet.fold (fun v acc ->
+	  let fvty = add_fvar ctxt' (Type nopos) in
+	  let fvte = add_fvar ctxt' (TVar (fvty, nopos)) in
+	  NameMap.add v (TVar (fvte, nopos)) acc
+	) vars NameMap.empty in
+	(*
+	  we apply the substitution 
+	*)
+	let p' = proof_pattern_subst p subst NameMap.empty in
+	(*
+	  we create a term with it
+	*)
+	let te' = proof_pattern2term ctxt p' in
+	(*
+	  we typeinfer the term and then we unify with te 
+	*)
+	let te' = 
+	  try 
+	    let te', _ = typeinfer ctxt.defs ctxt' te' in
+	    unification_term_term ctxt.defs ctxt' te' te
+	  with
+	    | DoudouException _ -> raise NoPatternMatching
+	in
+	(*
+	  we just check that there is no free variables in the result
+	*)
+	if not (IndexSet.is_empty (fv_term te')) then raise NoPatternMatching;
+	(*
+	  now we could recreate a substitution by replace the free variable of 
+	  subst to their value, using the context substitution    
+	*)
+	let s = context2substitution !ctxt' in
+	let subst = NameMap.map (term_substitution s) subst in
+	(* and just return the result *)
+	subst 
+      ) with
+	| DoudouException err ->
+	  printf "%s\n" (error2string err);
+	  raise NoPatternMatching
+
+	| _-> raise NoPatternMatching
 
 (* we transform a pattern into a term *)
 and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
