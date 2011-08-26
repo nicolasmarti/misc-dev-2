@@ -157,6 +157,16 @@ open Proof
   we are going to implement the solver as a tactic
 *)
 
+(* first grab the proper Cste of fol *)
+let cste_true = constante_symbol !fol_defs (Name "true")
+let cste_I = constante_symbol !fol_defs (Name "I")
+
+let tauto : tactic =
+  Cases [
+    (PPCste cste_true, [], Exact (PPCste cste_I))
+  ]
+    
+
 
 (*****************************************************************)
 (*                one solver entry: a string                     *)
@@ -176,9 +186,16 @@ let fol_solver (s: string) : unit =
     let [te] = flush_fvars ctxt [te] in
     if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
     (* we assure that the term is a valid formula *)
-    if not (is_formula !fol_defs te) then raise (DoudouException (FreeError "The lemma is not a valid first order formula"));
+    if not (is_formula !fol_defs te) then (
+      printf "%s\n" (term2string !ctxt te);
+      raise (DoudouException (FreeError "The lemma is not a valid first order formula"))
+    );
     (* and we use the tactics *)
-    raise (Failure "Not Yet Implemented")
+    let proof_ctxt = empty_proof_context !fol_defs in
+    let prf = tactic_semantics tauto proof_ctxt te in
+    (* typecheck it *)
+    let prf, te = typecheck !fol_defs (ref empty_context) prf te in
+    printf "%s\n\t::\n%s\n" (term2string empty_context prf) (term2string empty_context te)
   with
     | NoMatch -> 
       printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
@@ -187,6 +204,8 @@ let fol_solver (s: string) : unit =
       (* we restore the context and defs *)
       printf "error:\n%s\n" (error2string err);
       raise Pervasives.Exit
+    | CannotSolveGoal ->
+      printf "cannot find a proof\n";
 
 (*
   missing modus ponens

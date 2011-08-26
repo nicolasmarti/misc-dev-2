@@ -57,9 +57,12 @@ let _ = process_definition fol_defs fol_ctxt "congr :: {A :: Type} -> (P :: A ->
 *)
 let rec is_formula (defs: defs) ?(level: int = 0) (te: term) : bool =
   match te with       
-    | Impl ((_, ty, _, _), te, _) ->
+    | Impl ((_, Type _, Implicit, _), te, _) ->
+      is_formula defs ~level:(level + 1) te 
+
+    | Impl ((_, ty, Explicit, _), te, _) ->
       is_fo_formula defs ty level && is_formula defs ~level:(level + 1) te 
-    | Type _ -> true
+
     | _ -> is_fo_formula defs te level
     
 and is_fo_formula (defs: defs) (te: term) (level: int) : bool =
@@ -84,6 +87,8 @@ and is_atom (defs: defs) (te: term) (level: int) : bool =
       List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
 
     | TVar (i, _) -> true
+
+    | Cste (s, _) when List.mem (symbol2string s) ["true"; "false"] -> true
 
     | _ -> false
 

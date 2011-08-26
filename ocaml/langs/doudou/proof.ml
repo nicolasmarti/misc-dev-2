@@ -94,13 +94,19 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
 (* remove an hypothesis by name *)
 let remove_hyp_by_name (hyps: hypothesises) (name: string) : hypothesises =
     let prefix = String.sub name 0 (String.index name '.') in
-    NameMap.add prefix (NameMap.remove name (NameMap.find prefix hyps)) hyps
+    try 
+      NameMap.add prefix (NameMap.remove name (NameMap.find prefix hyps)) hyps
+    with
+      | Not_found -> printf "remove_hyp_by_name: Not_found\n"; raise Exit
 
 
 (* get an hypothesis by name *)
 let get_hyp_by_name (hyps: hypothesises) (name: string) : hypothesis =
-    let prefix = String.sub name 0 (String.index name '.') in
-    NameMap.find name (NameMap.find prefix hyps)
+    try 
+      let prefix = String.sub name 0 (String.index name '.') in
+      NameMap.find name (NameMap.find prefix hyps)
+    with
+      | Not_found -> printf "get_hyp_by_name: Not_found (%s)\n" name; raise Exit
 
 (*
   this is the proof context
@@ -373,7 +379,8 @@ let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterat
       (* general pattern -> we take everything *)
       | "??" -> { next_hyps = ctxt.hyps; next_hyp = NameMap.empty }
       (* for the rest we take the hypothesis of the same category *)
-      | cat -> try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> raise NoPatternMatching
+      | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> printf "make_iterator: %s not found in:\n%s\n" cat (proof_context2string ctxt); 
+	raise NoPatternMatching)
   in
   iterator
 
@@ -434,8 +441,8 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
     | PartApply (p, t) -> PartApply (proof_pattern_subst p s h, tactic_subst t s h)
     | Or ts -> Or (List.map (fun t -> tactic_subst t s h) ts)
     | Call (n, ts) -> Call (n, List.map (fun t -> tactic_subst t s h) ts)
-    | AddHyp (n, prf, lemma, t) -> AddHyp (NameMap.find n h, proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
-    | DelHyp (n, t) -> DelHyp (NameMap.find n h, tactic_subst t s h) 
+    | AddHyp (n, prf, lemma, t) -> AddHyp ((try NameMap.find n h with | _ -> n), proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
+    | DelHyp (n, t) -> DelHyp ((try NameMap.find n h with | _ -> n), tactic_subst t s h) 
     | Intro (l, t) -> Intro (l, 
 			     (* from the hyp subst we remove the one comming from the intro *)
 			     tactic_subst t s (List.fold_left (fun acc hd -> NameMap.remove hd acc) h l)
@@ -500,7 +507,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	prf
       with
 	| DoudouException err ->
-	  printf "%s\n" (error2string err);
+	  printf "fail in exact: %s\n" (error2string err);
 	  raise CannotSolveGoal
 	| _ -> raise CannotSolveGoal
     )
@@ -695,32 +702,35 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 
     (* else we need to try matching the next pattern *)
     | (n, p)::tl ->
-      (* we first apply the substitutions to the pattern *)
-      let p = proof_pattern_subst p s h in
-      (* we build an iterator for this pattern *)
-      let it = make_iterator ctxt p in
-      (* we try all possibilities until there is none *)
-      let res = iterator_loop it (fun (name, (prf, lemma)) ->
-	try 
+      try (
+	(* we first apply the substitutions to the pattern *)
+	let p = proof_pattern_subst p s h in
+	(* we build an iterator for this pattern *)
+	let it = make_iterator ctxt p in
+	(* we try all possibilities until there is none *)
+	let res = iterator_loop it (fun (name, (prf, lemma)) ->
+	  try 
 	  (* we try to match the lemma and the pattern *)
-	  let subst' = match_proof_pattern ctxt p lemma in
-	  (* we update the substitution and try further *)
-	  let s = NameMap.merge (fun k v1 v2 ->
-	    match v1, v2 with
-	      | Some v1, None -> Some v1
-	      | None, Some v2 -> Some v2
-	      | _ -> raise (Failure "cannot merge the substitutions")
-	  ) subst' s in
-	  let h = NameMap.singleton n name in
+	    let subst' = match_proof_pattern ctxt p lemma in
+	    (* we update the substitution and try further *)
+	    let s = NameMap.merge (fun k v1 v2 ->
+	      match v1, v2 with
+		| Some v1, None -> Some v1
+		| None, Some v2 -> Some v2
+		| _ -> raise (Failure "cannot merge the substitutions")
+	    ) subst' s in
+	    let h = NameMap.add n name h in
 	  (* trying further *)
-	  Some (hyps_matching ctxt s h tl action goal)
-	with
+	    Some (hyps_matching ctxt s h tl action goal)
+	  with
 	  (* no match for the hypothesis, try another one *)
-	  | NoPatternMatching -> None
+	    | NoPatternMatching -> None
           (* the goal cannot be solved, try another hypothesis *)
-	  | CannotSolveGoal -> None
-      ) in
-      match res with
-	| None -> raise CannotSolveGoal
-	| Some prf -> prf
-	  
+	    | CannotSolveGoal -> None
+	) in
+	match res with
+	  | None -> raise CannotSolveGoal
+	  | Some prf -> prf
+      ) 	    
+      with
+	| NoPatternMatching -> raise CannotSolveGoal

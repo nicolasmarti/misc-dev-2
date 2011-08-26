@@ -177,8 +177,69 @@ let _ = process_definition definition_defs definition_ctxt ~verbose:true "(~true
 let _ = printf "\n\n------------------------------------------- Tactics Tests -------------------------------------------------\n\n"
 
 (* some test *)
-open Fol
 open Proof
+
+(*****************************************************************)
+(*                one solver entry: a string                     *)
+(*****************************************************************)
+
+let tactic_solver (defs: defs) (ctxt: context ref) (t: tactic) (s: string) : unit = begin
+  (* we set the parser *)
+  let lines = stream_of_string s in
+  let pb = build_parserbuffer lines in
+  let pos = cur_pos pb in
+  try 
+    let te = parse_term defs pos pb in
+    (* we typecheck the terms again Type *)
+    let te, _ = typecheck defs ctxt te (Type nopos) in
+    (* we ensure there is not free variable *)
+    let [te] = flush_fvars ctxt [te] in
+    if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
+    (* and create a proof context *)
+    let proof_ctxt = { defs = defs; ctxt = !ctxt; hyps = NameMap.empty } in
+    (* run the tactics *)
+    let prf = tactic_semantics t proof_ctxt te in
+    (* typecheck the result *)
+    let prf, te = typecheck defs ctxt prf te in
+    printf "%s\n\t::\n%s\n" (term2string !ctxt prf) (term2string !ctxt te)
+  with
+    | NoMatch -> 
+      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+      raise Pervasives.Exit
+    | DoudouException err -> 
+      (* we restore the context and defs *)
+      printf "error:\n%s\n" (error2string err);
+      raise Pervasives.Exit
+    | CannotSolveGoal ->
+      printf "cannot find a proof\n";
+end
+
+let goal1 = "{A :: Type} -> A -> A"
+
+let tactic1 = Intro (["A"; "H"],
+		     Cases [
+		      PPVar "A", ["H", PPVar "A"], Exact (PPProof "H")
+		     ]
+)
+
+let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic1 goal1
+
+let goal2 = "{A B :: Type} -> (A -> B) -> A -> B"
+
+let tactic2 = Intro (["A"; "B"; "H"; "H1"],
+		     Cases [
+		      PPAVar, ["H1", PPImpl (PPVar "A", PPVar "B"); "H2", PPVar "A"],
+		      AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
+			      Cases [
+				PPVar "A", ["H", PPVar "A"], Exact (PPProof "H")
+			      ]				
+		      )		      
+		     ]
+)
+
+let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic2 goal2
+
+
       
 (**********************************)
 (* example of first order solving *)
@@ -186,9 +247,13 @@ open Proof
 
 let _ = printf "\n\n------------------------------------------- First Order Solver Tests -------------------------------------------------\n\n"
 
+open Fol
+
 open Fol_solver
 
-let _ = fol_solver "{A B :: Type} -> A -> A"
+let _ = fol_solver "true"
+
+(*
 let _ = fol_solver "{A B :: Type} -> (A /\\ B) -> (B /\\ A)"
 let _ = fol_solver "{A B :: Type} -> (A \\/ B) -> (B \\/ A)"
-
+*)
