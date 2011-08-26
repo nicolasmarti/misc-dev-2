@@ -280,11 +280,16 @@ let rec next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
 (* iterator loop *)
 let rec iterator_loop (it: hypothesises_iterator) (f: string * hypothesis -> 'a option) : 'a option =
   try 
-    match f (next_hypothesis it) with
-      | None -> iterator_loop it f
-      | Some res -> Some res
+    let res = ref None in  
+    while !res = None do
+      res := f (next_hypothesis it)
+    done;
+    !res
   with
     | NoMoreHypothesis -> None
+
+let iterator_size (it: hypothesises_iterator) : int =
+  NameMap.fold (fun k v acc -> acc + NameMap.cardinal v) it.next_hyps (NameMap.cardinal it.next_hyp)
 
 
 (* grab all the pattern variables of a pattern *)
@@ -326,7 +331,7 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
   let te' = 
     try 
       let te', _ = typeinfer ctxt.defs ctxt' te' in
-      unification_term_term ctxt.defs ctxt' te te'
+      unification_term_term ctxt.defs ctxt' te' te
     with
       | DoudouException _ -> raise NoPatternMatching
   in
@@ -375,6 +380,11 @@ and proof_pattern_subst (p: proof_pattern) (s: proof_subst) (h: hyp_subst) : pro
     )
     | PPApp (p, args) -> PPApp (proof_pattern_subst p s h, List.map (fun (arg, n) -> proof_pattern_subst arg s h, n) args)
     | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s h, proof_pattern_subst p2 s h)
+and proof_pattern2string (ctxt: proof_context) (p: proof_pattern) : string = 
+  let te = proof_pattern2term ctxt p in
+  term2string ctxt.ctxt te
+
+
 
 (* build an iterator over the hypothesises that might be matched with the pattern *)
 let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterator =
@@ -391,10 +401,6 @@ let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterat
       | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> { next_hyps = NameMap.empty; next_hyp = NameMap.empty })
   in
   iterator
-
-let proof_pattern2string (ctxt: proof_context) (p: proof_pattern) : string = 
-  let te = proof_pattern2term ctxt p in
-  term2string ctxt.ctxt te
 
 (*
   the tactic AST
@@ -703,7 +709,12 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  if !debug then printf "trying to match goal pattern: %s\n" (proof_pattern2string ctxt goal_p);
 	  if !debug then printf "against goal: %s\n" (term2string ctxt.ctxt goal);
 	  (* first we need to pattern match the gaol *)
-	  let subst = match_proof_pattern ctxt goal_p goal in
+	 (* printf "pattern matching goal: %s Vs %s ... " (proof_pattern2string ctxt goal_p) (term2string ctxt.ctxt goal); flush Pervasives.stdout;*)
+	  let subst = try (
+	    let subst = match_proof_pattern ctxt goal_p goal in
+	    (*printf "done ok\n"; flush Pervasives.stdout;*)
+	    subst
+	  ) with | e -> (*printf "done nok\n"; flush Pervasives.stdout; *)raise e in
 	  if !debug then printf "goal matched!\n";
 	  (* then we try to matches the hypothesises *)
 	  Right (hyps_matching ctxt subst NameMap.empty hyps_ps t goal)
@@ -734,11 +745,13 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 	if !debug then printf "trying to match hyp pattern: %s :: %s\n" n (proof_pattern2string ctxt p);
 	(* we build an iterator for this pattern *)
 	let it = make_iterator ctxt p in
+	(*printf "iterator_size := %d\n" (iterator_size it);*)
 	(* we try all possibilities until there is none *)
 	let res = iterator_loop it (fun (name, (prf, lemma)) ->
 	  if !debug then printf "aginst hyp pattern: %s :: %s\n" name (term2string ctxt.ctxt lemma);
 	  try 
 	    (* we try to match the lemma and the pattern *)
+	    (*printf "pattern matching hyp: %s Vs %s\n" (proof_pattern2string ctxt p) (term2string ctxt.ctxt lemma); flush Pervasives.stdout;*)
 	    let subst' = match_proof_pattern ctxt p lemma in
 	    (* we update the substitution and try further *)
 	    let s = NameMap.merge (fun k v1 v2 ->
