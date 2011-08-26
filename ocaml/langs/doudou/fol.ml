@@ -88,7 +88,7 @@ and is_atom (defs: defs) (te: term) (level: int) : bool =
 
     | TVar (i, _) -> true
 
-    | Cste (s, _) when List.mem (symbol2string s) ["true"; "false"] -> true
+    | Cste (s, _) -> true
 
     | _ -> false
 
