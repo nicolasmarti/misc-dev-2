@@ -529,7 +529,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
     | Fail -> raise CannotSolveGoal
 
     | Msg (s, t) ->
-      printf "%s\n" s; flush Pervasives.stdout;
+      (*printf "%s\n" s; flush Pervasives.stdout;*)
       tactic_semantics t ctxt goal
 
     | ShowGoal t ->
