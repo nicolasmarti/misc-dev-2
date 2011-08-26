@@ -170,12 +170,14 @@ let cste_proj2 = constante_symbol !fol_defs (Name "proj2")
 
 (* the tautology tactic *)
 let tauto : tactic =
+  Msg ("tauto: ",
   Cases [
-    (PPCste cste_true, [], Exact (PPCste cste_I));
-    (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit])));
-    (PPVar "A", ["H", PPVar "A"], Exact (PPProof "H"));
-    (PPVar "G", ["H", PPCste cste_false], Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit])))
-  ]
+    (PPCste cste_true, [], Msg ("tauto: case 1\n", Exact (PPCste cste_I)));
+    (*
+    (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Msg ("tauto: case 2\n", Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit]))));*)
+    (PPVar "A", ["H", PPVar "A"], Msg ("tauto: case 3\n", Exact (PPProof "H")));
+    (PPVar "G", ["H", PPCste cste_false], Msg ("tauto: case 4\n", Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit]))))
+  ])
     
 let _ = Hashtbl.add global_tactics "tauto" tauto
 
@@ -185,31 +187,36 @@ let cste_not = constante_symbol !fol_defs (Name "[~)")
 let cste_contradiction = constante_symbol !fol_defs (Name "contradiction")
 
 let sature : tactic =
+  Msg ("sature: ",
   Cases [
     PPAVar, 
     ["H", PPApp (PPCste cste_and, [PPVar "A", Explicit; PPVar "B", Explicit])],
-    AddHyp ("H1", PPApp (PPCste cste_proj1, [PPProof "H", Explicit]), PPVar "A",
+    Msg ("sature: case 1\n", AddHyp ("H1", PPApp (PPCste cste_proj1, [PPProof "H", Explicit]), PPVar "A",
 	    AddHyp ("H2", PPApp (PPCste cste_proj2, [PPProof "H", Explicit]), PPVar "B",
 		    DelHyp ("H", TacticName "sature")
 	    )
+    )
     );
     
     PPAVar,
     ["H1", PPImpl (PPVar "A", PPVar "B"); "H2", PPVar "A"],
-    AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
+    Msg ("sature: case 2\n", AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
 	    DelHyp ("H1", TacticName "sature")
+    )
     );
 
     PPAVar,
     ["H2", PPApp (PPCste cste_not, [PPVar "P", Explicit]); "H1", PPVar "P"],
-    AddHyp ("H", PPApp (PPCste cste_contradiction, [PPVar "H1", Explicit; PPVar "H2", Explicit]), PPCste cste_false,
+    Msg ("sature: case 3\n", AddHyp ("H", PPApp (PPCste cste_contradiction, [PPVar "H1", Explicit; PPVar "H2", Explicit]), PPCste cste_false,
 	    DelHyp ("H1", DelHyp ("H2", TacticName "sature"))
+    )
     );
 
     (* for the last rule, we need to implement the HO unification*)
 
     PPAVar, [], TacticName "fol_body"
   ]
+  )
 
 let _ = Hashtbl.add global_tactics "sature" sature
 
@@ -221,25 +228,26 @@ let cste_right = constante_symbol !fol_defs (Name "right")
 
 (* the FOL tactic *)
 let fol_body : tactic = 
+  Msg ("fol_body: ",
   Or [TacticName "tauto";
     Cases [     
 
-      PPImpl (PPVar "A", PPVar "B"), [], Intro ([], TacticName "FOL");
+      PPImpl (PPVar "A", PPVar "B"), [], Msg ("fol_body: case 1\n", Intro ([], TacticName "FOL"));
 
       PPApp (PPCste cste_and, [PPVar "A", Explicit; PPVar "B", Explicit]), [], 
-      PartApply (
+      Msg ("fol_body: case 2\n", PartApply (
 	PPCste cste_conj,
 	TacticName "FOL"
-      );
+      ));
 
       PPAVar, ["H", PPApp (PPCste cste_or, [PPVar "A", Explicit; PPVar "B", Explicit])],
-      PartApply (
+      Msg ("fol_body: case 3\n",PartApply (
 	PPApp (PPCste cste_disj, [PPProof "H", Explicit]),
 	DelHyp ("H", TacticName "FOL")
-      );
+      ));
 
       PPApp (PPCste cste_or, [PPVar "A", Explicit; PPVar "B", Explicit]), [],
-      Or [
+      Msg ("fol_body: case 4\n",Or [
 	PartApply (
 	  PPCste cste_left,
 	  TacticName "FOL"
@@ -247,10 +255,11 @@ let fol_body : tactic =
 	PartApply (
 	  PPCste cste_right,
 	  TacticName "FOL"
-	)
-      ]
+	)      
+      ])
     ]
      ]
+  )
   
 let _ = Hashtbl.add global_tactics "fol_body" fol_body
 
