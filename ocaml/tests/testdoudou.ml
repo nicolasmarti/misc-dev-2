@@ -201,7 +201,7 @@ let tactic_solver (defs: defs) (ctxt: context ref) (t: tactic) (s: string) : uni
     let prf = tactic_semantics t proof_ctxt te in
     (* typecheck the result *)
     let prf, te = typecheck defs ctxt prf te in
-    printf "%s\n\t::\n%s\n" (term2string !ctxt prf) (term2string !ctxt te)
+    printf "%s\n\t::\n%s\n\n" (term2string !ctxt prf) (term2string !ctxt te)
   with
     | NoMatch -> 
       printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
