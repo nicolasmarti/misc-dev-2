@@ -160,13 +160,104 @@ open Proof
 (* first grab the proper Cste of fol *)
 let cste_true = constante_symbol !fol_defs (Name "true")
 let cste_I = constante_symbol !fol_defs (Name "I")
+let cste_refl = constante_symbol !fol_defs (Name "refl")
+let cste_eq = constante_symbol !fol_defs (Name "(=)")
+let cste_false = constante_symbol !fol_defs (Name "false")
+let cste_absurd = constante_symbol !fol_defs (Name "absurd")
+let cste_and = constante_symbol !fol_defs (Name "(/\\)")
+let cste_proj1 = constante_symbol !fol_defs (Name "proj1")
+let cste_proj2 = constante_symbol !fol_defs (Name "proj2")
 
+(* the tautology tactic *)
 let tauto : tactic =
   Cases [
-    (PPCste cste_true, [], Exact (PPCste cste_I))
+    (PPCste cste_true, [], Exact (PPCste cste_I));
+    (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit])));
+    (PPVar "A", ["H", PPVar "A"], Exact (PPProof "H"));
+    (PPVar "G", ["H", PPCste cste_false], Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit])))
   ]
     
+let _ = Hashtbl.add global_tactics "tauto" tauto
 
+(* the saturation tactic *)
+
+let cste_not = constante_symbol !fol_defs (Name "[~)")
+let cste_contradiction = constante_symbol !fol_defs (Name "contradiction")
+
+let sature : tactic =
+  Cases [
+    PPAVar, 
+    ["H", PPApp (PPCste cste_and, [PPVar "A", Explicit; PPVar "B", Explicit])],
+    AddHyp ("H1", PPApp (PPCste cste_proj1, [PPProof "H", Explicit]), PPVar "A",
+	    AddHyp ("H2", PPApp (PPCste cste_proj2, [PPProof "H", Explicit]), PPVar "B",
+		    DelHyp ("H", TacticName "sature")
+	    )
+    );
+    
+    PPAVar,
+    ["H1", PPImpl (PPVar "A", PPVar "B"); "H2", PPVar "A"],
+    AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
+	    DelHyp ("H1", TacticName "sature")
+    );
+
+    PPAVar,
+    ["H1", PPVar "P"; "H2", PPApp (PPCste cste_not, [PPVar "P", Explicit])],
+    AddHyp ("H", PPApp (PPCste cste_contradiction, [PPVar "H1", Explicit; PPVar "H2", Explicit]), PPCste cste_false,
+	    DelHyp ("H1", DelHyp ("H2", TacticName "sature"))
+    );
+
+    (* for the last rule, we need to implement the HO unification*)
+
+    PPAVar, [], TacticName "fol_body"
+  ]
+
+let _ = Hashtbl.add global_tactics "sature" sature
+
+let cste_conj = constante_symbol !fol_defs (Name "conj")
+let cste_or = constante_symbol !fol_defs (Name "(\\/)")
+let cste_disj = constante_symbol !fol_defs (Name "disj")
+let cste_left = constante_symbol !fol_defs (Name "left")
+let cste_right = constante_symbol !fol_defs (Name "right")
+
+(* the FOL tactic *)
+let fol_body : tactic = 
+    Cases [
+      PPAVar, [], TacticName "tauto";
+
+      PPImpl (PPVar "A", PPVar "B"), [], Intro ([], TacticName "FOL");
+
+      PPApp (PPCste cste_and, [PPVar "A", Explicit; PPVar "B", Explicit]), [], 
+      PartApply (
+	PPCste cste_conj,
+	TacticName "FOL"
+      );
+
+      PPAVar, ["H", PPApp (PPCste cste_or, [PPVar "A", Explicit; PPVar "B", Explicit])],
+      PartApply (
+	PPApp (PPCste cste_disj, [PPProof "H", Explicit]),
+	DelHyp ("H", TacticName "FOL")
+      );
+
+      PPApp (PPCste cste_or, [PPVar "A", Explicit; PPVar "B", Explicit]), [],
+      Or [
+	PartApply (
+	  PPCste cste_left,
+	  TacticName "FOL"
+	);
+	PartApply (
+	  PPCste cste_right,
+	  TacticName "FOL"
+	)
+      ]
+    ]
+  
+  
+let _ = Hashtbl.add global_tactics "fol_body" fol_body
+
+let fol : tactic =
+  TacticName "sature"
+
+let _ = Hashtbl.add global_tactics "FOL" fol
 
 (*****************************************************************)
 (*                one solver entry: a string                     *)
@@ -192,10 +283,10 @@ let fol_solver (s: string) : unit =
     );
     (* and we use the tactics *)
     let proof_ctxt = empty_proof_context !fol_defs in
-    let prf = tactic_semantics tauto proof_ctxt te in
+    let prf = tactic_semantics fol proof_ctxt te in
     (* typecheck it *)
     let prf, te = typecheck !fol_defs (ref empty_context) prf te in
-    printf "%s\n\t::\n%s\n" (term2string empty_context prf) (term2string empty_context te)
+    printf "Proof Completed!\n%s\n\t::\n%s\n\n" (term2string empty_context prf) (term2string empty_context te); flush Pervasives.stdout;
   with
     | NoMatch -> 
       printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
@@ -207,7 +298,3 @@ let fol_solver (s: string) : unit =
     | CannotSolveGoal ->
       printf "cannot find a proof\n";
 
-(*
-  missing modus ponens
-let _ = solve "{A B :: Type} -> (A -> B) -> A -> B"
-*)
