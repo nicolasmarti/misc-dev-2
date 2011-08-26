@@ -91,13 +91,15 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
   let category_hyps = NameMap.add name hyp category_hyps in
   NameMap.add category category_hyps hyps
 
+exception NoSuchHyp 
+
 (* remove an hypothesis by name *)
 let remove_hyp_by_name (hyps: hypothesises) (name: string) : hypothesises =
-    let prefix = String.sub name 0 (String.index name '.') in
     try 
+      let prefix = String.sub name 0 (String.index name '.') in    
       NameMap.add prefix (NameMap.remove name (NameMap.find prefix hyps)) hyps
     with
-      | Not_found -> printf "remove_hyp_by_name: Not_found\n"; raise Exit
+      | Not_found -> raise NoSuchHyp 
 
 
 (* get an hypothesis by name *)
@@ -106,7 +108,7 @@ let get_hyp_by_name (hyps: hypothesises) (name: string) : hypothesis =
       let prefix = String.sub name 0 (String.index name '.') in
       NameMap.find name (NameMap.find prefix hyps)
     with
-      | Not_found -> printf "get_hyp_by_name: Not_found (%s)\n" name; raise Exit
+      | Not_found -> raise NoSuchHyp 
 
 (*
   this is the proof context
@@ -297,6 +299,7 @@ exception NoPatternMatching
 
 (* we match proof_pattern with a term *)
 let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) : proof_subst =
+  try (
   (* we make a copy of the context *)
   let ctxt' = ref (ctxt.ctxt) in
   (* then we grab all the pattern variables *)
@@ -339,13 +342,19 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
   let subst = NameMap.map (term_substitution s) subst in
   (* and just return the result *)
   subst 
+  ) with
+    | DoudouException err ->
+      printf "%s\n" (error2string err);
+      raise NoPatternMatching
+
+    | _-> raise NoPatternMatching
 
 (* we transform a pattern into a term *)
 and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
   match p with
     | PPAVar -> AVar nopos
     | PPCste s -> Cste (s, nopos)
-    | PPVar _ -> AVar nopos
+    | PPVar v -> TName (Name (String.concat "" ["?"; v]), nopos)
     | PPImpl (p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
     | PPProof s -> fst (get_hyp_by_name ctxt.hyps s)
@@ -379,10 +388,13 @@ let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterat
       (* general pattern -> we take everything *)
       | "??" -> { next_hyps = ctxt.hyps; next_hyp = NameMap.empty }
       (* for the rest we take the hypothesis of the same category *)
-      | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> printf "make_iterator: %s not found in:\n%s\n" cat (proof_context2string ctxt); 
-	raise NoPatternMatching)
+      | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> { next_hyps = NameMap.empty; next_hyp = NameMap.empty })
   in
   iterator
+
+let proof_pattern2string (ctxt: proof_context) (p: proof_pattern) : string = 
+  let te = proof_pattern2term ctxt p in
+  term2string ctxt.ctxt te
 
 (*
   the tactic AST
@@ -416,9 +428,6 @@ type tactic =
   (* tactic name *)
   | TacticName of string
 
-  (* tactic call *)
-  | Call of string * tactic list
-
   (* add an hypothesis *)
   | AddHyp of string * proof_pattern * proof_pattern * tactic
 
@@ -440,7 +449,6 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
     | Exact p -> Exact (proof_pattern_subst p s h)
     | PartApply (p, t) -> PartApply (proof_pattern_subst p s h, tactic_subst t s h)
     | Or ts -> Or (List.map (fun t -> tactic_subst t s h) ts)
-    | Call (n, ts) -> Call (n, List.map (fun t -> tactic_subst t s h) ts)
     | AddHyp (n, prf, lemma, t) -> AddHyp ((try NameMap.find n h with | _ -> n), proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
     | DelHyp (n, t) -> DelHyp ((try NameMap.find n h with | _ -> n), tactic_subst t s h) 
     | Intro (l, t) -> Intro (l, 
@@ -459,18 +467,12 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
     | Fail | Interactive | TacticName _ -> t
 
 (*
-  a map from string to tactics 
-  used for keeping tactics definitions, and for tactics arguments
-*)
-open Hashtbl
-
-type tactics_dict = (string, name list * tactic) Hashtbl.t
-
-(*
   valuation of an tactic
 
   given a proof_context and a goal, it returns a proof
 *)
+
+let debug = ref false
 
 (* this function apply to a term a free variable for each of its remaining arguments *)
 let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : index list * term =
@@ -483,21 +485,49 @@ let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : 
     | _ -> [], te  
 
 (*
+  a map from string to tactics 
+  used for keeping tactics definitions, and for tactics arguments
+*)
+(*
   first we will have a "global" dict of tactics
 *)
 
+open Hashtbl
+
+type tactics_dict = (string, tactic) Hashtbl.t
+
 let global_tactics : tactics_dict = Hashtbl.create 50
 
+let tactic2string (t: tactic) : string =
+  match t with
+    | Fail -> "Fail"
+    | Msg _ -> "Msg"
+    | ShowGoal _ -> "ShowGoal"
+    | Exact _ -> "Exact"
+    | PartApply _ -> "PartApply"
+    | Interactive -> "Interactive"
+    | Or _ -> "Or"
+    | Cases _ -> "Cases"
+    | TacticName s -> String.concat " " ["TacticName"; s]
+    | AddHyp _ -> "AddHyp"
+    | DelHyp _ -> "DelHyp"
+    | Intro _ -> "Intro"
+
 let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
+  (*
+  printf "tactic: %s\n" (tactic2string t); flush Pervasives.stdout;
+  printf "on goal: %s\n" (term2string ctxt.ctxt goal); flush Pervasives.stdout;
+  *)
+  (*printf "%s\n\n" (proof_state2string ctxt goal); *)
   match t with
     | Fail -> raise CannotSolveGoal
 
     | Msg (s, t) ->
-      printf "%s\n" s;
+      printf "%s\n" s; flush Pervasives.stdout;
       tactic_semantics t ctxt goal
 
     | ShowGoal t ->
-      printf "%s\n\n" (proof_state2string ctxt goal); 
+      printf "%s\n\n" (proof_state2string ctxt goal); flush Pervasives.stdout;
       tactic_semantics t ctxt goal
 
     | Exact p -> (
@@ -518,11 +548,12 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
       (* then we typeinfer the term *)
       let ctxt' = ref ctxt.ctxt in
       let prf, ty = typeinfer ctxt.defs ctxt' prf in
-      printf "infered apply: %s :: %s\n" (term2string !ctxt' prf) (term2string !ctxt' ty);
+      (*printf "infered apply: %s :: %s\n" (term2string !ctxt' prf) (term2string !ctxt' ty);*)
       let fvs, prf' = complete_explicit_arguments ctxt' prf ty in
-      printf "completed term: %s\n" (term2string !ctxt' prf');
+      (*printf "completed term: %s\n" (term2string !ctxt' prf');*)
       (* we typecheck against the goal to infer the free variables type *)
-      let prf', _ = typecheck ctxt.defs ctxt' prf' goal in
+      let prf', ty = typecheck ctxt.defs ctxt' prf' goal in
+      (*printf "infered apply: %s :: %s\n" (term2string !ctxt' prf') (term2string !ctxt' ty);*)
       (* then we traverse the free variables in order to solve them *)
       let _ = List.fold_left (fun () hd ->
 	(* first look if the value of the fvar is itself *)
@@ -639,57 +670,52 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 
     (*************************)
 
-    | Call (t, ts) -> (
-      (* grab the tactics and its arguments *)
-      let (argsname, t) = Hashtbl.find global_tactics t in
-      (* push in the global dict *)
-      let _ = List.map (fun (name, t) -> Hashtbl.add global_tactics name ([], t)) (List.combine argsname ts) in
-      (* execute the tactics *)
-      let res = 
-	try 
-	  Some (tactic_semantics t ctxt goal)
-	with
-	  | _ -> None
-      in
-      (* pop from the global dict *)
-      let _ = List.map (fun name -> Hashtbl.remove global_tactics name) argsname in
-      match res with
-	| None -> raise CannotSolveGoal
-	| Some prf -> prf
+    | TacticName s ->
+      tactic_semantics (Hashtbl.find global_tactics s) ctxt goal
+
+    | AddHyp (s, prf, lemma, t) -> (
+	(* build both terms *)
+	let prf = proof_pattern2term ctxt prf in
+	let lemma = proof_pattern2term ctxt lemma in
+	(* typecheck them *)
+	let ctxt' = ref ctxt.ctxt in
+	let lemma, _ = typecheck ctxt.defs ctxt' lemma (Type nopos) in
+	let prf, lemma = typecheck ctxt.defs ctxt' prf lemma in
+	(*printf "AddHyp: (%s, %s)\n" (term2string !ctxt' prf) (term2string !ctxt' lemma);*)
+	(* just check that there is no free var *)
+	if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
+	(* add the hypothesis *)
+	let hyps = input_hypothesis (prf, lemma) ~name:s ctxt.hyps in
+	(* continue *)
+	tactic_semantics t {ctxt with hyps = hyps} goal
     )
 
-    | TacticName s ->
-      tactic_semantics (snd (Hashtbl.find global_tactics s)) ctxt goal
-
-    | AddHyp (s, prf, lemma, t) ->
-      (* build both terms *)
-      let prf = proof_pattern2term ctxt prf in
-      let lemma = proof_pattern2term ctxt lemma in
-      (* typecheck them *)
-      let ctxt' = ref ctxt.ctxt in
-      let lemma, _ = typecheck ctxt.defs ctxt' lemma (Type nopos) in
-      let prf, lemma = typecheck ctxt.defs ctxt' prf lemma in
-      (* just check that there is no free var *)
-      if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
-      (* add the hypothesis *)
-      let hyps = input_hypothesis (prf, lemma) ctxt.hyps in
-      (* continue *)
-      tactic_semantics t {ctxt with hyps = hyps} goal
-
     | DelHyp (s, t) ->
+      (*printf "del hyp %s\n" s;*)
       tactic_semantics t {ctxt with hyps = remove_hyp_by_name ctxt.hyps s} goal
 
     | Cases cases -> 
+      if !debug then printf "Tactic cases with %d patterns\n" (List.length cases);
       (* we traverse all the goals until we get a proof of we return an error *)
       let res = fold_stop (fun () (goal_p, hyps_ps, t) ->
+	if !debug then printf "trying one case\n";
 	try 
+	  if !debug then printf "trying to match goal pattern: %s\n" (proof_pattern2string ctxt goal_p);
+	  if !debug then printf "against goal: %s\n" (term2string ctxt.ctxt goal);
 	  (* first we need to pattern match the gaol *)
 	  let subst = match_proof_pattern ctxt goal_p goal in
+	  if !debug then printf "goal matched!\n";
 	  (* then we try to matches the hypothesises *)
 	  Right (hyps_matching ctxt subst NameMap.empty hyps_ps t goal)
 	with
 	  (* the goal does not match => go to another case *)
-	  | NoPatternMatching -> Left ()
+	  | NoPatternMatching -> if !debug then printf "Case: no pattern-matching with goal/hyps\n"; Left ()
+	  | CannotSolveGoal -> if !debug then printf "pattern matched goal / hyps but further tactics failed\n"; Left ()
+	  | DoudouException err -> printf "%s\n" (error2string err); Left ()
+	  | NoSuchHyp -> printf "nosuchhyp\n"; Left ()
+	  | Not_found -> printf "not_found\n"; Left ()
+	  | Failure s -> printf "failure %s\n" s; Left ()
+	  | _ -> Left ()
       ) () cases in
       match res with
 	| Left () -> raise CannotSolveGoal
@@ -705,12 +731,14 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
       try (
 	(* we first apply the substitutions to the pattern *)
 	let p = proof_pattern_subst p s h in
+	if !debug then printf "trying to match hyp pattern: %s :: %s\n" n (proof_pattern2string ctxt p);
 	(* we build an iterator for this pattern *)
 	let it = make_iterator ctxt p in
 	(* we try all possibilities until there is none *)
 	let res = iterator_loop it (fun (name, (prf, lemma)) ->
+	  if !debug then printf "aginst hyp pattern: %s :: %s\n" name (term2string ctxt.ctxt lemma);
 	  try 
-	  (* we try to match the lemma and the pattern *)
+	    (* we try to match the lemma and the pattern *)
 	    let subst' = match_proof_pattern ctxt p lemma in
 	    (* we update the substitution and try further *)
 	    let s = NameMap.merge (fun k v1 v2 ->
@@ -720,17 +748,19 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 		| _ -> raise (Failure "cannot merge the substitutions")
 	    ) subst' s in
 	    let h = NameMap.add n name h in
-	  (* trying further *)
+	    (* trying further *)
 	    Some (hyps_matching ctxt s h tl action goal)
 	  with
-	  (* no match for the hypothesis, try another one *)
+	    (* no match for the hypothesis, try another one *)
 	    | NoPatternMatching -> None
-          (* the goal cannot be solved, try another hypothesis *)
+            (* the goal cannot be solved, try another hypothesis *)
 	    | CannotSolveGoal -> None
+	    | NoSuchHyp -> None
 	) in
 	match res with
 	  | None -> raise CannotSolveGoal
 	  | Some prf -> prf
       ) 	    
       with
-	| NoPatternMatching -> raise CannotSolveGoal
+	| NoPatternMatching -> raise NoPatternMatching
+	| _ -> raise CannotSolveGoal
