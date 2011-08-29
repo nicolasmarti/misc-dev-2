@@ -1,0 +1,21 @@
+begin_problem(template).
+
+list_of_descriptions.
+name({*Template*}).
+author({*Le Thesard Inconnu*}).
+status(unsatisfiable).
+description({*Just a stupid template*}).
+end_of_list.
+
+list_of_symbols.
+    predicates[(P,1),(Q,1),(R,1),(U,1)].
+end_of_list.
+
+list_of_formulae(conjectures).
+
+formula(implies(implies(forall([x], forall([y], exists([z], forall([w], implies(and(P(x),Q(y)), and(R(z),U(w))))))), exists([x], exists([y], and(P(x),Q(y))))), exists([z], R(z)))).
+
+end_of_list.
+
+end_problem.
+

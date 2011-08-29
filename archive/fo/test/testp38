@@ -1,0 +1,7 @@
+(forall x.
+     P(a) /\ (P(x) ==> (exists y. P(y) /\ R(x,y))) ==>
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))) <=>
+   (forall x.
+     (~P(a) \/ P(x) \/ (exists z w. P(z) /\ R(x,w) /\ R(w,z))) /\
+     (~P(a) \/ ~(exists y. P(y) /\ R(x,y)) \/
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))))

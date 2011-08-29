@@ -1,0 +1,25 @@
+begin_problem(template).
+
+list_of_descriptions.
+name({*Template*}).
+author({*Le Thesard Inconnu*}).
+status(unsatisfiable).
+description({*Just a stupid template*}).
+end_of_list.
+
+list_of_symbols.
+    predicates[(p,0),(q,0)].
+end_of_list.
+
+list_of_formulae(conjectures).
+
+formula(
+
+implies(implies(not(implies(p, q)), q), p)
+
+).
+
+end_of_list.
+
+end_problem.
+

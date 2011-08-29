@@ -1,0 +1,16 @@
+p34:
+
+((exists x. forall y. P(x) <=> P(y)) <=>
+    ((exists x. Q(x)) <=> (forall y. Q(y)))) <=>
+   ((exists x. forall y. Q(x) <=> Q(y)) <=>
+    ((exists x. P(x)) <=> (forall y. P(y))))
+
+
+p27:
+
+(exists x. P(x) /\ ~Q(x)) /\
+   (forall x. P(x) ==> R(x)) /\
+   (forall x. U(x) /\ W(x) ==> P(x)) /\
+   (exists x. R(x) /\ ~Q(x)) ==>
+   (forall x. U(x) ==> ~R(x)) ==>
+   (forall x. U(x) ==> ~W(x))

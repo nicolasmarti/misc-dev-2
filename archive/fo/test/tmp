@@ -1,0 +1,25 @@
+p45 =
+(forall x.
+     P(x) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y)) ==>
+       (forall y. G(y) /\ H(x,y) ==> R(y))) /\
+   ~(exists y. L(y) /\ R(y)) /\
+   (exists x. P(x) /\ (forall y. H(x,y) ==>
+     L(y)) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y))) ==>
+   (exists x. P(x) /\ ~(exists y. G(y) /\ H(x,y)))
+
+p38 = 
+(forall x.
+     P(a) /\ (P(x) ==> (exists y. P(y) /\ R(x,y))) ==>
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))) <=>
+   (forall x.
+     (~P(a) \/ P(x) \/ (exists z w. P(z) /\ R(x,w) /\ R(w,z))) /\
+     (~P(a) \/ ~(exists y. P(y) /\ R(x,y)) \/
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))))
+
+p37 =
+(forall z.
+     exists w. forall x. exists y. (P(x,z) ==> P(y,w)) /\ P(y,z) /\
+     (P(y,w) ==> (exists u. Q(u,w)))) /\
+   (forall x z. ~P(x,z) ==> (exists y. Q(y,z))) /\
+   ((exists x y. Q(x,y)) ==> (forall x. R(x,x))) ==>
+   (forall x. exists y. R(x,y))

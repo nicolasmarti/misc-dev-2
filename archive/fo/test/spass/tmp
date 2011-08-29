@@ -1,0 +1,1 @@
+    formula(exists ([x,y], forall ([z], and ((implies((P(x,y)),(and(P(y,z),P(z,z))))),(implies((and(P(x,y),Q(x,y))),(and(Q(x,z),Q(z,z)))))))))

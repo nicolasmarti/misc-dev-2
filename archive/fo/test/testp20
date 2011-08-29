@@ -1,0 +1,2 @@
+(forall x y. exists z. forall w. P(x) /\ Q(y) ==> R(z) /\ U(w))
+   ==> (exists x y. P(x) /\ Q(y)) ==> (exists z. R(z))

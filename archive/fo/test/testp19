@@ -1,0 +1,1 @@
+exists x. forall y z. (P(y) ==> Q(z)) ==> P(x) ==> Q(x)

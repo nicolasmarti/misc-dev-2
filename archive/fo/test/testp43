@@ -1,0 +1,2 @@
+(V x. V y. (Q(x,y) <-> (V z. (P(z,x) <-> P(z,y))))) ->
+(V x. V y. (Q(x,y) <-> Q(y,x)))

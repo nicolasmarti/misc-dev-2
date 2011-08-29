@@ -1,0 +1,42 @@
+
+p34 = ((exists x. forall y. P(x) <=> P(y)) <=>
+    ((exists x. Q(x)) <=> (forall y. Q(y)))) <=>
+   ((exists x. forall y. Q(x) <=> Q(y)) <=>
+    ((exists x. P(x)) <=> (forall y. P(y))))
+
+p37 = (forall z.
+     exists w. forall x. exists y. (P(x,z) ==> P(y,w)) /\ P(y,z) /\
+     (P(y,w) ==> (exists u. Q(u,w)))) /\
+   (forall x z. ~P(x,z) ==> (exists y. Q(y,z))) /\
+   ((exists x y. Q(x,y)) ==> (forall x. R(x,x))) ==>
+   (forall x. exists y. R(x,y))
+
+p38 = (forall x.
+     P(a) /\ (P(x) ==> (exists y. P(y) /\ R(x,y))) ==>
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))) <=>
+   (forall x.
+     (~P(a) \/ P(x) \/ (exists z w. P(z) /\ R(x,w) /\ R(w,z))) /\
+     (~P(a) \/ ~(exists y. P(y) /\ R(x,y)) \/
+     (exists z w. P(z) /\ R(x,w) /\ R(w,z))))
+
+(* 10 sec *)
+p45 = (forall x.
+     P(x) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y)) ==>
+       (forall y. G(y) /\ H(x,y) ==> R(y))) /\
+   ~(exists y. L(y) /\ R(y)) /\
+   (exists x. P(x) /\ (forall y. H(x,y) ==>
+     L(y)) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y))) ==>
+   (exists x. P(x) /\ ~(exists y. G(y) /\ H(x,y)))
+
+(* 21 sec *)
+p46 = (forall x. P(x) /\ (forall y. P(y) /\ H(y,x) ==> G(y)) ==> G(x)) /\
+   ((exists x. P(x) /\ ~G(x)) ==>
+    (exists x. P(x) /\ ~G(x) /\
+               (forall y. P(y) /\ ~G(y) ==> J(x,y)))) /\
+   (forall x y. P(x) /\ P(y) /\ H(x,y) ==> ~J(y,x)) ==>
+   (forall x. P(x) ==> G(x))
+
+(* pas bon ? *)
+gilmore_5 = (forall x. exists y. F(x,y) \/ F(y,x)) /\
+   ((forall x y. F(y,x) ==> F(y,y))
+   ==> exists z. F(z,z))

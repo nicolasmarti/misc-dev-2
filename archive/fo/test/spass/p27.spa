@@ -1,0 +1,25 @@
+begin_problem(template).
+
+list_of_descriptions.
+name({*Template*}).
+author({*Le Thesard Inconnu*}).
+status(unsatisfiable).
+description({*Just a stupid template*}).
+end_of_list.
+
+list_of_symbols.
+    predicates[(P,1),(Q,1),(R,1),(W,1),(U,1)].
+end_of_list.
+
+list_of_formulae(conjectures).
+
+formula(
+
+implies(implies(and(and(and(exists([x], and(P(x),not(Q(x)))),forall([x], implies(P(x), R(x)))),forall([x], implies(and(U(x),W(x)), P(x)))),exists([x], and(R(x),not(Q(x))))), forall([x], implies(U(x), not(R(x))))), forall([x], implies(U(x), not(W(x)))))
+
+).
+
+end_of_list.
+
+end_problem.
+

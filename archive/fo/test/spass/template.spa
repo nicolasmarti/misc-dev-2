@@ -1,0 +1,26 @@
+begin_problem(template).
+
+list_of_descriptions.
+name({*Template*}).
+author({*Le Thesard Inconnu*}).
+status(unsatisfiable).
+description({*Just a stupid template*}).
+end_of_list.
+
+list_of_symbols.
+    predicates[(F,2)].
+end_of_list.
+
+list_of_formulae(axioms).
+
+formula(forall([U],exists([V],forall([W],equiv(F(W,V),equal(W,U)))))).
+end_of_list.
+
+list_of_formulae(conjectures).
+
+formula(not(exists([U],forall([V],equiv(F(V,U),forall([W],implies(F(V,W),exists([X],and(F(X,W),not(exists([Y],and(F(Y,W),F(Y,X))))))))))))).
+
+end_of_list.
+
+end_problem.
+

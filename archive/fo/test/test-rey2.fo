@@ -1,0 +1,5 @@
+ (((forall x . forall y . forall z. P[x,y] -> P[y,z] -> P[x,z]) /\
+  (forall x . forall y . forall z. Q[x,y] -> Q[y,z] -> Q[x,z]) /\
+  (forall x . forall y . Q[x,y] -> Q[y,x]) /\
+  (forall x . forall y . P[x,y] \/ Q[x,y]))
+  -> ((forall x . forall y . P[x,y]) \/ (forall x . forall y . Q[x,y])))

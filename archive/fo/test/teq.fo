@@ -1,0 +1,6 @@
+(
+(V x. eq(x,x)) /\
+(V x y.  eq(x, y) -> eq(y, x)) /\
+(V x y z. (eq(x, y) /\ eq(y, z)) -> eq(x,z)) /\ 
+) ->
+True

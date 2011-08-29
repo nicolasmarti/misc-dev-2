@@ -1,0 +1,85 @@
+
+exists y. forall x. P(y) ==> P(x)
+
+exists x. forall y z. (P(y) ==> Q(z)) ==> P(x) ==> Q(x)
+
+(forall x y. exists z. forall w. P(x) /\ Q(y) ==> R(z) /\ U(w))
+   ==> (exists x y. P(x) /\ Q(y)) ==> (exists z. R(z))
+
+(exists x. P ==> Q(x)) /\ (exists x. Q(x) ==> P)
+   ==> (exists x. P <=> Q(x))
+
+(forall x. P <=> Q(x)) ==> (P <=> (forall x. Q(x)))
+
+(forall x. P \/ Q(x)) <=> P \/ (forall x. Q(x))
+
+~(exists x. U(x) /\ Q(x)) /\
+   (forall x. P(x) ==> Q(x) \/ R(x)) /\
+   ~(exists x. P(x) ==> (exists x. Q(x))) /\
+   (forall x. Q(x) /\ R(x) ==> U(x)) ==>
+   (exists x. P(x) /\ R(x))
+
+(exists x. P(x)) /\
+   (forall x. U(x) ==> ~G(x) /\ R(x)) /\
+   (forall x. P(x) ==> G(x) /\ U(x)) /\
+   ((forall x. P(x) ==> Q(x)) \/ (exists x. Q(x) /\ P(x))) ==>
+   (exists x. Q(x) /\ P(x))
+
+((exists x. P(x)) <=> (exists x. Q(x))) /\
+   (forall x y. P(x) /\ Q(y) ==> (R(x) <=> U(y))) ==>
+   ((forall x. P(x) ==> R(x)) <=> (forall x. Q(x) ==> U(x)))
+
+
+(forall x. P(x) ==> (forall x. Q(x))) /\
+   ((forall x. Q(x) \/ R(x)) ==> (exists x. Q(x) /\ R(x))) /\
+   ((exists x. R(x)) ==> (forall x. L(x) ==> M(x))) ==>
+   (forall x. P(x) /\ L(x) ==> M(x))
+
+(exists x. P(x)) /\ (exists x. G(x)) ==>
+   ((forall x. P(x) ==> H(x)) /\ (forall x. G(x) ==> J(x)) <=>
+    (forall x y. P(x) /\ G(y) ==> H(x) /\ J(y)))
+
+(forall x. P(x) \/ G(x) ==> ~H(x)) /\
+   (forall x. (G(x) ==> ~U(x)) ==> P(x) /\ H(x)) ==>
+   (forall x. U(x))
+
+~(exists x. P(x) /\ (G(x) \/ H(x))) /\ (exists x. Q(x) /\ P(x)) /\
+   (forall x. ~H(x) ==> J(x)) ==>
+   (exists x. Q(x) /\ J(x))
+
+(forall x. P(x) /\ (G(x) \/ H(x)) ==> Q(x)) /\
+   (forall x. Q(x) /\ H(x) ==> J(x)) /\
+   (forall x. R(x) ==> H(x)) ==>
+   (forall x. P(x) /\ R(x) ==> J(x))
+
+(forall x. P(a) /\ (P(x) ==> P(b)) ==> P(c)) <=>
+   (forall x. P(a) ==> P(x) \/ P(c)) /\ (P(a) ==> P(b) ==> P(c))
+
+
+exists x y. P(x,y) ==> (forall x y. P(x,y))
+
+(forall x. exists y. P(x,y)) /\
+   (forall x. exists y. G(x,y)) /\
+   (forall x y. P(x,y) \/ G(x,y)
+   ==> (forall z. P(y,z) \/ G(y,z) ==> H(x,z)))
+       ==> (forall x. exists y. H(x,y))
+
+~(exists x. forall y. P(y,x) <=> ~P(y,y))
+
+(exists y. forall x. P(x,y) <=> P(x,x))
+  ==> ~(forall x. exists y. forall z. P(z,y) <=> ~P(z,x))
+
+(forall z. exists y. forall x. P(x,y) <=> P(x,z) /\ ~P(x,x))
+  ==> ~(exists z. forall x. P(x,z))
+
+~(exists y. forall x. P(x,y) <=> ~(exists z. P(x,z) /\ P(z,x)))
+
+(forall x y. Q(x,y) <=> forall z. P(z,x) <=> P(z,y))
+   ==> forall x y. Q(x,y) <=> Q(y,x)
+
+(forall x. P(x) ==> (exists y. G(y) /\ H(x,y)) /\
+   (exists y. G(y) /\ ~H(x,y))) /\
+   (exists x. J(x) /\ (forall y. G(y) ==> H(x,y))) ==>
+   (exists x. J(x) /\ ~P(x))
+
+

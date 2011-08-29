@@ -1,0 +1,1 @@
+(E y. V x. P(x,y)) -> (V x. E y. P(x,y))

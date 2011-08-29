@@ -1,0 +1,7 @@
+(forall x.
+     P(x) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y)) ==>
+       (forall y. G(y) /\ H(x,y) ==> R(y))) /\
+   ~(exists y. L(y) /\ R(y)) /\
+   (exists x. P(x) /\ (forall y. H(x,y) ==>
+     L(y)) /\ (forall y. G(y) /\ H(x,y) ==> J(x,y))) ==>
+   (exists x. P(x) /\ ~(exists y. G(y) /\ H(x,y)))

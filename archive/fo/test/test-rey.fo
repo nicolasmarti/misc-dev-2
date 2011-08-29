@@ -1,0 +1,2 @@
+
+E x. E y. V z. (P(x,y) -> (P(y,z) /\ P(z,z))) /\ ((P(x,y) /\ Q(x,y)) -> (Q(x,z) /\ Q(z,z)))

@@ -1,0 +1,60 @@
+exists x. forall y z.
+      ((F(y) ==> G(y)) <=> F(x)) /\
+      ((F(y) ==> H(y)) <=> G(x)) /\
+      (((F(y) ==> G(y)) ==> H(y)) <=> H(x))
+      ==> F(z) /\ G(z) /\ H(z)
+
+exists x y. forall z.
+        (F(x,z) <=> F(z,y)) /\ (F(z,y) <=> F(z,z)) /\ (F(x,y) <=> F(y,x))
+        ==> (F(x,y) <=> F(x,z))
+
+
+exists x. forall y z.
+        ((F(y,z) ==> (G(y) ==> H(x))) ==> F(x,x)) /\
+        ((F(z,x) ==> G(x)) ==> H(z)) /\
+        F(x,y)
+        ==> F(z,z)
+
+
+exists x y. forall z.
+        (F(x,y) ==> F(y,z) /\ F(z,z)) /\
+        (F(x,y) /\ G(x,y) ==> G(x,z) /\ G(z,z))
+
+(forall x. exists y. F(x,y) \/ F(y,x)) /\
+   (forall x y. F(y,x) ==> F(y,y))
+   ==> exists z. F(z,z)
+
+forall x. exists y.
+        (exists u. forall v. F(u,x) ==> G(v,u) /\ G(u,x))
+        ==> (exists u. forall v. F(u,y) ==> G(v,u) /\ G(u,y)) \/
+            (forall u v. exists w. G(v,u) \/ H(w,y,u) ==> G(u,w))
+
+
+(forall x. K(x) ==> exists y. L(y) /\ (F(x,y) ==> G(x,y))) /\
+   (exists z. K(z) /\ forall u. L(u) ==> F(z,u))
+   ==> exists v w. K(v) /\ L(w) /\ G(v,w)
+
+exists x. forall y z.
+        ((F(y,z) ==> (G(y) ==> (forall u. exists v. H(u,v,x)))) ==> F(x,x)) /\
+        ((F(z,x) ==> G(x)) ==> (forall u. exists v. H(u,v,z))) /\
+        F(x,y)
+        ==> F(z,z)
+
+forall x. exists y. forall z.
+        ((forall u. exists v. F(y,u,v) /\ G(y,u) /\ ~H(y,x))
+          ==> (forall u. exists v. F(x,u,v) /\ G(z,u) /\ ~H(x,z))
+             ==> (forall u. exists v. F(x,u,v) /\ G(y,u) /\ ~H(x,y))) /\
+        ((forall u. exists v. F(x,u,v) /\ G(y,u) /\ ~H(x,y))
+         ==> ~(forall u. exists v. F(x,u,v) /\ G(z,u) /\ ~H(x,z))
+             ==> (forall u. exists v. F(y,u,v) /\ G(y,u) /\ ~H(y,x)) /\
+                 (forall u. exists v. F(z,u,v) /\ G(y,u) /\ ~H(z,y)))
+
+exists x. exists y. forall z.
+        (F(x,y) ==> (F(y,z) /\ F(z,z))) /\
+        ((F(x,y) /\ G(x,y)) ==> (G(x,z) /\ G(z,z)))
+
+(forall x y z. P(x,y) ==> P(y,z) ==> P(x,z)) /\
+   (forall x y z. Q(x,y) ==> Q(y,z) ==> Q(x,z)) /\
+   (forall x y. Q(x,y) ==> Q(y,x)) /\
+   (forall x y. P(x,y) \/ Q(x,y))
+   ==> (forall x y. P(x,y)) \/ (forall x y. Q(x,y))

@@ -1,0 +1,12 @@
+(
+ (V x. V y. V z. (P(x,y) -> P(y,z) -> P(x,z))) /\
+ (V x. V y. V z. (Q(x,y) -> Q(y,z) -> Q(x,z))) /\
+ (V x. V z. (Q(x,y) -> Q(y,x))) /\
+ (V x. V y. (P(x,y) \/ Q(x,y)))       
+
+) -> (
+
+        (V x. V y. P(x,y)) \/ (V x. V y. Q(x,y))
+
+)
+

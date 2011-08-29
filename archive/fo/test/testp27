@@ -1,0 +1,6 @@
+(exists x. P(x) /\ ~Q(x)) /\
+   (forall x. P(x) ==> R(x)) /\
+   (forall x. U(x) /\ W(x) ==> P(x)) /\
+   (exists x. R(x) /\ ~Q(x)) ==>
+   (forall x. U(x) ==> ~R(x)) ==>
+   (forall x. U(x) ==> ~W(x))

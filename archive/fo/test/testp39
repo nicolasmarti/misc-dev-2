@@ -1,0 +1,1 @@
+~(exists x. forall y. P(y,x) <=> ~P(y,y))
