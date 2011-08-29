@@ -6,6 +6,9 @@ open Printf
   This is an attempt to have a facility for building proof s
 *)
 
+let debug = ref false
+
+
 (*
   first we have the hypothesis 
   of the form prf * lemma 
@@ -272,10 +275,14 @@ let rec next_hypothesis (it: hypothesises_iterator) : (string * hypothesis) =
     it.next_hyp <- NameMap.remove hyp_name it.next_hyp;
     hyp_name, hyp
   with
-    | Not_found -> let hyps_name, hyps = NameMap.choose it.next_hyps in
-		   it.next_hyps <- NameMap.remove hyps_name it.next_hyps;
-		   it.next_hyp <- hyps;
-		   next_hypothesis it
+    | Not_found -> 
+      try (
+	let hyps_name, hyps = NameMap.choose it.next_hyps in
+	it.next_hyps <- NameMap.remove hyps_name it.next_hyps;
+	it.next_hyp <- hyps;
+	next_hypothesis it
+      ) with
+	| Not_found -> raise NoMoreHypothesis	       
 
 (* iterator loop *)
 let rec iterator_loop (it: hypothesises_iterator) (f: string * hypothesis -> 'a option) : 'a option =
@@ -304,9 +311,12 @@ exception NoPatternMatching
 
 (* we match proof_pattern with a term *)
 let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) : proof_subst =
+  if !debug then printf "trying unification: %s Vs %s\n" (proof_pattern2string ctxt p) (term2string ctxt.ctxt te); flush Pervasives.stdout;
   (* for sake of optimization we catch all impossible cases before using term unification *)
   match term2category te, term2category (proof_pattern2term ctxt p) with
-    | cat1, cat2 when cat2 <> "??" && cat1 <> cat2 -> raise NoPatternMatching
+    | cat1, cat2 when cat2 <> "??" && cat1 <> cat2 -> 
+      if !debug then printf "%s <> %s\n" cat1 cat2;
+      raise NoPatternMatching
     (* finally here we do not know *)
     | _ ->
 
@@ -337,14 +347,20 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
 	let te' = 
 	  try 
 	    let te', _ = typeinfer ctxt.defs ctxt' te' in
+	    if !debug then printf "passed the typeinference\n";
 	    unification_term_term ctxt.defs ctxt' te' te
 	  with
-	    | DoudouException _ -> raise NoPatternMatching
+	    | DoudouException err -> 
+	      if !debug then printf "cannot pattern match %s and %s: %s\n" (proof_pattern2string ctxt p) (term2string !ctxt' te) (error2string err); flush Pervasives.stdout;
+	      raise NoPatternMatching
 	in
 	(*
 	  we just check that there is no free variables in the result
 	*)
-	if not (IndexSet.is_empty (fv_term te')) then raise NoPatternMatching;
+	if not (IndexSet.is_empty (fv_term te')) then (
+	  if !debug then printf "still free vars in %s\n" (term2string ctxt.ctxt te); flush Pervasives.stdout;
+	  raise NoPatternMatching;
+	);
 	(*
 	  now we could recreate a substitution by replace the free variable of 
 	  subst to their value, using the context substitution    
@@ -355,10 +371,10 @@ let rec match_proof_pattern (ctxt: proof_context) (p: proof_pattern) (te: term) 
 	subst 
       ) with
 	| DoudouException err ->
-	  printf "%s\n" (error2string err);
+	  if !debug then printf "DoudouException: %s\n" (error2string err);
 	  raise NoPatternMatching
 
-	| _-> raise NoPatternMatching
+	| NoPatternMatching -> raise NoPatternMatching
 
 (* we transform a pattern into a term *)
 and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
@@ -376,13 +392,13 @@ and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
 and proof_pattern_subst (p: proof_pattern) (s: proof_subst) (h: hyp_subst) : proof_pattern =
   match p with
     | PPAVar | PPCste _ | PPTerm _ -> p
-    | PPType n -> (try PPType (NameMap.find n h) with | _ -> p)
-    | PPProof n -> (try PPProof (NameMap.find n h) with | _ -> p)
+    | PPType n -> (try PPType (NameMap.find n h) with | Not_found -> p)
+    | PPProof n -> (try PPProof (NameMap.find n h) with | Not_found -> p)
     | PPVar v -> (
       try
 	PPTerm (NameMap.find v s)
       with
-	| _ -> p
+	| Not_found -> p
     )
     | PPApp (p, args) -> PPApp (proof_pattern_subst p s h, List.map (fun (arg, n) -> proof_pattern_subst arg s h, n) args)
     | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s h, proof_pattern_subst p2 s h)
@@ -404,7 +420,7 @@ let make_iterator (ctxt: proof_context) (p: proof_pattern) : hypothesises_iterat
       (* general pattern -> we take everything *)
       | "??" -> { next_hyps = ctxt.hyps; next_hyp = NameMap.empty }
       (* for the rest we take the hypothesis of the same category *)
-      | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | _ -> { next_hyps = NameMap.empty; next_hyp = NameMap.empty })
+      | cat -> (try { next_hyps = NameMap.empty; next_hyp = NameMap.find cat ctxt.hyps } with | Not_found -> { next_hyps = NameMap.empty; next_hyp = NameMap.empty })
   in
   iterator
 
@@ -461,8 +477,8 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
     | Exact p -> Exact (proof_pattern_subst p s h)
     | PartApply (p, t) -> PartApply (proof_pattern_subst p s h, tactic_subst t s h)
     | Or ts -> Or (List.map (fun t -> tactic_subst t s h) ts)
-    | AddHyp (n, prf, lemma, t) -> AddHyp ((try NameMap.find n h with | _ -> n), proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
-    | DelHyp (n, t) -> DelHyp ((try NameMap.find n h with | _ -> n), tactic_subst t s h) 
+    | AddHyp (n, prf, lemma, t) -> AddHyp ((try NameMap.find n h with | Not_found -> n), proof_pattern_subst prf s h, proof_pattern_subst lemma s h, tactic_subst t s h)
+    | DelHyp (n, t) -> DelHyp ((try NameMap.find n h with | Not_found -> n), tactic_subst t s h) 
     | Intro (l, t) -> Intro (l, 
 			     (* from the hyp subst we remove the one comming from the intro *)
 			     tactic_subst t s (List.fold_left (fun acc hd -> NameMap.remove hd acc) h l)
@@ -483,8 +499,6 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
 
   given a proof_context and a goal, it returns a proof
 *)
-
-let debug = ref false
 
 (* this function apply to a term a free variable for each of its remaining arguments *)
 let rec complete_explicit_arguments (ctxt: context ref) (te: term) (ty: term) : index list * term =
@@ -551,7 +565,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	| DoudouException err ->
 	  printf "fail in exact: %s\n" (error2string err);
 	  raise CannotSolveGoal
-	| _ -> raise CannotSolveGoal
+	| CannotSolveGoal -> raise CannotSolveGoal
     )
 
     | PartApply (prf, t) -> 
@@ -682,10 +696,23 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 
     (*************************)
 
-    | TacticName s ->
-      tactic_semantics (Hashtbl.find global_tactics s) ctxt goal
+    | TacticName s -> (
+      let t = (
+      try 
+	Hashtbl.find global_tactics s
+      with 
+	| Not_found -> 
+	  printf "tactic '%s'\n is unknown\n" s; 
+	  Hashtbl.iter (fun key value -> 
+	    printf "Tactic '%s'\n" key
+	  )  global_tactics;
+	  raise CannotSolveGoal
+      ) in 
+      tactic_semantics t ctxt goal
+    )
 
     | AddHyp (s, prf, lemma, t) -> (
+	if !debug then printf "create new hyp %s :: %s\n" (proof_pattern2string ctxt prf) (proof_pattern2string ctxt lemma);
 	(* build both terms *)
 	let prf = proof_pattern2term ctxt prf in
 	let lemma = proof_pattern2term ctxt lemma in
@@ -693,7 +720,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	let ctxt' = ref ctxt.ctxt in
 	let lemma, _ = typecheck ctxt.defs ctxt' lemma (Type nopos) in
 	let prf, lemma = typecheck ctxt.defs ctxt' prf lemma in
-	(*printf "AddHyp: (%s, %s)\n" (term2string !ctxt' prf) (term2string !ctxt' lemma);*)
+	if !debug then printf "AddHyp: (%s, %s)\n" (term2string !ctxt' prf) (term2string !ctxt' lemma);
 	(* just check that there is no free var *)
 	if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
 	(* add the hypothesis *)
@@ -729,10 +756,6 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  | NoPatternMatching -> if !debug then printf "Case: no pattern-matching with goal/hyps\n"; Left ()
 	  | CannotSolveGoal -> if !debug then printf "pattern matched goal / hyps but further tactics failed\n"; Left ()
 	  | DoudouException err -> printf "%s\n" (error2string err); Left ()
-	  | NoSuchHyp -> printf "nosuchhyp\n"; Left ()
-	  | Not_found -> printf "not_found\n"; Left ()
-	  | Failure s -> printf "failure %s\n" s; Left ()
-	  | _ -> Left ()
       ) () cases in
       match res with
 	| Left () -> raise CannotSolveGoal
@@ -741,7 +764,9 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps: (string * proof_pattern) list) (action: tactic) (goal: term) : term =
   match hyps_ps with
     (* all hypothesis patterns have been matched, we need to try apply the tactics *)
-    | [] -> tactic_semantics (tactic_subst action s h) ctxt goal
+    | [] -> 
+      if !debug then printf "run the case tactics!\n";
+      tactic_semantics (tactic_subst action s h) ctxt goal
 
     (* else we need to try matching the next pattern *)
     | (n, p)::tl ->
@@ -757,8 +782,8 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 	  if !debug then printf "aginst hyp pattern: %s :: %s\n" name (term2string ctxt.ctxt lemma);
 	  try 
 	    (* we try to match the lemma and the pattern *)
-	    (*printf "pattern matching hyp: %s Vs %s\n" (proof_pattern2string ctxt p) (term2string ctxt.ctxt lemma); flush Pervasives.stdout;*)
 	    let subst' = match_proof_pattern ctxt p lemma in
+	    if !debug then printf "pattern matching hyp: %s Vs %s\n" (proof_pattern2string ctxt p) (term2string ctxt.ctxt lemma); flush Pervasives.stdout;
 	    (* we update the substitution and try further *)
 	    let s = NameMap.merge (fun k v1 v2 ->
 	      match v1, v2 with
@@ -782,4 +807,4 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
       ) 	    
       with
 	| NoPatternMatching -> raise NoPatternMatching
-	| _ -> raise CannotSolveGoal
+	| CannotSolveGoal -> raise CannotSolveGoal
