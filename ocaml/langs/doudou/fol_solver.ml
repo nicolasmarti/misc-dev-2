@@ -184,6 +184,7 @@ let _ = Hashtbl.add global_tactics "tauto" tauto
 
 let cste_not = constante_symbol !fol_defs (Name "[~)")
 let cste_contradiction = constante_symbol !fol_defs (Name "contradiction")
+let cste_congr = constante_symbol !fol_defs (Name "congr")
 
 let sature : tactic =
   Msg ("sature: ",
@@ -211,7 +212,15 @@ let sature : tactic =
     )
     );
 
-    (* for the last rule, we need to implement the HO unification*)
+    PPAVar,
+    ["H1", PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "y", Explicit]); "H2", PPApp (PPVar "P", [PPVar "x", Explicit])],
+    Msg ("sature congruence\n", AddHyp ("H", PPApp (PPCste cste_congr, [PPVar "P", Explicit; 
+					    PPVar "x", Explicit; 
+					    PPVar "y", Explicit; 
+					    PPProof "H1", Explicit; 
+					    PPProof "H2", Explicit]), PPApp (PPVar "P", [PPVar "y", Explicit]),
+	    DelHyp ("H2", TacticName "sature")
+    ));
 
     PPAVar, [], TacticName "fol_body"
   ]
@@ -276,33 +285,52 @@ let fol_solver (s: string) : unit =
   let lines = stream_of_string s in
   let pb = build_parserbuffer lines in
   let pos = cur_pos pb in
-  try 
-    let te = parse_term !fol_defs pos pb in
-    (* we typecheck the fol formula again Type *)
-    let ctxt = ref empty_context in
-    let te, _ = typecheck !fol_defs ctxt te (Type nopos) in
-    (* we ensure there is not free variable *)
-    let [te] = flush_fvars ctxt [te] in
-    if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
-    (* we assure that the term is a valid formula *)
-    if not (is_formula !fol_defs te) then (
-      printf "%s\n" (term2string !ctxt te);
-      raise (DoudouException (FreeError "The lemma is not a valid first order formula"))
-    );
-    (* and we use the tactics *)
-    let proof_ctxt = empty_proof_context !fol_defs in
-    let prf = tactic_semantics fol proof_ctxt te in
-    (* typecheck it *)
-    let prf, te = typecheck !fol_defs (ref empty_context) prf te in
-    printf "Proof Completed!\n%s\n\t::\n%s\n\n" (term2string empty_context prf) (term2string empty_context te); flush Pervasives.stdout;
-  with
-    | NoMatch -> 
-      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
-      raise Pervasives.Exit
-    | DoudouException err -> 
+  let te = 
+    try 
+      parse_term !fol_defs pos pb 
+    with
+      | NoMatch -> 
+	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	raise Pervasives.Exit
+  in
+  let te = 
+    try 
+      (* we typecheck the fol formula again Type *)
+      let ctxt = ref empty_context in
+      let te, _ = typecheck !fol_defs ctxt te (Type nopos) in
+      (* we ensure there is not free variable *)
+      let [te] = flush_fvars ctxt [te] in
+      if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
+      (* we assure that the term is a valid formula *)
+      if not (is_formula !fol_defs te) then (
+	printf "%s\n" (term2string !ctxt te);
+	raise (DoudouException (FreeError "The lemma is not a valid first order formula"))
+      );
+      te
+    with
+      | DoudouException err -> 
       (* we restore the context and defs *)
-      printf "error:\n%s\n" (error2string err);
-      raise Pervasives.Exit
-    | CannotSolveGoal ->
-      printf "cannot find a proof\n";
-
+	printf "error:\n%s\n" (error2string err);
+  	raise Pervasives.Exit
+  in
+  let prf = 
+    try
+      (* and we use the tactics *)
+      let proof_ctxt = empty_proof_context !fol_defs in
+      tactic_semantics fol proof_ctxt te
+    with
+      | CannotSolveGoal ->
+	printf "cannot find a proof for: %s\n" (term2string empty_context te);
+	raise Pervasives.Exit
+  in
+  (* typecheck it *)
+  let prf, te = 
+    try 
+      typecheck !fol_defs (ref empty_context) prf te 
+    with
+      | DoudouException err -> 
+	(* we restore the context and defs *)
+	printf "error:\n%s\n" (error2string err);
+	raise Pervasives.Exit
+  in
+  printf "Proof Completed!\n%s\n\t::\n%s\n\n" (term2string empty_context prf) (term2string empty_context te); flush Pervasives.stdout;
