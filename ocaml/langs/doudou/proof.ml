@@ -85,10 +85,16 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
   (* find the category (create an empty map of hypothesises if it does not exists) *)
   let category = term2category lemma in
   let category_hyps = try NameMap.find category hyps with | Not_found -> NameMap.empty in
-  (* grab the names of this category hypothesis, and generate a fresh name from the given one *)
-  let category_hyps_names = NameMap.fold (fun k _ acc -> NameSet.add k acc) category_hyps NameSet.empty in
-  let name = String.concat "." [category; name] in
+  (* grab the names of all category hypothesis, and generate a fresh name from the given one *)
+  let category_hyps_names = NameMap.fold (fun k value acc -> 
+    NameMap.fold (fun k _ acc -> 
+      let index = (String.index k '.') in
+      let n = String.sub k (index + 1) (String.length k - index - 1) in
+      NameSet.add n acc
+    ) value acc
+  ) hyps NameSet.empty in
   let name = fresh_name ~basename:name category_hyps_names in
+  let name = String.concat "." [category; name] in
   (* and finally update the map of hypothesis *)
   (* please note that we do not check for duplicate *)
   let category_hyps = NameMap.add name hyp category_hyps in
@@ -96,10 +102,34 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
 
 exception NoSuchHyp 
 
+let find_hyp_by_noprefixname (hyps: hypothesises) (name: string) : string =
+  let found = NameMap.fold (fun k value acc ->
+    match acc with
+      | Some _ -> acc
+      | None ->
+	if NameMap.exists (fun k _ ->
+	  let index = (String.index k '.') in
+	  let postfix = String.sub k (index + 1) (String.length k - index - 1) in
+	  postfix = name
+	) value then Some k else None
+  ) hyps None in
+  match found with
+    | None -> raise Not_found
+    | Some res -> res  
+
 (* remove an hypothesis by name *)
 let remove_hyp_by_name (hyps: hypothesises) (name: string) : hypothesises =
     try 
-      let prefix = String.sub name 0 (String.index name '.') in    
+      let name, prefix = 
+	try 
+	  name, String.sub name 0 (String.index name '.')
+	with
+	  | Not_found ->
+	    (* it means that we are refering an hypotheis without prefix *)
+	    (* so we are looking for the hypothesis name in each category *)
+	    let prefix = find_hyp_by_noprefixname hyps name in
+	    String.concat "." [prefix; name], prefix
+      in
       NameMap.add prefix (NameMap.remove name (NameMap.find prefix hyps)) hyps
     with
       | Not_found -> raise NoSuchHyp 
@@ -108,7 +138,15 @@ let remove_hyp_by_name (hyps: hypothesises) (name: string) : hypothesises =
 (* get an hypothesis by name *)
 let get_hyp_by_name (hyps: hypothesises) (name: string) : hypothesis =
     try 
-      let prefix = String.sub name 0 (String.index name '.') in
+      let name, prefix = try 
+	  name, String.sub name 0 (String.index name '.')
+	with
+	  | Not_found ->
+	    (* it means that we are refering an hypotheis without prefix *)
+	    (* so we are looking for the hypothesis name in each category *)
+	    let prefix = find_hyp_by_noprefixname hyps name in
+	    String.concat "." [prefix; name], prefix
+      in
       NameMap.find name (NameMap.find prefix hyps)
     with
       | Not_found -> raise NoSuchHyp 
@@ -263,7 +301,6 @@ type hyp_subst = string NameMap.t
 type hypothesises_iterator = 
     { mutable next_hyps : hypothesises;
       mutable next_hyp : hypothesis NameMap.t;
-      mutable hyp_names: NameSet.t
     }
 
 exception NoMoreHypothesis
@@ -385,8 +422,8 @@ and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
     | PPVar v -> TName (Name (String.concat "" ["?"; v]), nopos)
     | PPImpl (p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
-    | PPProof s -> fst (get_hyp_by_name ctxt.hyps s)
-    | PPType s -> snd (get_hyp_by_name ctxt.hyps s)
+    | PPProof s ->  (try fst (get_hyp_by_name ctxt.hyps s) with | NoSuchHyp -> TName (Name (String.concat "" ["proof("; s; ")"]), nopos))
+    | PPType s -> (try snd (get_hyp_by_name ctxt.hyps s) with | NoSuchHyp -> TName (Name (String.concat "" ["type("; s; ")"]), nopos))
     | PPTerm te -> te
 
 (* apply substitution into a pattern *)
@@ -480,6 +517,8 @@ let rec tactic2token (ctxt: proof_context) (t: tactic) : token =
     | Intro (names, t) -> Box [Verbatim "Intro"; Space 1; Box (intercalate (Space 1) (List.map (fun n -> Verbatim n) names)); Verbatim ";"; Space 1; tactic2token ctxt t]
     | Exact p ->
       Box [Verbatim "Exact"; Space 1; proof_pattern2token ctxt p]
+    | ShowGoal t ->
+      Box [Verbatim "ShowGoal"; Verbatim ":"; Space 1; tactic2token ctxt t]
 
 let tactic2string (ctxt: proof_context) (t: tactic) : string =
   let token = tactic2token ctxt t in
@@ -614,6 +653,15 @@ and tactic_parser (ctxt: proof_context) (pb: parserbuffer) : tactic = begin
     let pp = proof_pattern_parser ctxt pb in
     Exact pp
   )
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "ShowGoal" pb in
+    let () = whitespaces pb in
+    let () = word ";" pb in
+    let () = whitespaces pb in
+    let t = tactic_parser ctxt pb in
+    ShowGoal t
+  )
 end pb
 
 (*
@@ -676,6 +724,7 @@ type tactics_dict = (string, tactic) Hashtbl.t
 let global_tactics : tactics_dict = Hashtbl.create 50
 
 let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
+  if !debug then printf "tactic: %s\n" (tactic2string ctxt t); flush Pervasives.stdout;
   (*
   printf "tactic: %s\n" (tactic2string t); flush Pervasives.stdout;
   printf "on goal: %s\n" (term2string ctxt.ctxt goal); flush Pervasives.stdout;
@@ -751,7 +800,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
       in
       if t = Fail then raise CannotSolveGoal else
 	try
-	  printf "entered tactic: %s\n" (tactic2string ctxt t);
+	  printf "entered tactic: %s\n" (tactic2string ctxt t); flush Pervasives.stdout;
 	  tactic_semantics t ctxt goal
 	with
 	  | DoudouException err ->
@@ -762,6 +811,8 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	    tactic_semantics Interactive ctxt goal
 	  | CannotSolveGoal ->
 	    printf "the tactic does not solve the goal\n";
+	    tactic_semantics Interactive ctxt goal
+	  | NoSuchHyp ->
 	    tactic_semantics Interactive ctxt goal
     )
     | Or ts -> (

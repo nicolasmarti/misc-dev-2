@@ -283,4 +283,4 @@ let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
 
 let _ = printf "\n\n------------------------------------------- Interactive Proof Mode tests  -------------------------------------------------\n\n"
 
-let _ = tactic_solver (empty_defs ()) (ref empty_context) Interactive goal2
+let _ = debug := true; tactic_solver (empty_defs ()) (ref empty_context) Interactive goal2
