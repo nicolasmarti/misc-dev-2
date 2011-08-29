@@ -276,14 +276,14 @@ let _ = Hashtbl.add global_tactics "FOL" fol
 (*                one solver entry: a string                     *)
 (*****************************************************************)
 
-let fol_solver (s: string) : unit = 
+let fol_solver (defs: defs ref) (s: string) : unit = 
   (* we set the parser *)
   let lines = stream_of_string s in
   let pb = build_parserbuffer lines in
   let pos = cur_pos pb in
   let te = 
     try 
-      parse_term !fol_defs pos pb 
+      parse_term !defs pos pb 
     with
       | NoMatch -> 
 	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
@@ -293,12 +293,12 @@ let fol_solver (s: string) : unit =
     try 
       (* we typecheck the fol formula again Type *)
       let ctxt = ref empty_context in
-      let te, _ = typecheck !fol_defs ctxt te (Type nopos) in
+      let te, _ = typecheck !defs ctxt te (Type nopos) in
       (* we ensure there is not free variable *)
       let [te] = flush_fvars ctxt [te] in
       if not (IndexSet.is_empty (fv_term te)) then raise (DoudouException (FreeError "There is still free variable in the term after typechecking!"));
       (* we assure that the term is a valid formula *)
-      if not (is_formula !fol_defs te) then (
+      if not (is_formula !defs te) then (
 	printf "%s\n" (term2string !ctxt te);
 	raise (DoudouException (FreeError "The lemma is not a valid first order formula"))
       );
@@ -312,7 +312,7 @@ let fol_solver (s: string) : unit =
   let prf = 
     try
       (* and we use the tactics *)
-      let proof_ctxt = empty_proof_context !fol_defs in
+      let proof_ctxt = empty_proof_context !defs in
       tactic_semantics fol proof_ctxt te
     with
       | CannotSolveGoal ->
@@ -322,7 +322,7 @@ let fol_solver (s: string) : unit =
   (* typecheck it *)
   let prf, te = 
     try 
-      typecheck !fol_defs (ref empty_context) prf te 
+      typecheck !defs (ref empty_context) prf te 
     with
       | DoudouException err -> 
 	(* we restore the context and defs *)

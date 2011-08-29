@@ -251,26 +251,29 @@ open Fol
 
 open Fol_solver
 
-let _ = fol_solver "true"
+let fol_tests_def = ref (!fol_defs)
+let fol_tests_ctxt = ref (!fol_ctxt)
+
+let _ = fol_solver fol_tests_def "true"
 
 (* we enter constant symbols *)
-let _ = process_definition fol_defs fol_ctxt "A :: Type"
-let _ = process_definition fol_defs fol_ctxt "B :: Type"
-let _ = fol_solver "false -> A"
-let _ = fol_solver "(A /\\ B) -> (B /\\ A)"
-let _ = fol_solver "(A \\/ B) -> (B \\/ A)"
+let _ = process_definition fol_tests_def fol_tests_ctxt "A :: Type"
+let _ = process_definition fol_tests_def fol_tests_ctxt "B :: Type"
+let _ = fol_solver fol_tests_def "false -> A"
+let _ = fol_solver fol_tests_def "(A /\\ B) -> (B /\\ A)"
+let _ = fol_solver fol_tests_def "(A \\/ B) -> (B \\/ A)"
 
 
-let _ = process_definition fol_defs fol_ctxt "C :: Type"
-let _ = fol_solver "(A /\\ B /\\ C) -> (C /\\ B /\\ A)"
-let _ = fol_solver "(A \\/ B \\/ C) -> (C \\/ B \\/ A)"
-let _ = fol_solver "(A \\/ (B /\\ C)) -> (C \\/ A) /\\ (A \\/ B))"
+let _ = process_definition fol_tests_def fol_tests_ctxt "C :: Type"
+let _ = fol_solver fol_tests_def "(A /\\ B /\\ C) -> (C /\\ B /\\ A)"
+let _ = fol_solver fol_tests_def "(A \\/ B \\/ C) -> (C \\/ B \\/ A)"
+let _ = fol_solver fol_tests_def "(A \\/ (B /\\ C)) -> (C \\/ A) /\\ (A \\/ B))"
 
-let _ = process_definition fol_defs fol_ctxt "ty :: Type"
-let _ = process_definition fol_defs fol_ctxt "P :: ty -> Type"
-let _ = process_definition fol_defs fol_ctxt "x :: ty"
-let _ = process_definition fol_defs fol_ctxt "y :: ty"
-let _ = process_definition fol_defs fol_ctxt "z :: ty"
+let _ = process_definition fol_tests_def fol_tests_ctxt "ty :: Type"
+let _ = process_definition fol_tests_def fol_tests_ctxt "P :: ty -> Type"
+let _ = process_definition fol_tests_def fol_tests_ctxt "x :: ty"
+let _ = process_definition fol_tests_def fol_tests_ctxt "y :: ty"
+let _ = process_definition fol_tests_def fol_tests_ctxt "z :: ty"
 
-let _ = fol_solver "P x -> x = y -> y = z -> P z"
+let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
 
