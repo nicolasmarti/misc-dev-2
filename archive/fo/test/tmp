@@ -23,3 +23,9 @@ p37 =
    (forall x z. ~P(x,z) ==> (exists y. Q(y,z))) /\
    ((exists x y. Q(x,y)) ==> (forall x. R(x,x))) ==>
    (forall x. exists y. R(x,y))
+------------------------------
+
+P(?aaaa) --> (ALL x.P(x));
+
+(P(?aaaa) --> (ALL x.Q(x))) --> (ALL x. P(x) --> Q(x));
+
