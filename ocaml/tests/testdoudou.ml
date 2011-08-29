@@ -266,3 +266,11 @@ let _ = fol_solver "(A /\\ B /\\ C) -> (C /\\ B /\\ A)"
 let _ = fol_solver "(A \\/ B \\/ C) -> (C \\/ B \\/ A)"
 let _ = fol_solver "(A \\/ (B /\\ C)) -> (C \\/ A) /\\ (A \\/ B))"
 
+let _ = process_definition fol_defs fol_ctxt "ty :: Type"
+let _ = process_definition fol_defs fol_ctxt "P :: ty -> Type"
+let _ = process_definition fol_defs fol_ctxt "x :: ty"
+let _ = process_definition fol_defs fol_ctxt "y :: ty"
+let _ = process_definition fol_defs fol_ctxt "z :: ty"
+
+let _ = fol_solver "P x -> x = y -> y = z -> P z"
+
