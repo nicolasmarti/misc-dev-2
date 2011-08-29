@@ -1,0 +1,23 @@
+this is a list of features to implement/remarks
+
+* doudou:
+  - implements Type stratification + test of universe consistency
+  - implements Inductive + test for constructor positivity + automatic generation of induction principle
+  - implements Inductive types destruction
+  - implements terminaison test
+  - implements test for completeness of function
+  - implements loading/saving of stores
+  - fix the parser in order to properly use leftmost
+
+* proof:
+  - redo a clean implementation (separating cleanly hypothesises, patterns, and tactics)
+  - proper parser/pprinter for pattern, tactics
+
+* theories:
+  - define basic theories: Logic, Eq, ... (c.f. those in calculus of computation, ...)
+  - define tactics interface for a given logic (saturation, tautology, splithyp, splitgoal)
+  - reuse both point in order to implem a tactic a la oppen-nelson/shostak/CC(X)/DPLL(X)/...
+
+* app:  
+  - implement an exec merging the three previous points + a mode in proof general 
+  - look for a mini why, but with the theory in the LF, and the lang outside (generating proof context for verifying steps)
