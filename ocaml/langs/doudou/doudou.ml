@@ -156,7 +156,7 @@ exception DoudouException of doudou_error
 (* the last element of the list *)
 let rec last (l: 'a list) : 'a =
   match l with 
-    | [] -> raise (Failure "last: empty list")
+    | [] -> raise (DoudouException (FreeError "last: empty list"))
     | hd::[] -> hd
     | hd :: tl -> last tl
 
@@ -164,7 +164,7 @@ let rec last (l: 'a list) : 'a =
 let rec take (n: int) (l: 'a list) :'a list =
   match n with
     | 0 -> []
-    | i when i < 0 -> raise (Invalid_argument "take")
+    | i when i < 0 -> raise (DoudouException (FreeError "take"))
     | _ -> 
       match l with
 	| [] -> []
@@ -173,7 +173,7 @@ let rec take (n: int) (l: 'a list) :'a list =
 let rec drop (n: int) (l: 'a list) :'a list =
   match n with
     | 0 -> l
-    | i when i < 0 -> raise (Invalid_argument "drop")
+    | i when i < 0 -> raise (DoudouException (FreeError "drop"))
     | _ -> 
       match l with
 	| [] -> []
@@ -182,7 +182,7 @@ let rec drop (n: int) (l: 'a list) :'a list =
 (* build a list of the same element of size n *)
 let rec replicate (e: 'a) (n: int) : 'a list =
   match n with
-    | _ when n < 0 -> raise (Failure "replicate")
+    | _ when n < 0 -> raise (DoudouException (FreeError "replicate"))
     | 0 -> []
     | _ -> e :: replicate e (n-1)
 
@@ -465,6 +465,28 @@ let rec construct_lambda (l: (symbol * term * nature * pos) list) (body: term) :
     | [] -> body
     | hd :: tl -> Lambda (hd, construct_lambda tl body, nopos)
 
+(* this is the equality modulo position/app/... *)
+let rec eq_term (te1: term) (te2: term) : bool =
+  match te1, te2 with
+    | Type _, Type _ -> true
+    | Cste (s1, _), Cste (s2, _) -> s1 = s2
+    | Obj (o1, _), Obj (o2, _) -> o1 = o2
+    | TVar (i1, _), TVar (i2, _) -> i1 = i2
+    | AVar _, AVar _ -> true
+    | TName (s1, _), TName (s2, _) -> s1 = s2
+    | Impl ((s1, ty1, n1, _), te1, _), Impl ((s2, ty2, n2, _), te2, _) ->
+	s1 = s2 && eq_term ty1 ty2 && n1 = n2 && eq_term te1 te2
+    | Lambda ((s1, ty1, n1, _), te1, _), Lambda ((s2, ty2, n2, _), te2, _) ->
+      s1 = s2 && eq_term ty1 ty2 && n1 = n2 && eq_term te1 te2
+    | App (te1, args1, _), App (te2, args2, _) when List.length args1 = List.length args2 ->
+      List.fold_left (fun acc ((arg1, n1), (arg2, n2)) -> acc && n1 = n2 && eq_term arg1 arg2) (eq_term te1 te2) (List.combine args1 args2)
+    | App (App (te1, args1,_), args1', _), _ ->
+      eq_term (App (te1, args1 @ args1', nopos)) te2
+    | _, App (App (te2, args2,_), args2', _) ->
+      eq_term te1 (App (te2, args2 @ args2', nopos)) 
+    | _ -> false
+
+
 (*************************************)
 (*      substitution/rewriting       *)
 (*************************************)
@@ -492,8 +514,8 @@ let rec term_substitution (s: substitution) (te: term) : term =
 	with
 	  | Not_found -> v
       )
-    | AVar _ -> raise (Failure "term_substitution catastrophic: AVar")
-    | TName _ -> raise (Failure "term_substitution catastrophic: TName")
+    | AVar _ -> raise (DoudouException (FreeError "term_substitution catastrophic: AVar"))
+    | TName _ -> raise (DoudouException (FreeError "term_substitution catastrophic: TName"))
     | App (te, args, pos) ->
       App (term_substitution s te,
 	   List.map (fun (te, n) -> term_substitution s te, n) args,
@@ -786,9 +808,9 @@ let push_nature (ctxt: context ref) (n: nature) : unit =
   ctxt := ({hd with naturestack = n :: hd.naturestack})::tl
 
 let pop_nature (ctxt: context ref) : nature =
-  let (hd::tl) = !ctxt in  
-  ctxt := ({hd with naturestack = List.tl hd.naturestack})::tl;
-  List.hd hd.naturestack
+    let (hd::tl) = !ctxt in  
+    ctxt := ({hd with naturestack = List.tl hd.naturestack})::tl;
+    List.hd hd.naturestack
 
 (* unfold a constante *)
 let unfold_constante (defs: defs) (s: symbol) : value =
@@ -817,7 +839,7 @@ let pop_frame (ctxt: context) : context * frame =
     | { fvs = []; termstack = []; naturestack = []; patternstack = []; _} ->
       List.tl ctxt, List.hd ctxt
     | { fvs = _::_; termstack = []; naturestack = []; patternstack = []; _} ->
-      raise (Failure "Case not yet supported, pop_frame with still fvs")
+      raise (DoudouException (FreeError "Case not yet supported, pop_frame with still fvs"))
     | _ -> raise (DoudouException (PoppingNonEmptyFrame (List.hd ctxt)))
 
 (* poping frame: fst := resulting context, snd := poped frames *)
@@ -1016,7 +1038,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    let arg2 = term2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [arg1; te; arg2])
-	  | _ -> raise (Failure "term2token, App infix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "term2token, App infix case: irrefutable patten"))
        )
     (* the case for Prefix *)
     | App (Cste (Symbol (s, (Prefix myprio)), _), args, _) when not !pp_option.show_implicit &&List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
@@ -1035,7 +1057,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    let arg = term2token ctxt arg (InNotation (Prefix myprio, 1)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [te; arg])
-	  | _ -> raise (Failure "term2token, App prefix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "term2token, App prefix case: irrefutable patten"))
        )
 
     (* the case for Postfix *)
@@ -1055,7 +1077,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	    let arg = term2token ctxt arg (InNotation (Postfix myprio, 1)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [arg; te])
-	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "term2token, App postfix case: irrefutable patten"))
        )
 
     (* if we have only implicit argument (and if we don't want to print them, then we are not really considered as a App  *)
@@ -1146,7 +1168,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
 	*)
     | AVar _ -> Verbatim "_"
-    | TName (s, _) -> Verbatim (symbol2string s)
+    | TName (s, _) -> Box [Verbatim "TName ("; Verbatim (symbol2string s); Verbatim ")"]
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
   match pattern with
@@ -1185,7 +1207,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	    let arg2 = pattern2token ctxt arg2 (InNotation (Infix (myprio, myassoc), 2)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [arg1; te; arg2])
-	  | _ -> raise (Failure "pattern2token, App infix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "pattern2token, App infix case: irrefutable patten"))
        )
     (* the case for Prefix *)
     | PApp ((Symbol (s, (Prefix myprio)), _), args, _, _) when not !pp_option.show_implicit && List.length (if !pp_option.show_implicit then List.map fst args else filter_explicit args) = 1 ->
@@ -1206,7 +1228,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	    let arg = pattern2token ctxt arg (InNotation (Prefix myprio, 1)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [te; arg])
-	  | _ -> raise (Failure "pattern2token, App prefix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "pattern2token, App prefix case: irrefutable patten"))
        )
 
     (* the case for Postfix *)
@@ -1228,7 +1250,7 @@ and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
 	    let arg = pattern2token ctxt arg (InNotation (Postfix myprio, 1)) in
 	    let te = Verbatim s in
 	    Box (intercalate (Space 1) [arg; te])
-	  | _ -> raise (Failure "term2token, App postfix case: irrefutable patten")
+	  | _ -> raise (DoudouException (FreeError "term2token, App postfix case: irrefutable patten"))
        )
 
     | PApp ((s, pos), args, _, _) when not !pp_option.show_implicit && List.length (filter_explicit args) = 0 ->
@@ -1927,6 +1949,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
 (*      unification/reduction, type{checking/inference}      *)
 (*************************************************************)
 
+
 let debug = ref false
 
 (*
@@ -2018,10 +2041,10 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
   match te1, te2 with
 
     (* the error cases for AVar and TName *)
-    | AVar _, _ -> raise (Failure "unification_term_term catastrophic: AVar in te1 ")
-    | _, AVar _ -> raise (Failure "unification_term_term catastrophic: AVar in te2 ")
-    | TName _, _ -> raise (Failure "unification_term_term catastrophic: TName in te1 ")
-    | _, TName _ -> raise (Failure "unification_term_term catastrophic: TName in te2 ")
+    | AVar _, _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: AVar in te1 "))
+    | _, AVar _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: AVar in te2 "))
+    | TName _, _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: TName in te1 "))
+    | _, TName _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: TName in te2 "))
 
 
     (* the trivial cases for Type, Cste and Obj *)
@@ -2074,7 +2097,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  unification_term_term defs ctxt te te2
 	(* these case is impossible *)
 	| Equation [PCste (c2, _), te] when c1 <> c2 ->
-	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
+	  raise (DoudouException (FreeError "Catastrophic: an equation for a constante has a different constante symbol"))
 	(* more than one equation ... we do not now *)
 	| Equation _ ->
 	  raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
@@ -2093,96 +2116,11 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  unification_term_term defs ctxt te1 te 
 	(* these case is impossible *)
 	| Equation [PCste (c1, _), te] when c1 <> c2 ->
-	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
+	  raise (DoudouException (FreeError "Catastrophic: an equation for a constante has a different constante symbol"))
 	(* more than one equation ... we do not now *)
 	| Equation _ ->
 	  raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
     )
-
-    (* the case of two application: with not the same arity *)
-    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
-      (* first we try to change them such that they have the same number of arguments and try to match them *)
-      let min_arity = min (List.length args1) (List.length args2) in
-      let te1' = if List.length args1 = min_arity then te1 else (
-	let pos1 = fst (get_term_pos hd1) in
-	let largs1 = take (List.length args1 - min_arity) args1 in
-	let largs2 = drop (List.length args1 - min_arity) args1 in
-	let pos2 = snd (get_term_pos (fst (last largs1))) in
-	let pos3 = snd (get_term_pos (fst (last largs2))) in
-	  App (App (hd1, largs1, (pos1, pos2)), largs2, (pos1, pos3))
-      ) in
-      let te2' = if List.length args2 = min_arity then te2 else (
-	let pos1 = fst (get_term_pos hd2) in
-	let largs1 = take (List.length args2 - min_arity) args2 in
-	let largs2 = drop (List.length args2 - min_arity) args2 in
-	let pos2 = snd (get_term_pos (fst (last largs1))) in
-	let pos3 = snd (get_term_pos (fst (last largs2))) in
-	App (App (hd2, largs1, (pos1, pos2)), largs2, (pos1, pos3))
-      ) in
-      (* we save the current context somewhere to rollback *)
-      let saved_ctxt = !ctxt in
-      (try 
-	 unification_term_term defs ctxt te1' te2' 
-       with
-	 (* apparently it does not work, so we try to reduce them *)
-	 | DoudouException _ ->
-	   (* restore the context *)
-	   ctxt := saved_ctxt;
-	   (* reducing them *)
-	   let te1' = reduction defs ctxt unification_strat te1 in
-	   let te2' = reduction defs ctxt unification_strat te2 in
-	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
-	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
-      )
-    (* the case of two application with same arity *)
-    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 ->
-      (* first we save the context and try to unify all term component *)
-      let saved_ctxt = !ctxt in
-      (try
-	 (* we need to push the arguments (through this we also verify that the nature matches ) *)
-	 (* we build a list where arguments of te1 and te2 are alternate *)
-	 let rev_arglist = List.fold_left (
-	   fun acc ((arg1, n1), (arg2, n2)) ->
-	     if n1 <> n2 then
-	     (* if both nature are different -> no unification ! *)
-	       raise (DoudouException (NoUnification (!ctxt, te1, te2)))
-	     else  
-	       arg2::arg1::acc
-	 ) [] (List.combine args1 args2) in
-	 let arglist = List.rev rev_arglist in
-	 (* and we push this list *)
-	 push_terms ctxt arglist;
-	 (* first we unify the head of applications *)
-	 let hd = unification_term_term defs ctxt hd1 hd2 in
-	 (* then we unify all the arguments pair-wise, taking them from the list *)
-	 let args = List.map (fun (_, n) ->
-	   (* we grab the next argument for te1 and te2 in the context (and we know that their nature is equal to n) *)
-	   let [arg1; arg2] = pop_terms ctxt 2 in
-	   (* and we unify *)
-	   let arg = unification_term_term defs ctxt arg1 arg2 in
-	   (arg, n)
-	 ) args1 in
-	 (* finally we have our unified term ! *)
-	 App (hd, args, best_pos p1 p2)
-
-       with
-	 (* apparently it does not work, so we try to reduce them *)
-	 | DoudouException _ ->
-	   (* restore the context *)
-	   ctxt := saved_ctxt;
-	   (* reducing them *)
-	   let te1' = reduction defs ctxt unification_strat te1 in
-	   let te2' = reduction defs ctxt unification_strat te2 in
-	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
-	   if te1 = te1' && te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
-      )	
-    (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
-    | App (hd1, args1, p1), _ ->
-      let te1' = reduction defs ctxt unification_strat te1 in
-      if te1 = te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
-    | _, App (hd2, args2, p2) ->
-      let te2' = reduction defs ctxt unification_strat te2 in
-      if te2 = te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
 
     (* the impl case: only works if both are impl *)
     | Impl ((s1, ty1, n1, pq1), te1, p1), Impl ((s2, ty2, n2, pq2), te2, p2) ->
@@ -2222,6 +2160,97 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	(* and we return the term *)
 	Lambda (q1, te, p1)
 
+    (* the case of two application: with not the same arity *)
+    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
+      if !debug then printf "unification case: | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 -> \n" ;
+      (* first we try to change them such that they have the same number of arguments and try to match them *)
+      let min_arity = min (List.length args1) (List.length args2) in
+      let te1' = if List.length args1 = min_arity then te1 else (
+	let pos1 = fst (get_term_pos hd1) in
+	let largs1 = take (List.length args1 - min_arity) args1 in
+	let largs2 = drop (List.length args1 - min_arity) args1 in
+	let pos2 = snd (get_term_pos (fst (last largs1))) in
+	let pos3 = snd (get_term_pos (fst (last largs2))) in
+	  App (App (hd1, largs1, (pos1, pos2)), largs2, (pos1, pos3))
+      ) in
+      let te2' = if List.length args2 = min_arity then te2 else (
+	let pos1 = fst (get_term_pos hd2) in
+	let largs1 = take (List.length args2 - min_arity) args2 in
+	let largs2 = drop (List.length args2 - min_arity) args2 in
+	let pos2 = snd (get_term_pos (fst (last largs1))) in
+	let pos3 = snd (get_term_pos (fst (last largs2))) in
+	App (App (hd2, largs1, (pos1, pos2)), largs2, (pos1, pos3))
+      ) in
+      (* we save the current context somewhere to rollback *)
+      let saved_ctxt = !ctxt in
+      (try 
+	 unification_term_term defs ctxt te1' te2' 
+       with
+	 (* apparently it does not work, so we try to reduce them *)
+	 | DoudouException err ->
+	   if !debug then printf "%s\n" (error2string err);
+	   (* restore the context *)
+	   ctxt := saved_ctxt;
+	   (* reducing them *)
+	   let te1' = reduction defs ctxt unification_strat te1 in
+	   let te2' = reduction defs ctxt unification_strat te2 in
+	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	   if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
+      )
+    (* the case of two application with same arity *)
+    | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 ->
+      if !debug then printf "unification case: | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 -> \n" ;
+      (* first we save the context and try to unify all term component *)
+      let saved_ctxt = !ctxt in
+      (try
+	 (* we need to push the arguments (through this we also verify that the nature matches ) *)
+	 (* we build a list where arguments of te1 and te2 are alternate *)
+	 let rev_arglist = List.fold_left (
+	   fun acc ((arg1, n1), (arg2, n2)) ->
+	     if n1 <> n2 then
+	     (* if both nature are different -> no unification ! *)
+	       raise (DoudouException (NoUnification (!ctxt, te1, te2)))
+	     else  
+	       arg2::arg1::acc
+	 ) [] (List.combine args1 args2) in
+	 let arglist = List.rev rev_arglist in
+	 (* and we push this list *)
+	 push_terms ctxt arglist;
+	 (* first we unify the head of applications *)
+	 let hd = unification_term_term defs ctxt hd1 hd2 in
+	 (* then we unify all the arguments pair-wise, taking them from the list *)
+	 let args = List.map (fun (_, n) ->
+	   (* we grab the next argument for te1 and te2 in the context (and we know that their nature is equal to n) *)
+	   let [arg1; arg2] = pop_terms ctxt 2 in
+	   (* and we unify *)
+	   let arg = unification_term_term defs ctxt arg1 arg2 in
+	   (arg, n)
+	 ) args1 in
+	 (* finally we have our unified term ! *)
+	 App (hd, args, best_pos p1 p2)
+
+       with
+	 (* apparently it does not work, so we try to reduce them *)
+	 | DoudouException err ->
+	   if !debug then printf "%s\n" (error2string err);
+	   (* restore the context *)
+	   ctxt := saved_ctxt;
+	   (* reducing them *)
+	   let te1' = reduction defs ctxt unification_strat te1 in
+	   let te2' = reduction defs ctxt unification_strat te2 in
+	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	   if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
+      )	
+    (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
+    | App (hd1, args1, p1), _ ->
+      if !debug then printf "unification case: App (hd1, args1, p1), _ -> \n" ;
+      let te1' = reduction defs ctxt unification_strat te1 in
+      if eq_term te1 te1' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2
+    | _, App (hd2, args2, p2) ->
+      if !debug then printf "unification case: | _, App (hd2, args2, p2) -> \n" ;
+      let te2' = reduction defs ctxt unification_strat te2 in
+      if eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
+
     (* for all the rest: I do not know ! *)
     | _ -> 
       raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
@@ -2244,7 +2273,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
       match unfold_constante defs c1 with
 	| Equation [PCste (c2, _), te] when c1 = c2 -> te
 	| Equation [PCste (c2, _), te] when c1 <> c2 ->
-	  raise (Failure "Catastrophic: an equation for a constante has a different constante symbol")
+	  raise (DoudouException (FreeError "Catastrophic: an equation for a constante has a different constante symbol"))
 	| _ -> te
     )
 
@@ -2256,8 +2285,8 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
     | TVar (i, _) when i < 0 -> te
 
     (* trivial error cases *) 
-    | AVar _ -> raise (Failure "reduction catastrophic: AVar")
-    | TName _ -> raise (Failure "reduction catastrophic: TName")
+    | AVar _ -> raise (DoudouException (FreeError "reduction catastrophic: AVar"))
+    | TName _ -> raise (DoudouException (FreeError "reduction catastrophic: TName"))
 
     (* Impl: we reduce the type, and the term only if betastrong *)
     | Impl ((s, ty, n, pq1), te, p1) -> 
@@ -2481,9 +2510,9 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	    | _ -> reduction defs ctxt unification_strat ty
 	) in
 	(* we should push the args with there nature ... *)
-	let remaining_args, ty = (	  
+	let added, remaining_args, ty = (	  
 	  match args, ty with
-	    | [], _ -> raise (Failure "typeinfer of App: catastrophic, we have an empty list !!!")
+	    | [], _ -> raise (DoudouException (FreeError "typeinfer of App: catastrophic, we have an empty list !!!"))
 	    (* lots of cases here *)
 	    (* both nature are the same: this is our arguments *)
 	    | (hd, n1)::tl, Impl ((s, ty, n2, pq), te, p) when n1 = n2 -> 
@@ -2502,7 +2531,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      push_terms ctxt [hd];
 	      push_nature ctxt n1;
 	      (* and we returns the information *)
-	      tl, ty
+	      1, tl, ty
 	    (* the argument is explicit, but the type want an implicit arguments: we add free variable *)
 	    | (hd, Explicit)::tl, Impl ((s, ty, Implicit, _), te, _) -> 
 	    (* we add a free variable of the proper type *)
@@ -2520,7 +2549,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      push_terms ctxt [TVar (fv, nopos)];
 	      push_nature ctxt Implicit;
 	      (* and we returns the information *)
-	      args, ty
+	      1, args, ty
 	    | (hd, n)::_, Impl ((s, ty, n2, _), te, _) -> 	      
 	      let args = List.rev (map_nth (fun i ->
 		let [arg] = pop_terms ctxt 1 in
@@ -2529,11 +2558,26 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
 	      ) nb_processed_args) in
 	      let [te] = pop_terms ctxt 1 in
 	      raise (DoudouException (CannotInfer (!ctxt, App (te, args@[hd,n], (fst (get_term_pos te), snd (get_term_pos hd))), (FreeError "terms needs an Explicit argument, but receives an Implicit one"))))
+	    (* a (God) forsaken case: the type is a free variable *)
+	    | (hd, n)::_, TVar (i, _) when i < 0 -> 
+	      (* we create free variables in order to "build" a type *)
+	      let fv1 = add_fvar ctxt (Type nopos) in
+	      let fv2 = add_fvar ctxt (Type nopos) in
+	      let fv3 = add_fvar ctxt (TVar (fv2, nopos)) in
+	      (* we create a substitution *)
+	      let ty' = Impl ((Symbol ("_", Nofix), TVar (fv1, nopos), n, nopos), TVar (fv3, nopos), nopos) in
+	      let s = IndexMap.singleton i ty' in
+	      (* do the subsitution in the context *)
+	      ctxt := context_substitution s (!ctxt);
+	      (* and continue *)
+	      0, args, ty'
+	    | _ -> 
+	      raise (DoudouException (FreeError "typeinfer on App: case not supported, the function type is neither a (->) or a free variable"))
 	) in
 	(* before returning we need to repush the (new) type *)
 	push_terms ctxt [ty];
 	(* and returns the information *)
-	remaining_args, nb_processed_args + 1
+	remaining_args, nb_processed_args + added
       ) 0 args in
       (* we pop the ty *)
       let [ty] = pop_terms ctxt 1 in
@@ -2608,7 +2652,7 @@ and typeinfer_pattern (defs: defs) (ctxt: context ref) (p: pattern) : pattern * 
 	    (* we just add an implicit *)
 	    (PVar (symbol2string s, AVar nopos, spos), Implicit)::args, (appty, te_done, args_done)
 	  | _ ->
-	    raise (Failure "bad case")
+	    raise (DoudouException (FreeError "bad case"))
       ) (sty, [], []) args in
 
       let p = PApp ((s, spos), args_done, appty, pos) in
