@@ -549,7 +549,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
     | Fail -> raise CannotSolveGoal
 
     | Msg (s, t) ->
-      (*printf "%s\n" s; flush Pervasives.stdout;*)
+      printf "%s\n" s; flush Pervasives.stdout;
       tactic_semantics t ctxt goal
 
     | ShowGoal t ->
@@ -720,6 +720,8 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	let ctxt' = ref ctxt.ctxt in
 	let lemma, _ = typecheck ctxt.defs ctxt' lemma (Type nopos) in
 	let prf, lemma = typecheck ctxt.defs ctxt' prf lemma in
+	let prf = reduction ctxt.defs ctxt' unification_strat prf in
+	let lemma = reduction ctxt.defs ctxt' unification_strat lemma in
 	if !debug then printf "AddHyp: (%s, %s)\n" (term2string !ctxt' prf) (term2string !ctxt' lemma);
 	(* just check that there is no free var *)
 	if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
@@ -750,7 +752,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  ) with | e -> (*printf "done nok\n"; flush Pervasives.stdout; *)raise e in
 	  if !debug then printf "goal matched!\n";
 	  (* then we try to matches the hypothesises *)
-	  Right (hyps_matching ctxt subst NameMap.empty hyps_ps t goal)
+	  Right (hyps_matching ctxt subst NameMap.empty hyps_ps [] t goal)
 	with
 	  (* the goal does not match => go to another case *)
 	  | NoPatternMatching -> if !debug then printf "Case: no pattern-matching with goal/hyps\n"; Left ()
@@ -761,7 +763,8 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	| Left () -> raise CannotSolveGoal
 	| Right prf -> prf
 
-and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps: (string * proof_pattern) list) (action: tactic) (goal: term) : term =
+(* we add the used_hyp, a list of used hyp, such that they are not pattern match in further hyps patterns *)
+and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps: (string * proof_pattern) list) (used_hyp: string list) (action: tactic) (goal: term) : term =
   match hyps_ps with
     (* all hypothesis patterns have been matched, we need to try apply the tactics *)
     | [] -> 
@@ -780,6 +783,8 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 	(* we try all possibilities until there is none *)
 	let res = iterator_loop it (fun (name, (prf, lemma)) ->
 	  if !debug then printf "aginst hyp pattern: %s :: %s\n" name (term2string ctxt.ctxt lemma);
+	  (* we make sure that the hypothesis is not already used *)
+	  if List.mem name used_hyp then None else
 	  try 
 	    (* we try to match the lemma and the pattern *)
 	    let subst' = match_proof_pattern ctxt p lemma in
@@ -793,7 +798,7 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
 	    ) subst' s in
 	    let h = NameMap.add n name h in
 	    (* trying further *)
-	    Some (hyps_matching ctxt s h tl action goal)
+	    Some (hyps_matching ctxt s h tl (name::used_hyp) action goal)
 	  with
 	    (* no match for the hypothesis, try another one *)
 	    | NoPatternMatching -> None
