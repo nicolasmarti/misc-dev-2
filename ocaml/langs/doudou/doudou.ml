@@ -1168,7 +1168,7 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
     | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
 	*)
     | AVar _ -> Verbatim "_"
-    | TName (s, _) -> Box [Verbatim "TName ("; Verbatim (symbol2string s); Verbatim ")"]
+    | TName (s, _) -> Verbatim (symbol2string s)
 
 and pattern2token (ctxt: context) (pattern: pattern) (p: place) : token =
   match pattern with
@@ -2159,6 +2159,43 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	let q1, [te] = pop_quantification ctxt [te] in
 	(* and we return the term *)
 	Lambda (q1, te, p1)
+
+    (* some higher order unification *)
+    | App (TVar (i, p1), (arg, n)::args, p2), t2 ->
+      if !debug then printf "unification case: | App (TVar (i, p1), (arg, n)::args, p2), _ -> \n" ;
+      (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
+      (* shift te 1 : now there is no TVar 0 in te *)
+      let te2 = shift_term te2 1 in
+      (* thus we can rewrite (shift arg 1) by TVar 0 *)
+      let te2 = rewrite_term defs !ctxt (shift_term arg 1) (TVar (0, nopos)) te2 in
+      (* we just verify that we have some instance of TVar 0 *)
+      if not (IndexSet.mem 0 (bv_term te2)) then raise (DoudouException (UnknownUnification (!ctxt, te1, t2)));
+      (* we rebuild the lambda *)
+      let arg, ty = typeinfer defs ctxt arg in
+      let te2 = Lambda ((Symbol ("_", Nofix), ty, n, nopos), te2, nopos) in
+      (* and now we continue without the arguments *)
+      let res = unification_term_term defs ctxt (App (TVar (i, p1), args, p2)) te2 in
+      let res = App (res, [arg, n], nopos) in
+      let res = reduction defs ctxt unification_strat res in
+      res
+
+    | t1, App (TVar (i, p1), (arg, n)::args, p2) when false ->
+      if !debug then printf "unification case: | App (TVar (i, p1), (arg, n)::args, p2), _ -> \n" ;
+      (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
+      (* shift te 1 : now there is no TVar 0 in te *)
+      let te1 = shift_term te1 1 in
+      (* thus we can rewrite (shift arg 1) by TVar 0 *)
+      let te1 = rewrite_term defs !ctxt (shift_term arg 1) (TVar (0, nopos)) te1 in
+      (* we just verify that we have some instance of TVar 0 *)
+      if not (IndexSet.mem 0 (bv_term te1)) then raise (DoudouException (UnknownUnification (!ctxt, t1, te2)));
+      (* we rebuild the lambda *)
+      let arg, ty = typeinfer defs ctxt arg in
+      let te1 = Lambda ((Symbol ("_", Nofix), ty, n, nopos), te1, nopos) in
+      (* and now we continue without the arguments *)
+      let res = unification_term_term defs ctxt (App (TVar (i, p1), args, p2)) te1 in
+      let res = App (res, [arg, n], nopos) in
+      let res = reduction defs ctxt unification_strat res in
+      res
 
     (* the case of two application: with not the same arity *)
     | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
