@@ -277,3 +277,10 @@ let _ = process_definition fol_tests_def fol_tests_ctxt "z :: ty"
 
 let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
 
+(***********************************)
+(* example of interactive tactics  *)
+(***********************************)
+
+let _ = printf "\n\n------------------------------------------- Interactive Proof Mode tests  -------------------------------------------------\n\n"
+
+let _ = tactic_solver (empty_defs ()) (ref empty_context) Interactive goal2

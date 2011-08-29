@@ -405,6 +405,9 @@ and proof_pattern_subst (p: proof_pattern) (s: proof_subst) (h: hyp_subst) : pro
 and proof_pattern2string (ctxt: proof_context) (p: proof_pattern) : string = 
   let te = proof_pattern2term ctxt p in
   term2string ctxt.ctxt te
+and proof_pattern2token (ctxt: proof_context) (p: proof_pattern) : token = 
+  let te = proof_pattern2term ctxt p in
+  term2token ctxt.ctxt te Alone
 
 
 
@@ -465,6 +468,124 @@ type tactic =
   (* introduce a quantification *)
   | Intro of string list * tactic
 
+(******************************************)
+(*  pretty printer and parser for tactics *)
+(******************************************)
+
+let rec tactic2token (ctxt: proof_context) (t: tactic) : token =
+  match t with
+    | Fail -> Verbatim "Fail"
+    | Interactive -> Verbatim "Interactive"
+    | Intro (names, t) -> Box [Verbatim "Intro"; Space 1; Box (intercalate (Space 1) (List.map (fun n -> Verbatim n) names)); Verbatim ";"; Space 1; tactic2token ctxt t]
+    | Exact p ->
+      Box [Verbatim "Exact"; Space 1; proof_pattern2token ctxt p]
+
+let tactic2string (ctxt: proof_context) (t: tactic) : string =
+  let token = tactic2token ctxt t in
+  let box = token2box token 100 2 in
+  box2string box
+
+let create_opparser_proof_pattern (ctxt: proof_context) (primary: proof_pattern parsingrule) : proof_pattern opparser =
+  let res = { primary = primary;
+	      prefixes = Hashtbl.create (List.length ctxt.defs.hist);
+	      infixes = Hashtbl.create (List.length ctxt.defs.hist);
+	      postfixes = Hashtbl.create (List.length ctxt.defs.hist);
+	      reserved = parse_reserved;
+	    } in
+  let _ = List.map (fun s -> 
+    match s with
+      | Name _ -> ()
+      | Symbol (n, Nofix) -> ()
+      | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> PPApp (PPCste s, [te, Explicit]))
+      | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> PPApp (PPCste s, [te1, Explicit; te2, Explicit]))
+      | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> PPApp (PPCste s, [te, Explicit]))
+  ) ctxt.defs.hist in
+  res
+
+
+let rec proof_pattern_parser (ctxt: proof_context) (pb: parserbuffer) : proof_pattern = begin
+  let myp = create_opparser_proof_pattern ctxt (parse_proof_pattern_lvl1 ctxt) in
+  opparse myp
+end pb
+
+and parse_proof_pattern_lvl1 (ctxt: proof_context) (pb: parserbuffer) : proof_pattern = begin
+  fun pb -> 
+    (* first we parse the application head *)
+    let head = parse_proof_pattern_lvl2 ctxt pb in    
+    let () = whitespaces pb in
+    (* then we parse the arguments *)
+    let args = separatedBy (
+      fun pb ->
+      parse_proof_pattern_arguments ctxt pb
+    ) whitespaces pb in
+    match args with
+      | [] -> head
+      | _ -> 
+	PPApp (head, args)
+end pb
+
+and parse_proof_pattern_arguments  (ctxt: proof_context) (pb: parserbuffer) : proof_pattern * nature = begin
+  (fun pb -> 
+    let te = bracket (parse_proof_pattern_lvl2 ctxt) pb in
+    (te, Implicit)
+  )
+  <|> (fun pb -> 
+    let te = parse_proof_pattern_lvl2 ctxt pb in
+    (te, Explicit)
+  )
+end pb
+
+and parse_proof_pattern_lvl2 (ctxt: proof_context) (pb: parserbuffer) : proof_pattern = begin
+    tryrule (fun pb -> 
+    let () = whitespaces pb in
+    let (), pos = with_pos (word "Type") pb in
+    let () = whitespaces pb in
+    PPTerm (Type pos)
+  ) 
+end pb
+
+and tactic_parser (ctxt: proof_context) (pb: parserbuffer) : tactic = begin
+  tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "Fail" pb in
+    let () = whitespaces pb in
+    Fail
+  )
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "Interactive" pb in
+    let () = whitespaces pb in
+    Interactive
+  )
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "Intro" pb in
+    let () = whitespaces pb in
+    let names = many (fun pb ->
+      let () = whitespaces pb in
+      let n = name_parser pb in
+      let () = whitespaces pb in
+      n
+    ) pb in
+    let () = whitespaces pb in
+    match (
+      mayberule (fun pb ->
+	let () = word ";" pb in
+	let () = whitespaces pb in
+	tactic_parser ctxt pb 
+    ) pb) with
+      | None -> Intro (names, Interactive)
+      | Some t -> Intro (names, t)
+  )
+  <|> tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = word "Exact" pb in
+    let () = whitespaces pb in
+    let pp = proof_pattern_parser ctxt pb in
+    Exact pp
+  )
+end pb
+
 (*
   we might need to apply a substitution to a tactic
   h is a substitution for hypothesis names
@@ -523,21 +644,6 @@ open Hashtbl
 type tactics_dict = (string, tactic) Hashtbl.t
 
 let global_tactics : tactics_dict = Hashtbl.create 50
-
-let tactic2string (t: tactic) : string =
-  match t with
-    | Fail -> "Fail"
-    | Msg _ -> "Msg"
-    | ShowGoal _ -> "ShowGoal"
-    | Exact _ -> "Exact"
-    | PartApply _ -> "PartApply"
-    | Interactive -> "Interactive"
-    | Or _ -> "Or"
-    | Cases _ -> "Cases"
-    | TacticName s -> String.concat " " ["TacticName"; s]
-    | AddHyp _ -> "AddHyp"
-    | DelHyp _ -> "DelHyp"
-    | Intro _ -> "Intro"
 
 let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
   (*
@@ -601,9 +707,26 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
       if not (IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
       prf
 
-    | Interactive -> 
-      raise (Failure "tactic Interactive not yet implemented")
+    | Interactive -> (
+      printf "%s\n\n> " (proof_state2string ctxt goal); flush Pervasives.stdout;
+      let lines = line_stream_of_channel stdin in
+      let pb = build_parserbuffer lines in
+      try 
+	let t = tactic_parser ctxt pb in
+	printf "entered tactic: %s\n" (tactic2string ctxt t);
+	tactic_semantics t ctxt goal
+      with
+	| DoudouException err ->
+	  printf "error:\n%s\n" (error2string err);
+	  tactic_semantics Interactive ctxt goal
+	| NoMatch -> 
+	  printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	  tactic_semantics Interactive ctxt goal
+	| CannotSolveGoal ->
+	  printf "the tactic does not solve the goal\n";
+	  tactic_semantics Interactive ctxt goal
 
+    )
     | Or ts -> (
       (* we just try all the tactics until one returns, else we raise CannotSolveGoal *)
       let res = fold_stop (fun () t ->
