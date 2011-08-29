@@ -263,6 +263,7 @@ type hyp_subst = string NameMap.t
 type hypothesises_iterator = 
     { mutable next_hyps : hypothesises;
       mutable next_hyp : hypothesis NameMap.t;
+      mutable hyp_names: NameSet.t
     }
 
 exception NoMoreHypothesis
@@ -536,12 +537,41 @@ and parse_proof_pattern_arguments  (ctxt: proof_context) (pb: parserbuffer) : pr
 end pb
 
 and parse_proof_pattern_lvl2 (ctxt: proof_context) (pb: parserbuffer) : proof_pattern = begin
-    tryrule (fun pb -> 
+  tryrule (fun pb -> 
     let () = whitespaces pb in
     let (), pos = with_pos (word "Type") pb in
     let () = whitespaces pb in
     PPTerm (Type pos)
   ) 
+  <|> tryrule (fun pb ->
+    let () =  whitespaces pb in
+    let () = parse_avar pb in
+    let () =  whitespaces pb in
+    PPAVar
+  ) 
+  <|> tryrule (fun pb -> 
+    let () =  whitespaces pb in
+    let s = parse_symbol_name ctxt.defs pb in
+    let () =  whitespaces pb in    
+    PPCste s
+  )
+  <|> tryrule (fun pb -> 
+    let () =  whitespaces pb in
+    let () = word "proof(" pb in
+    let n = name_parser pb in
+    let () = word ")" pb in
+    let () =  whitespaces pb in    
+    PPProof n
+  )
+  <|> tryrule (fun pb -> 
+    let () =  whitespaces pb in
+    let () = word "type(" pb in
+    let n = name_parser pb in
+    let () = word ")" pb in
+    let () =  whitespaces pb in    
+    PPProof n
+  )
+  <|> (paren (proof_pattern_parser ctxt))
 end pb
 
 and tactic_parser (ctxt: proof_context) (pb: parserbuffer) : tactic = begin
@@ -711,21 +741,28 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
       printf "%s\n\n> " (proof_state2string ctxt goal); flush Pervasives.stdout;
       let lines = line_stream_of_channel stdin in
       let pb = build_parserbuffer lines in
-      try 
-	let t = tactic_parser ctxt pb in
-	printf "entered tactic: %s\n" (tactic2string ctxt t);
-	tactic_semantics t ctxt goal
-      with
-	| DoudouException err ->
-	  printf "error:\n%s\n" (error2string err);
-	  tactic_semantics Interactive ctxt goal
-	| NoMatch -> 
-	  printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
-	  tactic_semantics Interactive ctxt goal
-	| CannotSolveGoal ->
-	  printf "the tactic does not solve the goal\n";
-	  tactic_semantics Interactive ctxt goal
-
+      let t = 
+	try 
+	  tactic_parser ctxt pb 
+	with
+	  | NoMatch -> 
+	    printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	    Interactive
+      in
+      if t = Fail then raise CannotSolveGoal else
+	try
+	  printf "entered tactic: %s\n" (tactic2string ctxt t);
+	  tactic_semantics t ctxt goal
+	with
+	  | DoudouException err ->
+	    printf "error:\n%s\n" (error2string err);
+	    tactic_semantics Interactive ctxt goal
+	  | NoMatch -> 
+	    printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	    tactic_semantics Interactive ctxt goal
+	  | CannotSolveGoal ->
+	    printf "the tactic does not solve the goal\n";
+	    tactic_semantics Interactive ctxt goal
     )
     | Or ts -> (
       (* we just try all the tactics until one returns, else we raise CannotSolveGoal *)
