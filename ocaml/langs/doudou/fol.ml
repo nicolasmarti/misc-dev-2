@@ -96,6 +96,8 @@ and is_term (defs: defs) (te: term) (level: int) : bool =
   match te with
     | TVar (i, _) -> true
 
+    | Cste _ -> true
+
     | App (TVar (i, _), args, _) when i >= level ->
       List.fold_left (fun acc hd -> acc && is_term defs hd level) true (filter_explicit args)
 
