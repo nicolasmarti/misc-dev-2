@@ -22,10 +22,10 @@
           Existsf (hd, listname2Existsf tl f);;
 
   let resolve_formula f =
-    printf "\n\n***********************************\n\n";
-    printf "formula f:\n"; print_formula f; printf "\n\n"; 
+    printf "***********************************\n";
+    printf "formula f:\n"; print_formula f; printf "\n"; 
     (*printf "SPASS :\n"; print_formula_spass f; printf "\n\n";*)
-    printf "-----------------------------------\n\n";
+    printf "-----------------------------------\n";
     let f1 = (formula2cf (Negf f)) in
     let f2 = (formula2nnf false f1) in 
     let f3 = (push_quant_nnfformula f2) in
@@ -47,12 +47,14 @@
           printf "QF: "; print_nnfqf_formula f5; printf "\n\n";
           printf "CNF: "; print_cnf_lvl0 f7; printf "\n\n";
 	  *)
-          printf "Final: "; print_cnf_lvl0 (List.sort clause_compare f10); printf "\n\n";
+          (*printf "Final: "; print_cnf_lvl0 (List.sort clause_compare f10); printf "\n\n";*)
           printf "nb clauses: %d\n" (List.length f10);        
-          printf "resolution2 found empty clause ?: \n"; flush stdout;
-          (resolution2 (List.sort clause_compare f10) [] 1); printf "\n\n"; flush stdout;
+          printf "resolution2 found empty clause ?: "; flush stdout;
+          (resolution2 (List.sort clause_compare f10) [] 1); printf "\n"; flush stdout;
+	  (*
           printf "resolution found empty clause ?: "; flush stdout;
-          (resolution (List.sort clause_compare f10) [] 1); printf "\n\n"; flush stdout;
+          (resolution (List.sort clause_compare f10) [] 1); printf "\n"; flush stdout;
+	  *)
           printf "-----------------------------------\n\n";;
 
 %}
@@ -64,11 +66,11 @@
 %token <string> NAME
 
   /* The connectives */
-%token AND OR NEG FORALL EXISTS FORALL2 EXISTS2 IMPL IMPL2 IFF IFF2
+%token AND AND2 OR BAR NEG FORALL EXISTS FORALL2 FORALL3 EXISTS3 EXISTS2 IMPL IMPL2 IMPL3 IFF IFF2
 
 %nonassoc IFF IFF2
-%right IMPL IMPL2 
-%left AND OR
+%right IMPL IMPL2 IMPL3 
+%left AND AND2 OR BAR
 %left NEG
 
   /* The boolean value */
@@ -79,7 +81,7 @@
 %token LBRACK RBRACK
 
   /* ponctuation */
-%token COMMA DOT BAR LT SPASS
+%token COMMA DOT LT SPASS SEMICOLON
 
 
 
@@ -90,7 +92,7 @@
 
   input:    
 
-| formula input {
+| formula SEMICOLON input {
     
     resolve_formula $1;
 
@@ -161,12 +163,19 @@
 | EXISTS2 NAME DOT formula { Existsf ($2, $4)}
 | FORALL2 listname DOT formula { listname2Forallf $2 $4}
 | EXISTS2 listname DOT formula { listname2Existsf $2 $4}
+| FORALL3 NAME DOT formula { Forallf ($2, $4)}
+| EXISTS3 NAME DOT formula { Existsf ($2, $4)}
+| FORALL3 listname DOT formula { listname2Forallf $2 $4}
+| EXISTS3 listname DOT formula { listname2Existsf $2 $4}
 | formula IFF2 formula { Equiv ($1, $3) }
 | formula IFF formula { Equiv ($1, $3) }
 | formula IMPL formula {Implf ($1, $3)}
 | formula IMPL2 formula {Implf ($1, $3)}
+| formula IMPL3 formula {Implf ($1, $3)}
 | formula AND formula {Andf ($1, $3)}
+| formula AND2 formula {Andf ($1, $3)}
 | formula OR formula {Orf ($1, $3)}
+| formula BAR formula {Orf ($1, $3)}
 | NEG formula {Negf $2}
 | NAME LPAREN listterm RPAREN { Relf ($1, $3)}
 | NAME LPAREN RPAREN { Relf ($1, [])}

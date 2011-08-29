@@ -12,18 +12,22 @@ let name = ['A'-'Z' 'a'-'z' '0'-'9']
 
       | '~'         { NEG }      
       | "/\\"        { AND }
+      | "&"        { AND2 }
       | "\\/"        { OR }
       | "->"        { IMPL }
       | "==>"        { IMPL2 }
+      | "-->"        { IMPL3 }
 
       | "<->"        { IFF }
       | "<=>"        { IFF2 }
 
       | 'V'		{ FORALL }
       | "forall"	{ FORALL2 }
+      | "ALL"	        { FORALL3 }
 
       | 'E'		{ EXISTS }        
       | "exists"	{ EXISTS2 }        
+      | "EXISTS"        { EXISTS3 }
 
       | "SPASS "	{ SPASS }        
 
@@ -41,5 +45,7 @@ let name = ['A'-'Z' 'a'-'z' '0'-'9']
       | '|'             { BAR }
 
       | '<'             { LT }
+
+      | ';'             { SEMICOLON }
 
       | eof		{ EOF }
