@@ -11,6 +11,7 @@ this is a list of features to implement/remarks
 
 * proof:
   - redo a clean implementation (separating cleanly hypothesises, patterns, and tactics)
+  - add dependant implication
   - proper parser/pprinter for pattern, tactics
 
 * theories:
