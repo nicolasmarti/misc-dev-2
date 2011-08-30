@@ -2850,11 +2850,12 @@ let clean_term_strat : reduction_strategy = {
   eta = true;
 }
 
-let process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (s: string) : unit =
+let process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (str: string) : unit =
     (* we set the parser *)
-    let lines = stream_of_string s in
+    let lines = stream_of_string str in
     let pb = build_parserbuffer lines in
     let pos = cur_pos pb in
+    (*if verbose then printf "input:\n%s\n" str;*)
     (* we save the context and the defs *)
     let saved_ctxt = !ctxt in
     let saved_defs = !defs in
@@ -2862,7 +2863,6 @@ let process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = fa
       let def = parse_definition !defs pos pb in
       let _ = ( match def with
 	| DefSignature (s, ty) ->
-
 	  (* we typecheck the type against Type *)
 	  let ty, _ = typecheck !defs ctxt ty (Type nopos) in	  
 	  (* we flush the free vars so far *)
