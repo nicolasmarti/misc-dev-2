@@ -7,7 +7,7 @@ this is a list of features to implement/remarks
   - implements terminaison test
   - implements test for completeness of function
   - implements loading/saving of stores
-  - fix the parser in order to properly use leftmost
+  - fix the parser in order to properly use leftmost (DONE)
 
 * proof:
   - redo a clean implementation (separating cleanly hypothesises, patterns, and tactics)
