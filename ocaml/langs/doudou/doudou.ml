@@ -1413,10 +1413,22 @@ let defs2string (defs: defs) : string =
 (* parser (lib/parser.ml version) *)
 (**********************************)
 
-let with_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
+let at_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
   fun pb ->
     let curp = cur_pos pb in
-    if (snd startp <= snd curp) then raise NoMatch;
+    if (snd startp > snd curp) then (
+      printf "%d > %d\n" (snd startp) (snd curp);
+      raise NoMatch
+    );
+    p pb
+
+let after_start_pos (startp: (int * int)) (p: 'a parsingrule) : 'a parsingrule =
+  fun pb ->
+    let curp = cur_pos pb in
+    if (snd startp >= snd curp) then (
+      printf "%d >= %d\n" (snd startp) (snd curp);
+      raise NoMatch
+    );
     p pb
 
 let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
@@ -1611,11 +1623,11 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
   tryrule (fun pb ->
     let () = whitespaces pb in
     let startpos = cur_pos pb in
-    let (names, ty, nature) = parse_impl_lhs defs leftmost pb in
+    let (names, ty, nature) = at_start_pos leftmost (parse_impl_lhs defs leftmost) pb in
     let () = whitespaces pb in
-    let () = word "->" pb in
+    let () = at_start_pos leftmost (word "->") pb in
     let () = whitespaces pb in
-    let body = parse_term defs leftmost pb in
+    let body = at_start_pos leftmost (parse_term defs leftmost) pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     set_term_pos (build_impl names ty nature body) (startpos, endpos)
@@ -1623,13 +1635,13 @@ let rec parse_term (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ter
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let startpos = cur_pos pb in
-    let () = word "\\" pb in
+    let () = at_start_pos leftmost (word "\\") pb in
     let () = whitespaces pb in
-    let qs = many1 (parse_lambda_lhs defs leftmost) pb in
+    let qs = many1 (at_start_pos leftmost (parse_lambda_lhs defs leftmost)) pb in
     let () = whitespaces pb in
     let () = word "->" pb in
     let () = whitespaces pb in
-    let body = parse_term defs leftmost pb in
+    let body = at_start_pos leftmost (parse_term defs leftmost) pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     set_term_pos (build_lambdas qs body) (startpos, endpos)
@@ -1645,7 +1657,7 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((s
     let names = many1 (fun pb ->
       let () = whitespaces pb in
       let startpos = cur_pos pb in
-      let n = name_parser pb in
+      let n = at_start_pos leftmost name_parser pb in
       let endpos = cur_pos pb in
       let () = whitespaces pb in
       n, (startpos, endpos)
@@ -1653,7 +1665,7 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((s
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
     (List.map (fun (n, p) -> Name n, p) names, ty, Explicit)
    )
   )
@@ -1662,7 +1674,7 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((s
     let names = many1 (fun pb ->
     let () = whitespaces pb in
     let startpos = cur_pos pb in
-    let n = name_parser pb in
+    let n = at_start_pos leftmost name_parser pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     n, (startpos, endpos)
@@ -1670,21 +1682,21 @@ and parse_impl_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : ((s
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
     (List.map (fun (n, p) -> Name n, p) names, ty, Implicit)
   )
   )
   (* or just a type -> anonymous arguments *)
   <|> (fun pb -> 
-    let ty = parse_term_lvl0 defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term_lvl0 defs leftmost) pb in
     ([Symbol ("_", Nofix), nopos], ty, Explicit)        
   )
   <|> (fun pb -> 
-    let ty = paren (parse_term_lvl0 defs leftmost) pb in
+    let ty = at_start_pos leftmost (paren (parse_term_lvl0 defs leftmost)) pb in
     ([Symbol ("_", Nofix), nopos], ty, Explicit)        
   )
   <|> (fun pb -> 
-    let ty = bracket (parse_term_lvl0 defs leftmost) pb in
+    let ty = at_start_pos leftmost (bracket (parse_term_lvl0 defs leftmost)) pb in
     ([Symbol ("_", Nofix), nopos], ty, Implicit)        
   )
 end pb
@@ -1697,7 +1709,7 @@ and parse_lambda_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (
     let names = many1 (fun pb ->
       let () = whitespaces pb in
       let startpos = cur_pos pb in
-      let n = name_parser pb in
+      let n = at_start_pos leftmost name_parser pb in
       let endpos = cur_pos pb in
       let () = whitespaces pb in
       n, (startpos, endpos)
@@ -1705,7 +1717,7 @@ and parse_lambda_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (
     let () = whitespaces pb in
     let () = word "::" pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
     (List.map (fun (n, p) -> Name n, p) names, ty, Explicit)
    )
   )
@@ -1714,16 +1726,16 @@ and parse_lambda_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (
     let names = many1 (fun pb ->
     let () = whitespaces pb in
     let startpos = cur_pos pb in
-    let n = name_parser pb in
+    let n = at_start_pos leftmost name_parser pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     n, (startpos, endpos)
     ) pb in
     let ty = match (mayberule (fun pb ->
       let () = whitespaces pb in
-      let () = word "::" pb in
+      let () = at_start_pos leftmost (word "::") pb in
       let () = whitespaces pb in
-      let ty = parse_term defs leftmost pb in
+      let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
       ty
     ) pb) with
       | None -> AVar nopos
@@ -1734,7 +1746,7 @@ and parse_lambda_lhs (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (
   <|> (fun pb -> 
     let () = whitespaces pb in
     let startpos = cur_pos pb in
-    let n = name_parser pb in
+    let n = at_start_pos leftmost name_parser pb in
     let endpos = cur_pos pb in
     let () = whitespaces pb in
     ([Name n, (startpos, endpos)], AVar nopos, Explicit)        
@@ -1745,7 +1757,7 @@ end pb
 (* this is operator-ed terms with term_lvl1 as primary
 *)
 and parse_term_lvl0 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
-  let myp = create_opparser_term defs (parse_term_lvl1 defs leftmost) in
+  let myp = create_opparser_term defs (at_start_pos leftmost (parse_term_lvl1 defs leftmost)) in
   opparse myp
 end pb
 
@@ -1754,12 +1766,12 @@ and parse_term_lvl1 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
   fun pb -> 
     (* first we parse the application head *)
     let startpos = cur_pos pb in
-    let head = parse_term_lvl2 defs leftmost pb in    
+    let head = at_start_pos leftmost (parse_term_lvl2 defs leftmost) pb in    
     let () = whitespaces pb in
     (* then we parse the arguments *)
     let args = separatedBy (
       fun pb ->
-      parse_arguments defs leftmost pb
+      at_start_pos leftmost (parse_arguments defs leftmost) pb
     ) whitespaces pb in
     let endpos = cur_pos pb in
     match args with
@@ -1771,11 +1783,11 @@ end pb
 (* arguments: term_lvl2 with possibly brackets *)
 and parse_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (term * nature) = begin
   (fun pb -> 
-    let te = bracket (parse_term_lvl2 defs leftmost) pb in
+    let te = at_start_pos leftmost (bracket (parse_term_lvl2 defs leftmost)) pb in
     (te, Implicit)
   )
   <|> (fun pb -> 
-    let te = parse_term_lvl2 defs leftmost pb in
+    let te = at_start_pos leftmost (parse_term_lvl2 defs leftmost) pb in
     (te, Explicit)
   )
 end pb
@@ -1784,67 +1796,68 @@ end pb
 and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : term = begin
   tryrule (fun pb -> 
     let () = whitespaces pb in
-    let (), pos = with_pos (word "Type") pb in
+    let (), pos = at_start_pos leftmost (with_pos (word "Type")) pb in
     let () = whitespaces pb in
     Type pos
   ) 
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
-    let (), pos = with_pos parse_avar pb in
+    let (), pos = at_start_pos leftmost (with_pos parse_avar) pb in
     let () =  whitespaces pb in
     AVar pos
   ) 
   <|> tryrule (fun pb -> 
     let () =  whitespaces pb in
-    let s, pos = with_pos (parse_symbol_name defs) pb in
+    let s, pos = at_start_pos leftmost (with_pos (parse_symbol_name defs)) pb in
     let () =  whitespaces pb in    
     TName (s, pos)
   )
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
-    let n, pos = with_pos name_parser pb in
+    let n, pos = at_start_pos leftmost (with_pos name_parser) pb in
     let () = whitespaces pb in
     TName (Name n, pos)
   )
-  <|> (paren (parse_term defs leftmost))
+  <|> at_start_pos leftmost (paren (parse_term defs leftmost))
 end pb
 
 and parse_pattern (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  let myp = create_opparser_pattern defs (parse_pattern_lvl1 defs leftmost) in
+  let myp = create_opparser_pattern defs (at_start_pos leftmost (parse_pattern_lvl1 defs leftmost)) in
   opparse myp
 end pb
 
 and parse_pattern_lvl1 (defs: defs) (leftmost: (int * int)) : pattern parsingrule =
   tryrule (fun pb -> 
     (* first we parse the application head *)
-    let s, pos = with_pos (parse_symbol defs) pb in    
+    let () = whitespaces pb in
+    let s, pos = at_start_pos leftmost (with_pos (parse_symbol defs)) pb in    
     let () = whitespaces pb in
     (* then we parse the arguments *)
     let args = List.flatten (
       separatedBy (
 	fun pb ->
-	  parse_pattern_arguments defs leftmost pb
+	  at_start_pos leftmost (parse_pattern_arguments defs leftmost) pb
       ) whitespaces pb) in
     let endpos = cur_pos pb in
     match args with
       | [] -> PCste (s, pos)
       | _ -> PApp ((s, pos), args, AVar nopos, (fst pos, endpos))	  
   )
-  <|> tryrule (parse_pattern_lvl2 defs leftmost)
+  <|> tryrule (at_start_pos leftmost (parse_pattern_lvl2 defs leftmost))
 
 
 and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : (pattern * nature) list = begin
   tryrule (paren (fun pb ->
     let patterns = many1 (fun pb ->
       let () = whitespaces pb in
-      let n = parse_pattern_lvl2 defs leftmost pb in
+      let n = at_start_pos leftmost (parse_pattern_lvl2 defs leftmost) pb in
       let () = whitespaces pb in
       n
     ) pb in
     let () = whitespaces pb in
-    let () = word "::" pb in
+    let () = at_start_pos leftmost (word "::") pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
     List.map (fun p -> set_pattern_type p ty, Explicit) patterns
    )
   )
@@ -1852,27 +1865,27 @@ and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuff
   <|> tryrule (bracket (fun pb ->
     let patterns = many1 (fun pb ->
     let () = whitespaces pb in
-    let n =  parse_pattern_lvl2 defs leftmost pb in
+    let n =  at_start_pos leftmost (parse_pattern_lvl2 defs leftmost) pb in
     let () = whitespaces pb in
     n
     ) pb in
     let () = whitespaces pb in
-    let () = word "::" pb in
+    let () = at_start_pos leftmost (word "::") pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = at_start_pos leftmost (parse_term defs leftmost) pb in
     List.map (fun p -> set_pattern_type p ty, Implicit) patterns
   )
   )
   <|>(fun pb -> 
-    let te = bracket (parse_pattern defs leftmost) pb in
+    let te = at_start_pos leftmost (bracket (parse_pattern defs leftmost)) pb in
     [te, Implicit]
   )
   <|>(fun pb -> 
-    let te = paren (parse_pattern defs leftmost) pb in
+    let te = at_start_pos leftmost (paren (parse_pattern defs leftmost)) pb in
     [te, Explicit]
   )
   <|> (fun pb -> 
-    let te = parse_pattern_lvl2 defs leftmost pb in
+    let te = at_start_pos leftmost (parse_pattern_lvl2 defs leftmost) pb in
     [te, Explicit]
   )
 end pb
@@ -1880,38 +1893,38 @@ end pb
 and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
   (fun pb -> 
     let () = whitespaces pb in
-    let (), pos = with_pos (word "Type") pb in
+    let (), pos = at_start_pos leftmost (with_pos (word "Type")) pb in
     let () = whitespaces pb in
     PType pos
   ) 
   <|> (fun pb ->
     let () =  whitespaces pb in
-    let (), pos = with_pos parse_avar pb in
+    let (), pos = at_start_pos leftmost (with_pos parse_avar) pb in
     let () =  whitespaces pb in
     PAVar (AVar nopos, pos) 
   ) 
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
-    let s, pos = with_pos (parse_symbol defs) pb in
+    let s, pos = at_start_pos leftmost (with_pos (parse_symbol defs)) pb in
     let () =  whitespaces pb in
     PCste (s, pos)
   )
   <|> tryrule (fun pb ->
     let () =  whitespaces pb in
     let startpos = cur_pos pb in
-    let name = name_parser pb in
-    let () = word "@" pb in
-    let p = parse_pattern defs leftmost pb in
+    let name = at_start_pos leftmost name_parser pb in
+    let () = at_start_pos leftmost (word "@") pb in
+    let p = at_start_pos leftmost (parse_pattern defs leftmost) pb in
     let endpos = cur_pos pb in
     PAlias (name, p, AVar nopos, (startpos, endpos))
   )
   <|> (fun pb -> 
     let () =  whitespaces pb in
-    let name, pos = with_pos name_parser pb in
+    let name, pos = at_start_pos leftmost (with_pos name_parser) pb in
     let () =  whitespaces pb in    
     PVar (name, AVar nopos, pos)
   )
-  <|> (paren (parse_pattern defs leftmost))
+  <|> at_start_pos leftmost (paren (parse_pattern defs leftmost))
 end pb
 
 type definition = DefSignature of symbol * term
@@ -1922,21 +1935,23 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
   (* a signature *)
   tryrule (fun pb ->
     let () = whitespaces pb in
-    let s = parse_symbol_name_def pb in
+    let s = at_start_pos leftmost (parse_symbol_name_def) pb in
     let () = whitespaces pb in
-    let () = word "::" pb in
+    let () = at_start_pos leftmost (word "::") pb in
+    let startpos = cur_pos pb in
     let () = whitespaces pb in
-    let ty = parse_term defs leftmost pb in
+    let ty = parse_term defs startpos pb in
     DefSignature (s, ty)
   )
   (* here we should have the Destructor parser *)
   <|> tryrule (fun pb ->
     let () = whitespaces pb in
-    let p = parse_pattern defs leftmost pb in
+    let p = at_start_pos leftmost (parse_pattern defs leftmost) pb in
     let () = whitespaces pb in
     let () = word ":=" pb in
+    let startpos = cur_pos pb in
     let () = whitespaces pb in
-    let te = parse_term defs leftmost pb in
+    let te = parse_term defs startpos pb in
     DefEquation (p, te)
   )
   (* finally a free term *)
