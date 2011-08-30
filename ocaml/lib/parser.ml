@@ -1084,3 +1084,10 @@ let stream_of_string s =
 	| _ -> None
     )
 
+(* eos *)
+let eos (pb: parserbuffer) : unit =
+  try
+    Stream.empty pb.inputstream
+  with
+    | Stream.Failure -> raise NoMatch
+
