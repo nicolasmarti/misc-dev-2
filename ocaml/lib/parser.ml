@@ -51,11 +51,11 @@ let pos_coo (pb: parserbuffer) (pos: int) : (int * int) =
   let last_index = ref 0 in
   let s = Buffer.contents pb.bufferstr in
   try 
-    while !cur_index < pos do
+    while !cur_index <= pos do
       last_index := !cur_index;
       cur_index := String.index_from s !cur_index '\n';
       cur_index := !cur_index + 1;
-      if !cur_index < pos then nb_row := !nb_row + 1 else ();
+      if !cur_index <= pos then nb_row := !nb_row + 1 else ();
     done;
     (!nb_row, pos - !last_index)
   with
