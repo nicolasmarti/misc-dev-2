@@ -1,5 +1,5 @@
 open Doudou
-
+open Printf
 (*
   this is an axiomatization for (intuitionistic) first order logic (without existential) with equality in doudou LF
  
@@ -22,29 +22,30 @@ let fol_defs = ref (empty_defs ())
 
 (* this is the theorie for FOL in our LF (we take the (->) of our LF for implication) *)
 
-let _ = process_definition fol_defs fol_ctxt "false :: Type"
-let _ = process_definition fol_defs fol_ctxt "true :: Type"
-let _ = process_definition fol_defs fol_ctxt "I :: true"
+let fol_definitions = "
+false :: Type
+true :: Type
+I :: true
+[~) : 50 :: Type -> Type
+contradiction :: {P :: Type} -> P -> ~ P -> false
+absurd :: {P :: Type} -> false -> P
 
-let _ = process_definition fol_defs fol_ctxt "[~) : 50 :: Type -> Type"
-let _ = process_definition fol_defs fol_ctxt "contradiction :: {P :: Type} -> P -> ~ P -> false"
-let _ = process_definition fol_defs fol_ctxt "absurd :: {P :: Type} -> false -> P"
+(/\\) : left, 40 :: Type -> Type -> Type
+conj :: {A B :: Type} -> A -> B -> A /\\ B
+proj1 :: {A B :: Type} -> A /\\ B -> A
+proj2 :: {A B :: Type} -> A /\\ B -> B
 
-let _ = process_definition fol_defs fol_ctxt "(/\\) : left, 40 :: Type -> Type -> Type"
-let _ = process_definition fol_defs fol_ctxt "conj :: {A B :: Type} -> A -> B -> A /\\ B"
-let _ = process_definition fol_defs fol_ctxt "proj1 :: {A B :: Type} -> A /\\ B -> A"
-let _ = process_definition fol_defs fol_ctxt "proj2 :: {A B :: Type} -> A /\\ B -> B"
+(\\/) : left, 30 :: Type -> Type -> Type
+left :: {A B :: Type} -> A -> A \\/ B
+right :: {A B :: Type} -> B -> A \\/ B
+disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C
 
-let _ = process_definition fol_defs fol_ctxt "(\\/) : left, 30 :: Type -> Type -> Type"
-let _ = process_definition fol_defs fol_ctxt "left :: {A B :: Type} -> A -> A \\/ B"
-let _ = process_definition fol_defs fol_ctxt "right :: {A B :: Type} -> B -> A \\/ B"
-let _ = process_definition fol_defs fol_ctxt "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
+(=) : no, 20 :: {A :: Type} -> A -> A -> Type
+refl :: {A :: Type} -> (a :: A) -> a = a
+congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b
+"
 
-(* this is the theorie of equality in of LF *)
-
-let _ = process_definition fol_defs fol_ctxt "(=) : no, 20 :: {A :: Type} -> A -> A -> Type"
-let _ = process_definition fol_defs fol_ctxt "refl :: {A :: Type} -> (a :: A) -> a = a"
-let _ = process_definition fol_defs fol_ctxt "congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b"
+let _ = parse_process_definitions fol_defs fol_ctxt ~verbose:false fol_definitions
 
 (* functions that verifies that a term is in 
    - formula 
