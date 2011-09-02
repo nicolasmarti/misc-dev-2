@@ -32,13 +32,6 @@ let term2category (te: term) : string =
     (* other term should not be hypothesis (that we consider in normal formal form (== beta reduced)) *)
     | _ -> "??"
 
-module NameMap = Map.Make(
-  struct
-    type t = string
-    let compare x y = compare x y
-  end
-);;
-
 (* the first level represent category, the second names of the hypothesis *)
 type hypothesises = (hypothesis NameMap.t) NameMap.t
 

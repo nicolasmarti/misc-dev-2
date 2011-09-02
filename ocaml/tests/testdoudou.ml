@@ -17,30 +17,24 @@ let _ = printf "------------------------------------------- Definitions Tests --
 
 (* Logic *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "false :: Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "true :: Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "I :: true"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "false :: Type := "
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "true :: Type := | I :: true"
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "[~) :  50 :: Type -> Type"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "contradiction :: {P :: Type} -> P -> ~ P -> false"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "absurd :: {P :: Type} -> false -> P"
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(/\\) : left, 40 :: Type -> Type -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "conj :: {A B :: Type} -> A -> B -> A /\\ B"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(/\\) : left, 40 (A B :: Type) :: Type := | conj :: A -> B -> A /\\ B"
+
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "proj1 :: {A B :: Type} -> A /\\ B -> A"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "proj2 :: {A B :: Type} -> A /\\ B -> B"
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(\\/) : left, 30 :: Type -> Type -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "left :: {A B :: Type} -> A -> A \\/ B"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "right :: {A B :: Type} -> B -> A \\/ B"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(\\/) : left, 30 (A:: Type) (B:: Type) :: Type := | left :: A -> A \\/ B | right :: B -> A \\/ B" 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C"
 
 (* Boolean *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Bool :: Type"
-
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "True :: Bool"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "False :: Bool"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Bool :: Type := | True :: Bool | False :: Bool"
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(||) : left, 20 :: Bool -> Bool -> Bool"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "True || _ := True"
@@ -64,9 +58,7 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 (* List *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "List :: Type -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "[[]] :: {A :: Type} -> List A"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(:) : right, 10 :: {A :: Type} -> A -> List A -> List A"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "List (A :: Type) :: Type := | [[]] :: List A | (:) : right, 10 :: A -> List A -> List A"
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "map :: {A B:: Type} -> (f:: A -> B) -> List A -> List B"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "map f [] := []"
@@ -91,9 +83,7 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 (* Nat *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Nat :: Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "O :: Nat"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "S :: Nat -> Nat"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Nat :: Type := | O :: Nat | S :: Nat -> Nat"
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "plusType Nat Nat := Nat"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(+) {Nat} {Nat} O x := x"
@@ -112,14 +102,11 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 (* Vector *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Vec :: Type -> Nat -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Empty :: {A :: Type} -> Vec A O"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Next :: {A :: Type} -> {n:: Nat} -> A -> Vec A n -> Vec A (S n)"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "Vec (A::Type) :: Nat -> Type := | Empty :: Vec A O | Next :: {n:: Nat} -> A -> Vec A n -> Vec A (S n)"
 
 (* pair *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "prod :: Type -> Type -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "pair :: {A B :: Type} -> A -> B -> prod A B"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "prod (A :: Type) (B :: Type) :: Type := | pair :: A -> B -> prod A B"
 
 (* dependant type fold *)
 

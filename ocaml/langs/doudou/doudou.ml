@@ -12,6 +12,20 @@ open Printf
 
 type name = string
 
+module NameMap = Map.Make(
+  struct
+    type t = string
+    let compare x y = compare x y
+  end
+);;
+
+module NameSet = Set.Make(
+  struct
+    type t = string
+    let compare x y = compare x y
+  end
+);;
+
 type op = Nofix
 	  | Prefix of int
 	  | Infix of int * associativity
@@ -21,6 +35,20 @@ type symbol = | Name of name
 	      | Symbol of name * op
 
 type index = int
+
+module IndexSet = Set.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
+
+module IndexMap = Map.Make(
+  struct
+    type t = int
+    let compare x y = compare x y
+  end
+);;
 
 type nature = Explicit
 	      | Implicit
@@ -97,7 +125,7 @@ and frame = {
 (* context *)
 and context = frame list
 
-and value = Inductive of (symbol * term) list
+and value = Inductive of symbol list
 	    | Axiom
 	    | Constructor
 	    | Equation of equation list
@@ -126,6 +154,8 @@ let empty_frame = {
 let empty_context = empty_frame::[]
 
 let empty_defs () = { store = Hashtbl.create 30; hist = [] }
+
+let copy_defs (defs: defs) = {defs with store = Hashtbl.copy defs.store}
 
 type doudou_error = NegativeIndexBVar of index
 		    | Unshiftable_term of term * int * int
@@ -262,14 +292,6 @@ let rec pattern_size (p: pattern) : int =
     | PAlias (_, p, _, _) -> 1 + pattern_size p
     | PApp (_, args, _, _) -> 
       List.fold_left ( fun acc (hd, _) -> acc + pattern_size hd) 0 args
-
-(* computation of free variable in a term *)
-module IndexSet = Set.Make(
-  struct
-    type t = int
-    let compare x y = compare x y
-  end
-);;
 
 (* set the outermost pattern type *)
 let set_pattern_type (p: pattern) (ty: term) : pattern =
@@ -469,6 +491,15 @@ let rec construct_lambda (l: (symbol * term * nature * pos) list) (body: term) :
     | [] -> body
     | hd :: tl -> Lambda (hd, construct_lambda tl body, nopos)
 
+(* destruction of application *)
+let rec destruct_app (te: term) : term * (term * nature) list =
+  match te with
+    (* we make sure the application are in normal forms *)
+    | App (App (hd, args1, _), args2, _) ->
+      destruct_app (App (hd, args1 @ args2, nopos))
+    | App (hd, args, _) -> hd, args
+    | _ -> te, []
+
 (* this is the equality modulo position/app/... *)
 let rec eq_term (te1: term) (te2: term) : bool =
   match te1, te2 with
@@ -496,13 +527,6 @@ let rec eq_term (te1: term) (te2: term) : bool =
 (*************************************)
 
 (* substitution = replace variables (free or bound) by terms (used for typechecking/inference with free variables, and for reduction with bound variable) *)
-
-module IndexMap = Map.Make(
-  struct
-    type t = int
-    let compare x y = compare x y
-  end
-);;
 
 (* substitution: from free variables to term *) 
 type substitution = term IndexMap.t;;
@@ -613,13 +637,6 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 (********************************)
 (*      defs/context/frame      *)
 (********************************)
-
-module NameSet = Set.Make(
-  struct
-    type t = string
-    let compare x y = compare x y
-  end
-);;
 
 (* build the set of names of the frames *)
 let build_name_set (ctxt: context) : NameSet.t =
@@ -893,6 +910,17 @@ let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
   (* update the definitions *)
   Hashtbl.add !defs.store (symbol2string s) (s, constante_type !defs s, Equation (eqs @ [eq]));
   defs := {!defs with hist = s::!defs.hist }
+
+let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * term) list) : unit =
+  (* just checking that there is no redefinition for the type *)
+  if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
+  let _ = List.map (fun (s, _) -> if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])))) constrs in
+
+  (* update the definitions *)
+  Hashtbl.add !defs.store (symbol2string s) (s, ty, Inductive (List.map fst constrs));
+  let _ = List.map (fun (s, ty) -> Hashtbl.add !defs.store (symbol2string s) (s, ty, Constructor)) constrs in
+  defs := {!defs with hist = s::(List.map fst constrs) @ !defs.hist }
+
 
 (* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
 let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
@@ -1961,6 +1989,8 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = whitespaces pb in
     let () = at_start_pos leftmost (word ":=") pb in
     let () = whitespaces pb in
+    (* we need to create a copy of the definition, in order to parse the Inductive type symbol *)
+    let defs = { defs with hist = s::defs.hist } in
     let constrs = many (fun pb ->
       let () = whitespaces pb in
       let () = at_start_pos leftmost (word "|") pb in
@@ -2898,14 +2928,100 @@ let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context 
       (* first, we build the inductive type's type and typecheck again type *)
       let ind_ty = build_impls args ty in
       let ind_ty, _ = typecheck !defs ctxt ind_ty (Type nopos) in
-      printf "definition of inductive type of type:\n%s\n" (term2string !ctxt ind_ty);
       (* first we push the type, so that results of all further unification will be aplpied on it *)
       push_terms ctxt [ind_ty];
       (* then we grab back the quantifiers and body of the type *)
-      let args, ty = destruct_impl ~nb_qs:(List.length args) ind_ty in
+      let args, ty = destruct_impl ~nb_qs:(List.fold_left (fun acc (args, _, _) -> acc + List.length args) 0 args) ind_ty in
       (* we pushes the quantifications *)
       let _ = List.map (fun q -> push_quantification q ctxt) args in      
-      raise (DoudouException (FreeError "Inductive type definition implem in progress ..."))
+      (* we create a new defs, where the inductive types is an axiom of the proper type *)
+      addAxiom defs s ind_ty;
+      (* we traverse the constructors, typing them and looking for there well-formness 
+	 N.B.: there is no positivity test yet
+      *)
+      let constrs = List.map (fun (s', ty) -> 
+	(* any constructors should have type type *)
+	let ty, _ = typecheck !defs ctxt ty (Type nopos) in
+	(* check for well formness, first we destruct the impl *)
+	let hyps, ccl = destruct_impl ty in
+	(* then we look at the ccl, we destruct it *)
+	let hd, args' = destruct_app ccl in
+	(* first we need to be sure that the head of the application is the inductive *)
+	let _ = match hd with
+	  | Cste (s'',_) when s = s'' -> ()
+	  | Cste (s'', _) -> raise (DoudouException (FreeError (
+	    String.concat "" ["error in inductive type ";
+			      symbol2string s; 
+			      " definition of constructor ";
+			      symbol2string s'; 
+			      " of type ";
+			      (term2string !ctxt ty);
+			      "\nthe constructor conclusion head is not the inductive type but ";
+			      symbol2string s''
+			     ]
+	  )))
+	  | _ -> raise (DoudouException (FreeError (
+	    String.concat "" ["error in inductive type ";
+			      symbol2string s; 
+			      " definition of constructor ";
+			      symbol2string s'; 
+			      " of type ";
+			      (term2string !ctxt ty);
+			      "\nthe constructor conclusion head is not the inductive type (and not even a symbol)"
+			     ]
+	  )))
+	in
+	(* then we check that the first arguments are the same as the args of the inductive *)
+	let _ = List.fold_left (fun acc ((constr_arg, n1), (_, _, n2, _)) ->
+	  (* we check that both nature are the same *)
+	  if n1 <> n2 then
+	    raise (DoudouException (FreeError (
+	      String.concat "" ["error in inductive type ";
+				symbol2string s; 
+				" definition of constructor ";
+				symbol2string s'; 
+				"\nthe ";
+				string_of_int acc;
+				"nth argument nature of the conclusion is not the same as the nature of the inductive argument"
+			       ]
+	    )))
+	  else
+	    (* and then that it is a variable correesponding to the inductive argument *)
+	    match constr_arg with
+	      | TVar (i, _) when i = List.length hyps + List.length args -1 - acc -> acc + 1
+	      | _ -> raise (DoudouException (FreeError (
+		String.concat "" ["error in inductive type ";
+				  symbol2string s; 
+				  " definition of constructor ";
+				  symbol2string s'; 
+				  "\nthe ";
+				  string_of_int acc;
+				  "nth argument of the conclusion is not the same as the argument of the inductive argument: ";
+				  (term2string !ctxt (TVar ( List.length hyps + List.length args -1 - acc, nopos)))
+				 ]
+	      )))
+	  
+	) 0 (List.combine (take (List.length args) args') args) in
+
+	(*printf "constructor %s of inductive type %s has type: %s\n" (symbol2string s') (symbol2string s) (term2string !ctxt ty);*)
+	s', ty
+      ) constrs in
+      (* we remove the definition of the inductive type *)
+      Hashtbl.remove !defs.store (symbol2string s);
+      (* now we can pop the quantifiers *)
+      let qs = List.rev (List.map (fun _ -> fst (pop_quantification ctxt [])) args) in
+      (* pop the inductive types type *)
+      let [ind_ty] = pop_terms ctxt 1 in
+      if verbose then printf "Inductive: %s :: %s\n" (symbol2string s) (term2string !ctxt ind_ty);      
+      (* requantify the args as Implicit in the contructors *)
+      let constrs = List.map (fun (s, ty) ->
+	let ty = build_impls (List.map (fun (s, ty, _, _) -> [s, nopos], ty, Implicit) qs) ty in
+	if verbose then printf "Constructor: %s :: %s\n" (symbol2string s) (term2string !ctxt ty);      
+
+	s, ty
+      ) constrs in
+      (* and we update the definitions *)
+      addInductive defs s ind_ty constrs
     )
 
     | DefSignature (s, ty) ->
@@ -2916,7 +3032,7 @@ let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context 
       (* add to the defs *)
       addAxiom defs s ty;
       (* just print that everything is fine *)
-      if verbose then printf "Defined: %s :: %s \n" (symbol2string s) (term2string !ctxt ty); flush Pervasives.stdout
+      if verbose then printf "Axiom: %s :: %s \n" (symbol2string s) (term2string !ctxt ty); flush Pervasives.stdout
 
     | DefEquation (PCste (s, spos) as p, te) | DefEquation (PApp ((s, spos), _, _, _) as p, te) ->
       let p, te = typecheck_equation !defs ctxt p te in
