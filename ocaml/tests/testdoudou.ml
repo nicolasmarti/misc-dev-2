@@ -169,6 +169,9 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "(~true \\/ false /\\ true) -> false"
 
+(* inductive type examples *)
+
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "option A :: Type := | None :: option A | Some :: A -> option A"
 
 (**********************)
 (* example of tactics *)

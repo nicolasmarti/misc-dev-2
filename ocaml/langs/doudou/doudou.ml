@@ -437,6 +437,9 @@ let filter_explicit (l: ('a * nature) list) : 'a list =
 let build_impl (symbols: (symbol * pos) list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun (s, pos) acc -> Impl ((s, ty, nature, pos), acc, (fst pos, snd (get_term_pos acc)))) symbols body
 
+let build_impls (qs: ((symbol * pos) list * term * nature) list) (body: term) : term =
+  List.fold_right (fun (s, ty, n) acc -> build_impl s ty n acc) qs body
+
 (* build a Lambda: no shifting in types !!! *)
 let build_lambda (symbols: (symbol * pos) list) (ty: term) (nature: nature) (body: term) : term =
   List.fold_right (fun (s, pos) acc -> Lambda ((s, ty, nature, pos), acc, (fst pos, snd (get_term_pos acc)))) symbols body
@@ -445,11 +448,12 @@ let build_lambda (symbols: (symbol * pos) list) (ty: term) (nature: nature) (bod
 let build_lambdas (qs: ((symbol * pos) list * term * nature) list) (body: term) : term =
   List.fold_right (fun (s, ty, n) acc -> build_lambda s ty n acc) qs body
 
-(* recursive destrution of impl and lanbdas *)
-let rec destruct_impl (ty: term) : (symbol * term * nature * pos) list * term =
+(* recursive destrution of impl (with an optionally max number of quantifiers) and lambdas *)
+let rec destruct_impl ?(nb_qs: int = -1) (ty: term) : (symbol * term * nature * pos) list * term =
+  if nb_qs = 0 then [], ty else
   match ty with
     | Impl (e, te, _) ->
-      let l, te = destruct_impl te in
+      let l, te = destruct_impl ~nb_qs:(nb_qs - 1) te in
       e::l, te
     | _ -> [], ty
 
@@ -1940,10 +1944,39 @@ end pb
 type definition = DefSignature of symbol * term
 		  | DefEquation of pattern * term
 		  | DefTerm of term
+		  | DefInductive of symbol * ((symbol * pos) list * term * nature) list * term * (symbol * term) list
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
-  (* a signature *)
+  (* an inductive *)
   tryrule (fun pb ->
+    let () = whitespaces pb in
+    let s = at_start_pos leftmost (parse_symbol_name_def) pb in
+    let () = whitespaces pb in
+    let args = many (parse_lambda_lhs defs leftmost) pb in
+    let () = whitespaces pb in
+    let () = at_start_pos leftmost (word "::") pb in
+    let startpos = cur_pos pb in
+    let () = whitespaces pb in
+    let ty = parse_term defs startpos pb in
+    let () = whitespaces pb in
+    let () = at_start_pos leftmost (word ":=") pb in
+    let () = whitespaces pb in
+    let constrs = many (fun pb ->
+      let () = whitespaces pb in
+      let () = at_start_pos leftmost (word "|") pb in
+      let () = whitespaces pb in
+      let s = at_start_pos leftmost (parse_symbol_name_def) pb in
+      let () = whitespaces pb in
+      let () = at_start_pos leftmost (word "::") pb in
+      let startpos = cur_pos pb in
+      let () = whitespaces pb in
+      let ty = parse_term defs startpos pb in
+      s, ty
+    ) pb in
+    DefInductive (s, args, ty, constrs)
+  )
+  (* a signature *)
+  <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let s = at_start_pos leftmost (parse_symbol_name_def) pb in
     let () = whitespaces pb in
@@ -1958,7 +1991,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = whitespaces pb in
     let p = at_start_pos leftmost (parse_pattern defs leftmost) pb in
     let () = whitespaces pb in
-    let () = word ":=" pb in
+    let () = at_start_pos leftmost (word ":=") pb in
     let startpos = cur_pos pb in
     let () = whitespaces pb in
     let te = parse_term defs startpos pb in
@@ -2861,6 +2894,20 @@ let clean_term_strat : reduction_strategy = {
 
 let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context ref) (definition: definition) : unit =
   match definition with
+    | DefInductive (s, args, ty, constrs) -> (
+      (* first, we build the inductive type's type and typecheck again type *)
+      let ind_ty = build_impls args ty in
+      let ind_ty, _ = typecheck !defs ctxt ind_ty (Type nopos) in
+      printf "definition of inductive type of type:\n%s\n" (term2string !ctxt ind_ty);
+      (* first we push the type, so that results of all further unification will be aplpied on it *)
+      push_terms ctxt [ind_ty];
+      (* then we grab back the quantifiers and body of the type *)
+      let args, ty = destruct_impl ~nb_qs:(List.length args) ind_ty in
+      (* we pushes the quantifications *)
+      let _ = List.map (fun q -> push_quantification q ctxt) args in      
+      raise (DoudouException (FreeError "Inductive type definition implem in progress ..."))
+    )
+
     | DefSignature (s, ty) ->
       (* we typecheck the type against Type *)
       let ty, _ = typecheck !defs ctxt ty (Type nopos) in	  
