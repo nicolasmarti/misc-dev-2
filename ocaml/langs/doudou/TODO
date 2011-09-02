@@ -2,12 +2,11 @@ this is a list of features to implement/remarks
 
 * doudou:
   - implements Type stratification + test of universe consistency
-  - implements Inductive + test for constructor positivity + automatic generation of induction principle
-  - implements Inductive types destruction
+  - implements test for constructor positivity
+  - implements Inductive types destruction + automatic generation of induction principle
   - implements terminaison test
   - implements test for completeness of function
   - implements loading/saving of stores
-  - fix the parser in order to properly use leftmost (DONE)
 
 * proof:
   - redo a clean implementation (separating cleanly hypothesises, patterns, and tactics)
