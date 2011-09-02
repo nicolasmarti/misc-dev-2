@@ -1,0 +1,38 @@
+* gnumeric:
+  - a patch for gnumeric, such that it can use several interpreter that release python global lock
+    (still crashes)
+
+* ibtws-server:
+  - Server.py: a pyro interfaced server for Interactive Broker Trading Work Station
+  - test*.py: a bunch of tests
+
+* ibtws-client:
+  - stratcommander.py: program to start trading automata command from googlesheet (with output also in the sheet)
+    DEPRECATED: to be re-designed/implemented using the googlesheet lib 
+  - strat2.py: fixed strategy
+    DEPRECATED
+  - client.py: client interface for trading, using several libraries in lib
+    TOEXTENDS
+
+* myeditor:
+  - myeditor.py: tentative of implementing a emacs-like editor extensible in python
+    TOREDO
+
+* lib:
+  - accountframe.py: a gtk.Frame, using ibtws-server connection in order to show all the account attributes with their values
+  - automaton.py: generic threaded trading automata, which takes as arguments a strategy (dict of functions/ value), and a contract (from contract.py)
+  - contract.py: 
+    - IBContract: a generic threaded class attached to a IBTWS contract. Abstract a link to ibtws-server, provide order, and local pnl, upnl, ... facilities
+    - Stack: class that create a IBContract from a stock name
+  - evalframe.py: a gtk.Frame, which allow to compute python expression, and to execute python code
+  - executionframe.py: a gtk.Frame using ibtws-server, which show all the execution details
+  - googlesheet.py: a library for set/get values in google sheets
+  - gtksheet.py: a gtk.TreeView, which provide an interface to the spreadsheet.py library
+  - indicators.py: library for creating indicator for trading
+  - portfolioframe.py: a gtk.Frame which show the portfolio information using a connection to ibtws-server 
+  - spreadsheet.py: a graph of named formulas / value, with automatic reevaluation when a value is mutated
+  - stockframe.py: a gtk.Frame using a connection to ibtws-server, in order to show all the realtime information of a given stock (market data, market depth, ...)
+  - worldclockwindow.py: a gtk.Window which title is a list of time in several timezone
+  - yahoojap.py: a library that allow to load japanese stock quote from yahoo japan
+  - yhstckcanvas.py: two canvas showing matplotlib graphs using yahoo data (examples taken from matplotlib examples)
+
