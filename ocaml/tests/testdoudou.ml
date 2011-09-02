@@ -216,29 +216,19 @@ end
 
 let goal1 = "{A :: Type} -> A -> A"
 
-let tactic1 = Intro (["A"; "H"],
-		     Cases [
-		      PPVar "A", ["H", PPVar "A"], Exact (PPProof "H")
-		     ]
-)
+let tactic1 = tactic_from_string 
+  (empty_proof_context (empty_defs ())) 
+  "Intro A H; Exact proof(H)"
 
 let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic1 goal1
 
 let goal2 = "{A B :: Type} -> (A -> B) -> A -> B"
 
-let tactic2 = Intro (["A"; "B"; "H"; "H1"],
-		     Cases [
-		      PPAVar, ["H1", PPImpl (PPVar "A", PPVar "B"); "H2", PPVar "A"],
-		      AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
-			      Cases [
-				PPVar "A", ["H", PPVar "A"], Exact (PPProof "H")
-			      ]				
-		      )		      
-		     ]
-)
+let tactic2 = tactic_from_string 
+  (empty_proof_context (empty_defs ())) 
+  "Intro A B H H1; Exact proof(H) proof(H1)"
 
 let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic2 goal2
-
 
       
 (**********************************)
@@ -277,12 +267,4 @@ let _ = parse_process_definition fol_tests_def fol_tests_ctxt "z :: ty"
 
 let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
 
-(***********************************)
-(* example of interactive tactics  *)
-(***********************************)
 
-let _ = printf "\n\n------------------------------------------- Interactive Proof Mode tests  -------------------------------------------------\n\n"
-
-let _ = printf "try: Intro H1 H2 H3 H4; Exact proof(H3) proof(H4)\n(then Enter and then CTRL-D\n"
-
-let _ = tactic_solver (empty_defs ()) (ref empty_context) Interactive goal2

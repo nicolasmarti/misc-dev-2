@@ -1024,3 +1024,13 @@ and hyps_matching (ctxt: proof_context) (s: proof_subst) (h: hyp_subst) (hyps_ps
       with
 	| NoPatternMatching -> raise NoPatternMatching
 	| CannotSolveGoal -> raise CannotSolveGoal
+
+let tactic_from_string (ctxt: proof_context) (s: string) : tactic =
+  let lines = stream_of_string s in
+  let pb = build_parserbuffer lines in
+  try 
+    tactic_parser ctxt pb 
+  with
+    | NoMatch -> 
+      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+      raise Exit
