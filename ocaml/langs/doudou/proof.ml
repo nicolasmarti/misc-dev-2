@@ -276,7 +276,7 @@ let pop_quantification (ctxt: proof_context) (prf: term) : proof_context * (symb
 type proof_pattern = PPAVar
 		     | PPCste of symbol
 		     | PPVar of string
-		     | PPImpl of proof_pattern * proof_pattern (* no dependant type here, only Explicit *)
+		     | PPImpl of name option * proof_pattern * proof_pattern (* no dependant type here, only Explicit *)
 		     | PPApp of proof_pattern * (proof_pattern * nature) list
 		     | PPProof of string
 		     | PPType of string
@@ -334,7 +334,8 @@ let iterator_size (it: hypothesises_iterator) : int =
 let rec proof_pattern_variable (p: proof_pattern) : NameSet.t =
   match p with
     | PPVar v -> NameSet.singleton v
-    | PPImpl (hyp, ccl) -> NameSet.union (proof_pattern_variable hyp) (proof_pattern_variable ccl)
+    | PPImpl (None, hyp, ccl) -> NameSet.union (proof_pattern_variable hyp) (proof_pattern_variable ccl)
+    | PPImpl (Some x, hyp, ccl) -> NameSet.union (proof_pattern_variable hyp) (NameSet.remove x (proof_pattern_variable ccl))
     | PPApp (f, args) ->  List.fold_left (fun acc (arg, _) -> NameSet.union (proof_pattern_variable arg) acc) (proof_pattern_variable f) args
     | _ -> NameSet.empty
 
@@ -413,7 +414,8 @@ and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
     | PPAVar -> AVar nopos
     | PPCste s -> Cste (s, nopos)
     | PPVar v -> TName (Name (String.concat "" ["?"; v]), nopos)
-    | PPImpl (p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
+    | PPImpl (None, p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
+    | PPImpl (Some x, p1, p2) -> Impl ((Name x, proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
     | PPProof s ->  (try fst (get_hyp_by_name ctxt.hyps s) with | NoSuchHyp -> TName (Name (String.concat "" ["proof("; s; ")"]), nopos))
     | PPType s -> (try snd (get_hyp_by_name ctxt.hyps s) with | NoSuchHyp -> TName (Name (String.concat "" ["type("; s; ")"]), nopos))
@@ -432,7 +434,8 @@ and proof_pattern_subst (p: proof_pattern) (s: proof_subst) (h: hyp_subst) : pro
 	| Not_found -> p
     )
     | PPApp (p, args) -> PPApp (proof_pattern_subst p s h, List.map (fun (arg, n) -> proof_pattern_subst arg s h, n) args)
-    | PPImpl (p1, p2) -> PPImpl (proof_pattern_subst p1 s h, proof_pattern_subst p2 s h)
+    | PPImpl (None, p1, p2) -> PPImpl (None, proof_pattern_subst p1 s h, proof_pattern_subst p2 s h)
+    | PPImpl (Some x, p1, p2) -> PPImpl (Some x, proof_pattern_subst p1 s h, proof_pattern_subst p2 (NameMap.remove x s) h)
 and proof_pattern2string (ctxt: proof_context) (p: proof_pattern) : string = 
   let te = proof_pattern2term ctxt p in
   term2string ctxt.ctxt te

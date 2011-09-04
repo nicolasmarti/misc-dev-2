@@ -197,7 +197,7 @@ let sature : tactic =
     ;
     
     PPAVar,
-    ["H1", PPImpl (PPVar "A", PPVar "B"); "H2", PPVar "A"],
+    ["H1", PPImpl (None, PPVar "A", PPVar "B"); "H2", PPVar "A"],
     AddHyp ("H", PPApp (PPProof "H1", [PPProof "H2", Explicit]), PPVar "B",
 	    DelHyp ("H1", TacticName "sature")
     )
@@ -237,7 +237,7 @@ let fol_body : tactic =
   Or [TacticName "tauto";
       Cases [     
 
-	PPImpl (PPVar "A", PPVar "B"), [], Intro ([], TacticName "FOL");
+	PPImpl (None, PPVar "A", PPVar "B"), [], Intro ([], TacticName "FOL");
 
 	PPApp (PPCste cste_and, [PPVar "A", Explicit; PPVar "B", Explicit]), [], 
 	PartApply (
