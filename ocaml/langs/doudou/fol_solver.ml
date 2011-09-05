@@ -174,7 +174,8 @@ let tauto : tactic =
     (PPCste cste_true, [], Exact (PPCste cste_I));    
     (PPApp (PPCste cste_eq, [PPVar "x", Explicit; PPVar "x", Explicit]), [], Exact (PPApp (PPCste cste_refl, [PPVar "x", Explicit])));
     (PPVar "A", ["H", PPVar "A"], Exact (PPProof "H"));
-    (PPVar "G", ["H", PPCste cste_false], Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit])))
+    (PPVar "G", ["H", PPCste cste_false], Exact (PPApp (PPCste cste_absurd, [PPProof "H", Explicit])));
+
   ]
     
 let _ = Hashtbl.add global_tactics "tauto" tauto

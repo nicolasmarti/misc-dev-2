@@ -413,7 +413,7 @@ and proof_pattern2term (ctxt: proof_context) (p: proof_pattern) : term =
   match p with
     | PPAVar -> AVar nopos
     | PPCste s -> Cste (s, nopos)
-    | PPVar v -> TName (Name (String.concat "" ["?"; v]), nopos)
+    | PPVar v -> TName (Name v, nopos)
     | PPImpl (None, p1, p2) -> Impl ((Symbol ("_", Nofix), proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPImpl (Some x, p1, p2) -> Impl ((Name x, proof_pattern2term ctxt p1, Explicit, nopos), proof_pattern2term ctxt p2, nopos)
     | PPApp (p, args) -> App (proof_pattern2term ctxt p, List.map (fun (arg, n) -> proof_pattern2term ctxt arg, n) args, nopos)
@@ -515,6 +515,7 @@ let rec tactic2token (ctxt: proof_context) (t: tactic) : token =
       Box [Verbatim "Exact"; Space 1; proof_pattern2token ctxt p]
     | ShowGoal t ->
       Box [Verbatim "ShowGoal"; Verbatim ":"; Space 1; tactic2token ctxt t]
+    | _ -> Verbatim "??"
 
 let tactic2string (ctxt: proof_context) (t: tactic) : string =
   let token = tactic2token ctxt t in
@@ -685,7 +686,9 @@ let rec tactic_subst (t: tactic) (s: proof_subst) (h: hyp_subst) : tactic =
 	let s = NameSet.fold (fun k acc -> NameMap.remove k acc) pattern_vars s in
 	let names = List.map fst hp in
 	let h = List.fold_left (fun acc hd -> NameMap.remove hd acc) h names in
-	gp, hp, tactic_subst t s h
+	proof_pattern_subst gp s h, 
+	List.map (fun (n, p) -> n, proof_pattern_subst p s h) hp, 
+	tactic_subst t s h
       ) cases)
     | Fail | Interactive | TacticName _ -> t
 

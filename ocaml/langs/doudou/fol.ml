@@ -66,7 +66,7 @@ let rec is_formula (defs: defs) ?(level: int = 0) (te: term) : bool =
       is_formula defs ~level:(level + 1) te 
 
     | Impl ((_, ty, Explicit, _), te, _) ->
-      is_fo_formula defs ty level && is_formula defs ~level:(level + 1) te 
+      is_formula defs ~level:level ty && is_formula defs ~level:(level + 1) te 
 
     | _ -> is_fo_formula defs te level
     

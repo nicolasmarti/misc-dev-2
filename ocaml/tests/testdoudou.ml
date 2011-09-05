@@ -220,6 +220,26 @@ let tactic2 = tactic_from_string
 
 let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic2 goal2
 
+let goal3 = "(A :: Type) -> (P:: A -> Type) -> (y::A) -> ((x::A) -> P x) -> P y"
+
+let tactic3 =
+  Intro (["A"; "P"; "y"; "H"], ShowGoal (
+    Cases
+      [PPAVar,
+       ["H", PPImpl (Some "x", PPVar "A", PPApp (PPVar "P", [PPVar "x", Explicit])); 
+	"H0", PPVar "A"
+       ],
+       Cases [
+	 PPApp (PPVar "P", [PPProof "H0", Explicit]), [], 
+	 Exact (PPApp (PPProof "H", [PPProof "H0", Explicit]))
+       ]
+      ]
+  )
+  )
+      
+let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic3 goal3
+
+(*let _ = raise Exit*)
       
 (**********************************)
 (* example of first order solving *)
@@ -256,5 +276,4 @@ let _ = parse_process_definition fol_tests_def fol_tests_ctxt "y :: ty"
 let _ = parse_process_definition fol_tests_def fol_tests_ctxt "z :: ty"
 
 let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
-
 

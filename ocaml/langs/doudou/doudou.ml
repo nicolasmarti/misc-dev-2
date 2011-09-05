@@ -2377,7 +2377,15 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 
     (* for all the rest: I do not know ! *)
     | _ -> 
-      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
+      (* I am really not sure here ... *)
+      if true then (
+      (* reducing them *)
+      let te1' = reduction defs ctxt unification_strat te1 in
+      let te2' = reduction defs ctxt unification_strat te2 in
+      (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+      if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
+      )
+      else raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
   ) in
   if !debug then printf "unification result: %s\n" (term2string !ctxt res);
   res
@@ -2426,6 +2434,12 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	Impl (q1, te, p1)
 
       ) else Impl ((s, ty, n, pq1), te, p1)
+
+    (* lambda: the eta expansion cases *)
+    | Lambda ((s, _, n1, _), App (hd, [TVar (0, _), n2], _), _) when n1 = n2 && strat.eta &&
+							       not (IndexSet.mem 0 (bv_term hd))
+							     ->
+      reduction defs ctxt strat (shift_term hd (-1))
 
     (* Lambda: we reduce the type, and the term only if betastrong *)
     | Lambda ((s, ty, n, pq), te, p) -> 
