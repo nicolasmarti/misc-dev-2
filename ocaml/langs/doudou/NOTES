@@ -89,3 +89,14 @@ EqFromOrd {A} [H] := isEq (\ a b -> match a =?= b with
 				| right (right prf) -> right (lt_neq b a prf))
 
 *)
+
+(C1 A) => Class C2 (A :: T) :=
+          | a1 :: T1
+
+(*
+ClassC2 (A :: T) [C1 A] :=
+isClassC2 :: (a1 :: T1) -> isClassC2
+
+a1 :: {A :: T} -> [H :: C1 A] -> [C2 A [H]] -> T1
+a1 {A} -> [H] -> [isClassC2 a1] := a1
+*)
