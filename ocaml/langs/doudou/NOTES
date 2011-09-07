@@ -67,3 +67,25 @@ Instance Monoid Bool :=
 | op := (||)
 
 (* here the system should ask for a term of the type *)
+
+Class Ord (A :: Type) :=
+| (<) :: A -> A -> Type
+| (>) :: A -> A -> Type := \ x y -> y < x
+| lt_neq :: (a b :: A) -> a < b -> ~ a = b
+| (=?=) :: (a b :: A) -> a < b \/ a = b \/ a > b
+
+(Ord A) => Instance Eq A :=
+     	   | (==) := (\ a b -> match a =?= b with
+                                | left prf := right (lt_neq a b prf)
+				| right (left prf) -> left prf
+				| right (right prf) -> right (lt_neq b a prf))
+
+(*
+
+EqFromOrd :: {A :: Type} -> [Ord A] -> Eq A
+EqFromOrd {A} [H] := isEq (\ a b -> match a =?= b with
+                                | left prf := right (lt_neq a b prf)
+				| right (left prf) -> left prf
+				| right (right prf) -> right (lt_neq b a prf))
+
+*)
