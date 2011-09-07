@@ -1,0 +1,69 @@
+Needs to implement [] in order to encode such things:
+
+(=) :: {A :: Type} (a :: A) :: A -> Type :=
+| eqrefl :: a = a
+
+(\/) :: (A B :: Type) -> Type :=
+| left :: A -> A \/ B
+| right :: B -> A \/ B
+
+False :: Type :=
+
+True :: Type := | I :: True
+
+[~) :: Type -> Type
+~ P := P -> False
+
+bool :: Type :=
+| true :: bool
+| false :: bool
+
+Class Eq (A :: Type) :=
+| (==) :: (a b :: A) -> a = b \/ ~ a = b
+
+(*
+Generating:
+
+ClassEq (A :: Type) :: Type :=
+| isClassEq :: ((==) :: (a b :: A) -> a = b \/ ~ a = b) -> ClassEq A
+
+(==) :: {A :: Type} -> [Eq A] -> (a b :: A) -> a = b \/ ~ a = b
+(==) {A} [isClassEq (==)] a b := a == b
+*)
+
+Class Monoid (A :: Type) :=
+| op :: A -> A -> A
+| assoc :: (a b c :: A) -> op (op a b) c = op a (op b c)
+
+(*
+Generating:
+
+ClassMonoid (A :: Type) :=
+| isMonoid :: (op :: A -> A -> A) -> (assoc :: (a b c :: A) -> op (op a b) c = op a (op b c)) -> ClassMonoid A
+
+op :: {A :: Type} -> [Monoid A] -> A -> A -> A
+op {A} [isMonoid op _] := op
+
+assoc :: {A :: Type} -> [H :: Monoid A] -> (a b c :: A) -> op {A} [H] (op {A} [H] a b) c = op {A} [H] a (op {A} [H] b c)
+assoc {A} [isMonoid op assoc] a b c := assoc
+*)
+
+(&&) :: Bool -> Bool -> Bool
+false && _ := false
+_ && false := false
+true && true := true
+
+Instance Monoid Bool :=
+| op := (&&)
+
+(* here the system should ask for a term of the type *)
+
+(||) :: Bool -> Bool -> Bool
+true && _ := true
+_ && true := true
+false && false := false
+
+Instance Monoid Bool :=
+| op := (||)
+
+(* here the system should ask for a term of the type *)
