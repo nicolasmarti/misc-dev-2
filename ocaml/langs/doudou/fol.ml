@@ -18,38 +18,7 @@ open Printf
 let fol_ctxt = ref empty_context
 
 (* the definitions of the base logic *)
-let fol_defs = ref (empty_defs ())
-
-(* this is the theorie for FOL in our LF (we take the (->) of our LF for implication) *)
-
-let fol_definitions = "
-false :: Type :=
-
-true :: Type := | I :: true
-
-[~) : 50 :: Type -> Type
-contradiction :: {P :: Type} -> P -> ~ P -> false
-absurd :: {P :: Type} -> false -> P
-
-(/\\) : left, 40 (A B :: Type) :: Type := 
-| conj :: A -> B -> A /\\ B
-
-proj1 :: {A B :: Type} -> A /\\ B -> A
-proj2 :: {A B :: Type} -> A /\\ B -> B
-
-(\\/) : left, 30 (A B :: Type) :: Type :=
-| left :: A -> A \\/ B
-| right :: B -> A \\/ B
-
-disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C
-
-(=) : no, 20 {A:: Type} (a :: A) :: A -> Type := 
-| refl :: a = a
-
-congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b
-"
-
-let _ = parse_process_definitions fol_defs fol_ctxt ~verbose:false fol_definitions
+let fol_defs = ref (init_defs ())
 
 (* functions that verifies that a term is in 
    - formula 

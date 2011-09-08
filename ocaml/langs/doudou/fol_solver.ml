@@ -158,11 +158,11 @@ open Proof
 *)
 
 (* first grab the proper Cste of fol *)
-let cste_true = constante_symbol !fol_defs (Name "true")
+let cste_true = constante_symbol !fol_defs (Name "True")
 let cste_I = constante_symbol !fol_defs (Name "I")
 let cste_refl = constante_symbol !fol_defs (Name "refl")
 let cste_eq = constante_symbol !fol_defs (Name "(=)")
-let cste_false = constante_symbol !fol_defs (Name "false")
+let cste_false = constante_symbol !fol_defs (Name "False")
 let cste_absurd = constante_symbol !fol_defs (Name "absurd")
 let cste_and = constante_symbol !fol_defs (Name "(/\\)")
 let cste_proj1 = constante_symbol !fol_defs (Name "proj1")
@@ -331,3 +331,4 @@ let fol_solver (defs: defs ref) (s: string) : unit =
 	raise Pervasives.Exit
   in
   printf "Proof Completed!\n%s\n\t::\n%s\n\n" (term2string empty_context prf) (term2string empty_context te); flush Pervasives.stdout;
+

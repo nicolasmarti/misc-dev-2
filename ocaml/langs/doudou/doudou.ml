@@ -2090,10 +2090,22 @@ exception IotaReductionFailed
 
 (* unification pattern to term *)
 (*
-  this is quite conservative:
-  - we do not "reformat" application. so the unification is not modulo right associativity of applicatino
-  - we ask for equality of symbol for constant, rather than looking for possible alias
+  Three possibility
+  * either unification is possible, in which case the context is updated with the proper unifier, and we return a unified terms
+  * either unification is impossible, in which case we return a NoUnification exception
+  * or we do not know if unification is possible or not, in which case we return a UnknownUnification exception
+  
+  this last case is caught, and we try to ask oracles if they can prove that the term are equal (actually, just that if for any predicate they are undistinguisheable, in which case the UnknownUnification become the empty unification) or different ()
 *)
+
+(*
+  this is a updateable list of oracles: basically functions which are given a defs, a context, and a term ty, and which purpose is to find a term which has type ty
+*)
+
+let oracles_list : ((defs * context * term) -> term option) list ref = ref []
+
+
+
 let rec unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
   match p, te with
     | PType _, Type _-> IndexMap.empty
@@ -3127,3 +3139,51 @@ let parse_process_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bo
 	      raise Pervasives.Exit	    
 	)
     done
+
+(* for the purpose of oracles, we define the init_defs with the following initial definitions *)
+
+(*
+  once we have proper destruction, the axiom could have proofs
+*)
+let init_definitions = "
+False :: Type :=
+
+True :: Type := | I :: True
+
+[~) : 50 :: Type -> Type
+contradiction :: {P :: Type} -> P -> ~ P -> False
+absurd :: {P :: Type} -> False -> P
+
+(/\\) : left, 40 (A B :: Type) :: Type := 
+| conj :: A -> B -> A /\\ B
+
+proj1 :: {A B :: Type} -> A /\\ B -> A
+proj2 :: {A B :: Type} -> A /\\ B -> B
+
+(\\/) : left, 30 (A B :: Type) :: Type :=
+| left :: A -> A \\/ B
+| right :: B -> A \\/ B
+
+disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C
+
+(=) : no, 20 {A:: Type} (a :: A) :: A -> Type := 
+| refl :: a = a
+
+congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b
+"
+
+let initdef =   
+  printf "building init defs\n";
+  let defs = ref { store = Hashtbl.create 30; hist = [] } in
+  let ctxt = ref empty_context in
+  let _ = 
+    try 
+      parse_process_definitions defs ctxt ~verbose:false init_definitions 
+    with
+      | _ -> printf "catastrophic: error in processing the initial defs\n"; raise Exit
+  in
+  printf "abled to proceed init defs\n"; flush Pervasives.stdout;
+  !defs
+
+let init_defs () = copy_defs initdef
+

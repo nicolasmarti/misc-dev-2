@@ -4,7 +4,6 @@ open Pprinter
 
 open Doudou
 
-
 (**************************)
 (* example of definitions *)
 (**************************)
@@ -13,7 +12,7 @@ let definition_ctxt = ref empty_context
 
 let definition_defs = ref (empty_defs ())
 
-let _ = printf "------------------------------------------- Definitions Tests -------------------------------------------------\n\n"
+let _ = printf "------------------------------------------- Definitions Tests -------------------------------------------------\n\n"; flush Pervasives.stdout
 
 (* Logic *)
 
@@ -160,6 +159,7 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "option A :: Type := | None :: option A | Some :: A -> option A"
 
+
 (**********************)
 (* example of tactics *)
 (**********************)
@@ -247,19 +247,21 @@ let _ = tactic_solver (empty_defs ()) (ref empty_context) tactic3 goal3
 
 let _ = printf "\n\n------------------------------------------- First Order Solver Tests -------------------------------------------------\n\n"
 
+
 open Fol
 
 open Fol_solver
 
+
 let fol_tests_def = ref (!fol_defs)
 let fol_tests_ctxt = ref (!fol_ctxt)
 
-let _ = fol_solver fol_tests_def "true"
+let _ = fol_solver fol_tests_def "True"
 
 (* we enter constant symbols *)
 let _ = parse_process_definition fol_tests_def fol_tests_ctxt "A :: Type"
 let _ = parse_process_definition fol_tests_def fol_tests_ctxt "B :: Type"
-let _ = fol_solver fol_tests_def "false -> A"
+let _ = fol_solver fol_tests_def "False -> A"
 let _ = fol_solver fol_tests_def "(A /\\ B) -> (B /\\ A)"
 let _ = fol_solver fol_tests_def "(A \\/ B) -> (B \\/ A)"
 
@@ -276,4 +278,5 @@ let _ = parse_process_definition fol_tests_def fol_tests_ctxt "y :: ty"
 let _ = parse_process_definition fol_tests_def fol_tests_ctxt "z :: ty"
 
 let _ = fol_solver fol_tests_def "P x -> x = y -> y = z -> P z"
+
 
