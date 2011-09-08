@@ -1,12 +1,19 @@
 this is a list of features to implement/remarks
 
 * doudou:
-  - implements Type stratification + test of universe consistency
-  - implements test for constructor positivity
-  - implements Inductive types destruction + automatic generation of induction principle
-  - implements terminaison test
-  - implements test for completeness of function
-  - implements loading/saving of stores
+  - reimplementing with:
+    - implements Type stratification + test of universe consistency
+    - implements test for constructor positivity
+    - implements Inductive types destruction + automatic generation of induction principle
+    - implements terminaison test
+    - implements test for completeness of function
+    - implements loading/saving of stores
+    - generalize back tracking in typeinfer/typecheck/unification/reduction with checkpoints
+    - implement the [] quantification (makes use of backtrack)
+    - add oracles: functions that given a context and a term try to infer a type
+        * should be use in order to typecheck (te :?: ty) :: ty' when there exists a term te' :: ty -> ty' (= coercion, ..., but carefull: it changes the term) or more restrictically ty = ty'
+        * allow to register/unregister tactics as oracles
+    - have a cleaner context/defs/hints datastructures
 
 * proof:
   - redo a clean implementation (separating cleanly hypothesises, patterns, and tactics)
