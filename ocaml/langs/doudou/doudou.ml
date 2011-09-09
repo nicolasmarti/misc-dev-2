@@ -2108,6 +2108,21 @@ let eq_cste = Cste (Symbol ("=", Infix (20, NoAssoc)), nopos)
 
 let not_cste = Cste (Symbol ("~", Prefix 50), nopos)
 
+
+(*
+ should assert equality / inequality without any symbol:
+
+  equality ty1 ty2 :=
+  
+  (P: type(ty1) -> Type) -> P(ty1) -> P(ty2) /\
+  (P: type(ty1) -> Type) -> P(ty2) -> P(ty1) 
+
+  inequality ty1 ty2 :=
+  
+  equality ty1 ty2 -> (Q: Type) -> Q
+
+*)
+
 let rec term_equality (defs: defs) (ctxt: context ref) (ty1: term) (ty2: term) : term =
   let te = App (eq_cste, [ty1, Explicit; ty2, Explicit], nopos) in
   let te, _ = typecheck defs ctxt te (Type nopos) in
