@@ -2110,12 +2110,12 @@ let not_cste = Cste (Symbol ("~", Prefix 50), nopos)
 
 let rec term_equality (defs: defs) (ctxt: context ref) (ty1: term) (ty2: term) : term =
   let te = App (eq_cste, [ty1, Explicit; ty2, Explicit], nopos) in
-  let te, _ = typeinfer defs ctxt te in
+  let te, _ = typecheck defs ctxt te (Type nopos) in
   te
 
 and term_inequality (defs: defs) (ctxt: context ref) (ty1: term) (ty2: term) : term =
   let te = App (not_cste, [App (eq_cste, [ty1, Explicit; ty2, Explicit], nopos), Explicit], nopos) in
-  let te, _ = typeinfer defs ctxt te in
+  let te, _ = typecheck defs ctxt te (Type nopos) in
   te
 
 and unification_pattern_term (ctxt: context) (p: pattern) (te:term) : substitution =
