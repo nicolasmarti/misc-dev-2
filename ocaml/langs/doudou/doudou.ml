@@ -2413,46 +2413,50 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  else raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
     ) with
       | DoudouException (UnknownUnification (ctxt', te1', te2')) as e when eq_term te1 te1' && eq_term te2 te2' -> (
+	try (
+
 	(* in this case we ask oracles if they can decide equality or inequality *)
-	let ctxt' = ref ctxt' in
+	  let ctxt' = ref ctxt' in
 	(* first let test equality *)
-	let equality_assertion = term_equality defs ctxt' te1 te2 in
-	let equality_result = fold_stop (fun () oracle ->
-	  match oracle (defs, !ctxt', equality_assertion) with
-	    | None -> Left ()
-	    | Some prf ->
+	  let equality_assertion = term_equality defs ctxt' te1 te2 in
+	  let equality_result = fold_stop (fun () oracle ->
+	    match oracle (defs, !ctxt', equality_assertion) with
+	      | None -> Left ()
+	      | Some prf ->
 	      (* we check the proof *)
-	      try 
-		let _ = typecheck defs ctxt' prf equality_assertion in
-		Right ()
-	      with
-		| _ -> Left ()
-	) () !unification_oracles_list in
-	match equality_result with
-	  | Right _ ->
+		try 
+		  let _ = typecheck defs ctxt' prf equality_assertion in
+		  Right ()
+		with
+		  | _ -> Left ()
+	  ) () !unification_oracles_list in
+	  match equality_result with
+	    | Right _ ->
 	    (* we have a proof of equality, we can return the term te1 *)
-	    te1
-	  | Left _ ->
+	      te1
+	    | Left _ ->
 	    (* no proof of equality, but maybe a proof of inequality *)
-	    let inequality_assertion = term_inequality defs ctxt' te1 te2 in
-	    let inequality_result = fold_stop (fun () oracle ->
-	      match oracle (defs, !ctxt', inequality_assertion) with
-		| None -> Left ()
-		| Some prf ->
+	      let inequality_assertion = term_inequality defs ctxt' te1 te2 in
+	      let inequality_result = fold_stop (fun () oracle ->
+		match oracle (defs, !ctxt', inequality_assertion) with
+		  | None -> Left ()
+		  | Some prf ->
 		  (* we check the proof *)
-		  try 
-		    let _ = typecheck defs ctxt' prf inequality_assertion in
-		    Right ()
-		  with
-		| _ -> Left ()
-	    ) () !unification_oracles_list in
-	    match inequality_result with
-	      | Right _ ->
+		    try 
+		      let _ = typecheck defs ctxt' prf inequality_assertion in
+		      Right ()
+		    with
+		      | _ -> Left ()
+	      ) () !unification_oracles_list in
+	      match inequality_result with
+		| Right _ ->
 		(* we have a proof of inequality, we can return that the term cannot unify *)
-		raise (DoudouException (NoUnification (!ctxt', te1', te2')))
-	      | Left _ ->
+		  raise (DoudouException (NoUnification (!ctxt', te1', te2')))
+		| Left _ ->
 		(* no proof of equality, but maybe a proof of inequality *)
-		raise e
+		  raise e
+	) with
+	  | _ -> raise e
       )
       | e -> raise e	
   ) in
