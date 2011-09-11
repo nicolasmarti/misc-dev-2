@@ -72,7 +72,7 @@ let hypothesises2token (ctxt: context) (hyps: hypothesises) : token =
   )
 
 (* input an hypothesis in a proof_context *)
-let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises) : hypothesises =
+let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises) : name * hypothesises =
   (* grab the proof and the lemma *)
   let prf, lemma = hyp in
   (* find the category (create an empty map of hypothesises if it does not exists) *)
@@ -91,7 +91,7 @@ let input_hypothesis (hyp: hypothesis) ?(name: string = "H") (hyps: hypothesises
   (* and finally update the map of hypothesis *)
   (* please note that we do not check for duplicate *)
   let category_hyps = NameMap.add name hyp category_hyps in
-  NameMap.add category category_hyps hyps
+  name, NameMap.add category category_hyps hyps
 
 exception NoSuchHyp 
 
@@ -836,7 +836,7 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  (* quantifying the Impl *)
 	  let ctxt = push_quantification ctxt q in
 	  (* input a new hypothesis for it *)
-	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ctxt.hyps in
+	  let _, hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ctxt.hyps in
 	  (* try to solve the goal *)
 	  let prf = tactic_semantics t { ctxt with hyps = hyps }  body in
 	  (* do a check *)
@@ -861,9 +861,11 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  (* quantifying the Impl *)
 	  let ctxt = push_quantification ctxt q in
 	  (* input a new hypothesis for it *)
-	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  let name, hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  (* rewrite the tactics replacing hd by name *)
+	  let t = tactic_subst t NameMap.empty (NameMap.singleton hd name) in
 	  (* try to solve the goal *)
-	  let prf = tactic_semantics t { ctxt with hyps = hyps }  body in
+	  let prf = tactic_semantics t { ctxt with hyps = hyps } body in
 	  (* do a check *)
 	  if !force_check then check_proof_context ctxt [prf, body];
 	  (* pop the quantification *)
@@ -886,9 +888,11 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	  (* quantifying the Impl *)
 	  let ctxt = push_quantification ctxt q in
 	  (* input a new hypothesis for it *)
-	  let hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  let name, hyps = input_hypothesis (TVar (0, nopos), shift_term ty 1) ~name:hd ctxt.hyps in
+	  (* rewrite the tactics replacing hd by name *)
+	  let t = tactic_subst (Intro (tl, t)) NameMap.empty (NameMap.singleton hd name) in
 	  (* try to solve the goal *)
-	  let prf = tactic_semantics (Intro (tl, t)) { ctxt with hyps = hyps }  body in
+	  let prf = tactic_semantics t { ctxt with hyps = hyps }  body in
 	  (* do a check *)
 	  if !force_check then check_proof_context ctxt [prf, body];
 	  (* pop the quantification *)
@@ -936,7 +940,9 @@ let rec tactic_semantics (t: tactic) (ctxt: proof_context) (goal: term) : term =
 	(* just check that there is no free var *)
 	if not (IndexSet.is_empty (fv_term lemma) && IndexSet.is_empty (fv_term prf)) then raise CannotSolveGoal;
 	(* add the hypothesis *)
-	let hyps = input_hypothesis (prf, lemma) ~name:s ctxt.hyps in
+	let name, hyps = input_hypothesis (prf, lemma) ~name:s ctxt.hyps in
+	(* rewrite the tactics replacing s by name *)
+	let t = tactic_subst t NameMap.empty (NameMap.singleton s name) in
 	(* continue *)
 	tactic_semantics t {ctxt with hyps = hyps} goal
     )
