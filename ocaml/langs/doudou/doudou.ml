@@ -1368,7 +1368,7 @@ let rec error2token (err: doudou_error) : token =
 
     | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
       Box [
-	Verbatim "Cannot unify"; Newline;
+	Verbatim "Do not know how to unify"; Newline;
 	pos2token (get_term_pos te1); Space 1; term2token ctxt te1 Alone; Newline;
 	pos2token (get_term_pos te2); Space 1; term2token ctxt te2 Alone; Newline
       ]
@@ -2167,19 +2167,19 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     try (
       match te1, te2 with
 
-    (* the error cases for AVar and TName *)
+	(* the error cases for AVar and TName *)
 	| AVar _, _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: AVar in te1 "))
 	| _, AVar _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: AVar in te2 "))
 	| TName _, _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: TName in te1 "))
 	| _, TName _ -> raise (DoudouException (FreeError "unification_term_term catastrophic: TName in te2 "))
 
 
-    (* the trivial cases for Type, Cste and Obj *)
+	(* the trivial cases for Type, Cste and Obj *)
 	| Type p1, Type p2 -> Type (best_pos p1 p2)
 	| Obj (o1, p1), Obj (o2, p2) when o1 = o2 -> Obj (o1, best_pos p1 p2)
 	| Cste (c1, p1), Cste (c2, p2) when c1 = c2 -> Cste (c1, best_pos p1 p2)
 
-    (* the trivial case for variable *)
+	(* the trivial case for variable *)
 	| TVar (i1, p1), TVar (i2, p2) when i1 = i2 -> TVar (i1, best_pos p1 p2)
 
 	| TVar (i1, p1), TVar (i2, p2) when i1 < 0 && i2 < 0 -> 
@@ -2189,7 +2189,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  ctxt := context_substitution s (!ctxt);
 	  TVar (imax, best_pos p1 p2)
 
-    (* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
+	(* in other cases, the frame contains the value for a given bound variable. If its not itself, we should unfold *)
 	| TVar (i1, p1), _ when i1 >= 0 && set_term_pos (bvar_value !ctxt i1) nopos <> TVar (i1, nopos) ->
 	  let _ = unification_term_term defs ctxt (bvar_value !ctxt i1) te2 in
 	  TVar (i1, p1)
@@ -2198,8 +2198,8 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  let _ = unification_term_term defs ctxt te1 (bvar_value !ctxt i2) in
 	  TVar (i2, p2)
 
-    (* the case for free variables *)
-    (* we need the free var to not be a free var of the term *)
+	(* the case for free variables *)
+	(* we need the free var to not be a free var of the term *)
 	| TVar (i1, p1), _ when i1 < 0 && not (IndexSet.mem i1 (fv_term te2)) -> (
 	  let s = IndexMap.singleton i1 te2 in
 	  ctxt := context_substitution s (!ctxt);
@@ -2210,124 +2210,124 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  ctxt := context_substitution s (!ctxt);
 	  te1
 
-    (* cases for constantes *)
+	(* cases for constantes *)
 	| Cste (c1, pos), _ -> (
 	  match unfold_constante defs c1 with
-	(* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
+	    (* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
 	    | Inductive _ | Axiom | Constructor -> 
 	      if set_term_pos (reduction defs ctxt unification_strat te2) nopos = Cste (c1, nopos) then
 		Cste (c1, pos)
 	      else
 		raise (DoudouException (NoUnification (!ctxt, te1, te2)))
-	(* if just one equation, we might want to unfold *)
+	    (* if just one equation, we might want to unfold *)
 	    | Equation [PCste (c2, _), te] when c1 = c2 ->
 	      unification_term_term defs ctxt te te2
-	(* these case is impossible *)
+	    (* these case is impossible *)
 	    | Equation [PCste (c2, _), te] when c1 <> c2 ->
 	      raise (DoudouException (FreeError "Catastrophic: an equation for a constante has a different constante symbol"))
-	(* more than one equation ... we do not now *)
+	    (* more than one equation ... we do not now *)
 	    | Equation _ ->
 	      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 	)
 
 	| _, Cste (c2, pos) -> (
 	  match unfold_constante defs c2 with
-	(* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
+	    (* c1 is an inductive, a constructor or an axiom, we should have the strict equality with te2 *)
 	    | Inductive _ | Axiom | Constructor -> 
 	      if set_term_pos (reduction defs ctxt unification_strat te1) nopos = Cste (c2, nopos) then
 		Cste (c2, pos)
 	      else
 		raise (DoudouException (NoUnification (!ctxt, te1, te2)))
-	(* if just one equation, we might want to unfold *)
+	    (* if just one equation, we might want to unfold *)
 	    | Equation [PCste (c1, _), te] when c1 = c2 ->
 	      unification_term_term defs ctxt te1 te 
-	(* these case is impossible *)
+	    (* these case is impossible *)
 	    | Equation [PCste (c1, _), te] when c1 <> c2 ->
 	      raise (DoudouException (FreeError "Catastrophic: an equation for a constante has a different constante symbol"))
-	(* more than one equation ... we do not now *)
+	    (* more than one equation ... we do not now *)
 	    | Equation _ ->
 	      raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
 	)
 
-    (* the impl case: only works if both are impl *)
+	(* the impl case: only works if both are impl *)
 	| Impl ((s1, ty1, n1, pq1), te1, p1), Impl ((s2, ty2, n2, pq2), te2, p2) ->
-      (* the symbol is not important, yet the nature is ! *)
+	  (* the symbol is not important, yet the nature is ! *)
 	  if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
-	(* we unify the types *)
+	    (* we unify the types *)
 	    let ty = unification_term_term defs ctxt ty1 ty2 in
-	(* we push the quantification *)
+	    (* we push the quantification *)
 	    push_quantification (s1, ty, n1, pq1) ctxt;
-	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
+	    (* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	    let s = context2substitution !ctxt in
 	    let te1 = term_substitution s te1 in
 	    let te2 = term_substitution s te2 in
-	(* we unify *)
+	    (* we unify *)
 	    let te = unification_term_term defs ctxt te1 te2 in
-	(* we pop quantification *)
+	    (* we pop quantification *)
 	    let q1, [te] = pop_quantification ctxt [te] in
-	(* and we return the term *)
+	    (* and we return the term *)
 	    Impl (q1, te, p1)
-
-    (* the Lambda case: only works if both are Lambda *)
+	      
+	(* the Lambda case: only works if both are Lambda *)
 	| Lambda ((s1, ty1, n1, pq1), te1, p1), Lambda ((s2, ty2, n2, pq2), te2, p2) ->
-      (* the symbol is not important, yet the nature is ! *)
+	  (* the symbol is not important, yet the nature is ! *)
 	  if n1 <> n2 then raise (DoudouException (NoUnification (!ctxt, te1, te2))) else
-	(* we unify the types *)
+	    (* we unify the types *)
 	    let ty = unification_term_term defs ctxt ty1 ty2 in
-	(* we push the quantification *)
+	    (* we push the quantification *)
 	    push_quantification (s1, ty, n1, pq1) ctxt;
-	(* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
+	    (* we need to substitute te1 and te2 with the context substitution (which might have been changed by unification of ty1 ty2) *)
 	    let s = context2substitution !ctxt in
 	    let te1 = term_substitution s te1 in
 	    let te2 = term_substitution s te2 in
-	(* we unify *)
+	    (* we unify *)
 	    let te = unification_term_term defs ctxt te1 te2 in
-	(* we pop quantification *)
+	    (* we pop quantification *)
 	    let q1, [te] = pop_quantification ctxt [te] in
-	(* and we return the term *)
+	    (* and we return the term *)
 	    Lambda (q1, te, p1)
 
-    (* some higher order unification *)
-	| App (TVar (i, p1), (arg, n)::args, p2), t2 ->
+	(* some higher order unification *)
+	| App (TVar (i, p1), (arg, n)::args, p2), t2 when i < 0 ->
 	  if !debug then printf "unification case: | App (TVar (i, p1), (arg, n)::args, p2), _ -> \n" ;
-      (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
-      (* shift te 1 : now there is no TVar 0 in te *)
+	  (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
+	  (* shift te 1 : now there is no TVar 0 in te *)
 	  let te2 = shift_term te2 1 in
-      (* thus we can rewrite (shift arg 1) by TVar 0 *)
+	  (* thus we can rewrite (shift arg 1) by TVar 0 *)
 	  let te2 = rewrite_term defs !ctxt (shift_term arg 1) (TVar (0, nopos)) te2 in
-      (* we just verify that we have some instance of TVar 0 *)
+	  (* we just verify that we have some instance of TVar 0 *)
 	  if not (IndexSet.mem 0 (bv_term te2)) then raise (DoudouException (UnknownUnification (!ctxt, te1, t2)));
-      (* we rebuild the lambda *)
+	  (* we rebuild the lambda *)
 	  let arg, ty = typeinfer defs ctxt arg in
 	  let te2 = Lambda ((Symbol ("_", Nofix), ty, n, nopos), te2, nopos) in
-      (* and now we continue without the arguments *)
+	  (* and now we continue without the arguments *)
 	  let res = unification_term_term defs ctxt (App (TVar (i, p1), args, p2)) te2 in
 	  let res = App (res, [arg, n], nopos) in
 	  let res = reduction defs ctxt unification_strat res in
 	  res
 
-	| t1, App (TVar (i, p1), (arg, n)::args, p2) when false ->
+	| t1, App (TVar (i, p1), (arg, n)::args, p2) when i < 0  ->
 	  if !debug then printf "unification case: | App (TVar (i, p1), (arg, n)::args, p2), _ -> \n" ;
-      (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
-      (* shift te 1 : now there is no TVar 0 in te *)
+	  (* here the principle is to "extract" the arg from the other term, transforming it into a Lambda and retry the unification *)
+	  (* shift te 1 : now there is no TVar 0 in te *)
 	  let te1 = shift_term te1 1 in
-      (* thus we can rewrite (shift arg 1) by TVar 0 *)
+	  (* thus we can rewrite (shift arg 1) by TVar 0 *)
 	  let te1 = rewrite_term defs !ctxt (shift_term arg 1) (TVar (0, nopos)) te1 in
-      (* we just verify that we have some instance of TVar 0 *)
+	  (* we just verify that we have some instance of TVar 0 *)
 	  if not (IndexSet.mem 0 (bv_term te1)) then raise (DoudouException (UnknownUnification (!ctxt, t1, te2)));
-      (* we rebuild the lambda *)
+	  (* we rebuild the lambda *)
 	  let arg, ty = typeinfer defs ctxt arg in
 	  let te1 = Lambda ((Symbol ("_", Nofix), ty, n, nopos), te1, nopos) in
-      (* and now we continue without the arguments *)
+	  (* and now we continue without the arguments *)
 	  let res = unification_term_term defs ctxt (App (TVar (i, p1), args, p2)) te1 in
 	  let res = App (res, [arg, n], nopos) in
 	  let res = reduction defs ctxt unification_strat res in
 	  res
 
-    (* the case of two application: with not the same arity *)
+	(* the case of two application: with not the same arity *)
 	| App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 ->
 	  if !debug then printf "unification case: | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 <> List.length args2 -> \n" ;
-      (* first we try to change them such that they have the same number of arguments and try to match them *)
+	  (* first we try to change them such that they have the same number of arguments and try to match them *)
 	  let min_arity = min (List.length args1) (List.length args2) in
 	  let te1' = if List.length args1 = min_arity then te1 else (
 	    let pos1 = fst (get_term_pos hd1) in
@@ -2345,67 +2345,67 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	    let pos3 = snd (get_term_pos (fst (last largs2))) in
 	    App (App (hd2, largs1, (pos1, pos2)), largs2, (pos1, pos3))
 	  ) in
-      (* we save the current context somewhere to rollback *)
+	  (* we save the current context somewhere to rollback *)
 	  let saved_ctxt = !ctxt in
 	  (try 
 	     unification_term_term defs ctxt te1' te2' 
 	   with
-	 (* apparently it does not work, so we try to reduce them *)
+	     (* apparently it does not work, so we try to reduce them *)
 	     | DoudouException err ->
 	       if !debug then printf "%s\n" (error2string err);
-	   (* restore the context *)
+	       (* restore the context *)
 	       ctxt := saved_ctxt;
-	   (* reducing them *)
+	       (* reducing them *)
 	       let te1' = reduction defs ctxt unification_strat te1 in
 	       let te2' = reduction defs ctxt unification_strat te2 in
-	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	       (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
 	       if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
 	  )
-    (* the case of two application with same arity *)
+	(* the case of two application with same arity *)
 	| App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 ->
 	  if !debug then printf "unification case: | App (hd1, args1, p1), App (hd2, args2, p2) when List.length args1 = List.length args2 -> \n" ;
-      (* first we save the context and try to unify all term component *)
+	  (* first we save the context and try to unify all term component *)
 	  let saved_ctxt = !ctxt in
 	  (try
-	 (* we need to push the arguments (through this we also verify that the nature matches ) *)
-	 (* we build a list where arguments of te1 and te2 are alternate *)
+	     (* we need to push the arguments (through this we also verify that the nature matches ) *)
+	     (* we build a list where arguments of te1 and te2 are alternate *)
 	     let rev_arglist = List.fold_left (
 	       fun acc ((arg1, n1), (arg2, n2)) ->
 		 if n1 <> n2 then
-	       (* if both nature are different -> no unification ! *)
+		   (* if both nature are different -> no unification ! *)
 		   raise (DoudouException (NoUnification (!ctxt, te1, te2)))
 		 else  
 		   arg2::arg1::acc
 	     ) [] (List.combine args1 args2) in
 	     let arglist = List.rev rev_arglist in
-	 (* and we push this list *)
+	     (* and we push this list *)
 	     push_terms ctxt arglist;
-	 (* first we unify the head of applications *)
+	     (* first we unify the head of applications *)
 	     let hd = unification_term_term defs ctxt hd1 hd2 in
-	 (* then we unify all the arguments pair-wise, taking them from the list *)
+	     (* then we unify all the arguments pair-wise, taking them from the list *)
 	     let args = List.map (fun (_, n) ->
-	   (* we grab the next argument for te1 and te2 in the context (and we know that their nature is equal to n) *)
+	       (* we grab the next argument for te1 and te2 in the context (and we know that their nature is equal to n) *)
 	       let [arg1; arg2] = pop_terms ctxt 2 in
-	   (* and we unify *)
+	       (* and we unify *)
 	       let arg = unification_term_term defs ctxt arg1 arg2 in
 	       (arg, n)
 	     ) args1 in
-	 (* finally we have our unified term ! *)
+	     (* finally we have our unified term ! *)
 	     App (hd, args, best_pos p1 p2)
 
 	   with
-	 (* apparently it does not work, so we try to reduce them *)
+	     (* apparently it does not work, so we try to reduce them *)
 	     | DoudouException err ->
 	       if !debug then printf "%s\n" (error2string err);
-	   (* restore the context *)
+	       (* restore the context *)
 	       ctxt := saved_ctxt;
-	   (* reducing them *)
+	       (* reducing them *)
 	       let te1' = reduction defs ctxt unification_strat te1 in
 	       let te2' = reduction defs ctxt unification_strat te2 in
-	   (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	       (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
 	       if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
 	  )	
-    (* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
+	(* the cases where only one term is an Application: we should try to reduce it if possible, else we do not know! *)
 	| App (hd1, args1, p1), _ ->
 	  if !debug then printf "unification case: App (hd1, args1, p1), _ -> \n" ;
 	  let te1' = reduction defs ctxt unification_strat te1 in
@@ -2415,14 +2415,14 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  let te2' = reduction defs ctxt unification_strat te2 in
 	  if eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1 te2'
 
-    (* for all the rest: I do not know ! *)
+	(* for all the rest: I do not know ! *)
 	| _ -> 
-      (* I am really not sure here ... *)
+	  (* I am really not sure here ... *)
 	  if true then (
-      (* reducing them *)
+	    (* reducing them *)
 	    let te1' = reduction defs ctxt unification_strat te1 in
 	    let te2' = reduction defs ctxt unification_strat te2 in
-      (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
+	    (* if both are still the sames, we definitely do not know if they can be unify, else we try to unify the new terms *)
 	    if eq_term te1 te1' && eq_term te2 te2' then raise (DoudouException (UnknownUnification (!ctxt, te1, te2))) else unification_term_term defs ctxt te1' te2'
 	  )
 	  else raise (DoudouException (UnknownUnification (!ctxt, te1, te2)))
@@ -2926,7 +2926,7 @@ and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: ter
   (* we infer the pattern *)
   let lhs', lhste, lhsty = typeinfer_pattern defs ctxt lhs in
   (* close the value alias for pattern quantified variables *)
-  close_context ctxt;
+  close_context ctxt;  
   (* and we typecheck the rhs *)
   let rhs, rhsty = typecheck defs ctxt rhs lhsty in
   ctxt := drop (pattern_size lhs') !ctxt;
@@ -3227,6 +3227,8 @@ False :: Type :=
 True :: Type := | I :: True
 
 [~) : 50 :: Type -> Type
+~ P := P -> False
+ 
 contradiction :: {P :: Type} -> P -> ~ P -> False
 absurd :: {P :: Type} -> False -> P
 
@@ -3234,18 +3236,24 @@ absurd :: {P :: Type} -> False -> P
 | conj :: A -> B -> A /\\ B
 
 proj1 :: {A B :: Type} -> A /\\ B -> A
+proj1 (conj a b) := a
+
 proj2 :: {A B :: Type} -> A /\\ B -> B
+proj2 (conj a b) := b
 
 (\\/) : left, 30 (A B :: Type) :: Type :=
 | left :: A -> A \\/ B
 | right :: B -> A \\/ B
 
 disj :: {A B C :: Type} -> A \\/ B -> (A -> C) -> (B -> C) -> C
+disj (left a) fleft fright := fleft a
+disj (right b) fleft fright := fright b
 
 (=) : no, 20 {A:: Type} (a :: A) :: A -> Type := 
 | refl :: a = a
 
 congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b
+congr P a b (refl) H := H
 "
 
 let initdef =   
