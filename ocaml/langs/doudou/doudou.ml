@@ -3224,13 +3224,15 @@ let parse_process_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bo
 let init_definitions = "
 False :: Type :=
 
+absurd :: {P :: Type} -> False -> P
+
 True :: Type := | I :: True
 
-[~) : 50 :: Type -> Type
-~ P := P -> False
+[~) : 50 :: Type -> Type := 
+| neg :: (P :: Type) -> (P -> False) -> ~ P
  
 contradiction :: {P :: Type} -> P -> ~ P -> False
-absurd :: {P :: Type} -> False -> P
+contradiction p (neg _ f) := f p
 
 (/\\) : left, 40 (A B :: Type) :: Type := 
 | conj :: A -> B -> A /\\ B
