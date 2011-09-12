@@ -2953,7 +2953,7 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
     | Match (te, eqs, pos) -> (
       (* first we typecheck the term to destruct *)
       let te, ty = typeinfer defs ctxt te in 
-      printf "|- %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);
+      (*printf "|- %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);*)
       (* here we should verify it is an inductive *)
       (* we create a free variable for the returning types of the destruction *)
       let fvty = add_fvar ctxt (Type nopos) in
@@ -3380,6 +3380,7 @@ let init_definitions = "
 False :: Type :=
 
 absurd :: {P :: Type} -> False -> P
+absurd {P} prf := match prf with
 
 True :: Type := | I :: True
 
