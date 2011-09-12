@@ -163,6 +163,9 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb :: Bool -> Bool"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb b := match b with | False := True | True := False"
 
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb True"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb False"
+
 (**********************)
 (* example of tactics *)
 (**********************)

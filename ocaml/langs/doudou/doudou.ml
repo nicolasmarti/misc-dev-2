@@ -2950,8 +2950,31 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       TVar (fvte, pos), TVar (fvty, nopos)
 
     (* destruction *)
-    | Match (te, eqs, _) -> (
-      raise (DoudouException (FreeError "Match case not yet implemented in typeinfer"))
+    | Match (te, eqs, pos) -> (
+      (* first we typecheck the term to destruct *)
+      let te, ty = typeinfer defs ctxt te in 
+      printf "|- %s :: %s\n" (term2string !ctxt te) (term2string !ctxt ty);
+      (* here we should verify it is an inductive *)
+      (* we create a free variable for the returning types of the destruction *)
+      let fvty = add_fvar ctxt (Type nopos) in
+      let fvte = add_fvar ctxt (TVar (fvty, nopos)) in      
+      (* then we typecheck equation by equations *)
+      let eqs = List.map (fun (lhs, rhs) ->
+	(* we infer the pattern *)
+	let lhs', lhste, lhsty = typeinfer_pattern defs ctxt lhs in
+	(* we compare the pattern types, and the term types *)
+	let _ = unification_term_term defs ctxt (shift_term ty (pattern_size lhs)) lhsty in
+	(* close the value alias for pattern quantified variables *)
+	close_context ctxt;  
+	(* and we typecheck the rhs *)
+	let rhs, rhsty = typecheck defs ctxt rhs (TVar (fvte, nopos)) in
+	(* we pop all the quantifications *)
+	let _ = pop_quantifications ctxt [] (pattern_size lhs') in
+	(* returns the equation *)
+	lhs', rhs
+      ) eqs in
+      (* and we returns the typed term, and the value of the free variable precedently created to bear the whole match type *)
+      Match (te, eqs, pos), fvar_value !ctxt fvte
     )
 
   ) with
