@@ -109,11 +109,11 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 (* dependant type fold *)
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "T :: Type -> Type -> Nat -> Type"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "T A B O := B"
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "T A B (S n) := A -> T A B n"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "FoldType :: Type -> Type -> Nat -> Type"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "FoldType A B O := B"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "FoldType A B (S n) := A -> FoldType A B n"
 
-let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> T A B n"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "depfold :: {A B :: Type} -> (f:: B -> A -> B) -> B -> (n :: Nat) -> FoldType A B n"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "depfold f acc O := acc"
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "depfold {A} {B} f acc (S n) := \\ (x :: A) -> depfold f (f acc x) n)"
 
@@ -159,6 +159,9 @@ let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "
 
 let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "option A :: Type := | None :: option A | Some :: A -> option A"
 
+(* destruction examples *)
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb :: Bool -> Bool"
+let _ = parse_process_definition definition_defs definition_ctxt ~verbose:true "negb b := match b with | False := True | True := False"
 
 (**********************)
 (* example of tactics *)

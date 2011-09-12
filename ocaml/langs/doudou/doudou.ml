@@ -71,18 +71,25 @@ type term = Type of pos
 	    | Cste of symbol * pos
 	    | Obj of (term, context, defs) tObj * pos
 
-	    (* the Left name is only valid after parsing, and removed by typecheck*)
+	    (* variables, >= 0 -> bounded variables, < 0 -> free variables *)
 	    | TVar of index * pos
 		
 	    (* these constructors are only valide after parsing, and removed by typechecking *)
 	    | AVar of pos
 	    | TName of symbol * pos
 
-	    (**)
+	    (* quantifiers *)
 
-	    | App of term * (term * nature) list * pos
 	    | Impl of (symbol * term * nature * pos) * term * pos
 	    | Lambda of (symbol * term * nature * pos) * term * pos
+
+	    (* application *)
+
+	    | App of term * (term * nature) list * pos
+
+	    (* destruction *)
+	    | Match of term * equation list * pos
+
 
 (* N.B.: all types are properly scoped w.r.t. bounded var introduce by "preceding" pattern *)
 and pattern = PType of pos 
@@ -334,6 +341,7 @@ let set_term_pos (te: term) (p: pos) : term =
       | App (f, args, _) -> App (f, args, p)
       | Impl (q, te, _) -> Impl (q, te, p)
       | Lambda (q, te, _) -> Lambda (q, te, p)
+      | Match (te, eqs, _) -> Match (te, eqs, p)
 
 (* set the outermost term position *)
 let get_term_pos (te: term) : pos =
@@ -347,6 +355,7 @@ let get_term_pos (te: term) : pos =
       | App (_, _, p) -> p
       | Impl (_, _, p) -> p
       | Lambda (_, _, p) -> p
+      | Match (_, _, p) -> p
 
 (* the set of free variable in a term *)
 let rec fv_term (te: term) : IndexSet.t =
@@ -362,6 +371,8 @@ let rec fv_term (te: term) : IndexSet.t =
       IndexSet.union (fv_term ty) (fv_term te)
     | Lambda ((s, ty, n, pos), te, _) ->
       IndexSet.union (fv_term ty) (fv_term te)
+    | Match (te, eqs, _) ->
+      List.fold_left (fun acc eq -> IndexSet.union acc (fv_equation eq)) (fv_term te) eqs
 
 and fv_pattern (p: pattern) : IndexSet.t =
   match p with
@@ -371,6 +382,10 @@ and fv_pattern (p: pattern) : IndexSet.t =
     | PAlias (_, p, ty, _) -> IndexSet.union (fv_term ty) (fv_pattern p)
     | PApp (_, args, ty, _) ->
       List.fold_left (fun acc (p, _) -> IndexSet.union acc (fv_pattern p)) (fv_term ty) args
+
+and fv_equation (eq: equation) : IndexSet.t =
+  let p, te = eq in
+  IndexSet.union (fv_pattern p) (fv_term te)
 
 (* shift a set of variable *)
 let shift_vars (vars: IndexSet.t) (delta: int) : IndexSet.t =
@@ -394,6 +409,8 @@ let rec bv_term (te: term) : IndexSet.t =
       IndexSet.union (bv_term ty) (shift_vars (bv_term te) (-1))
     | Lambda ((s, ty, n, pos), te, _) ->
       IndexSet.union (bv_term ty) (shift_vars (bv_term te) (-1))
+    | Match (te, eqs, _) ->
+      List.fold_left (fun acc eq -> IndexSet.union acc (bv_equation eq)) (bv_term te) eqs
 
 and bv_pattern (p: pattern) : IndexSet.t =
   match p with
@@ -406,6 +423,10 @@ and bv_pattern (p: pattern) : IndexSet.t =
 	i - pattern_size p, IndexSet.union acc (shift_vars (bv_pattern p) i)
       ) (0, IndexSet.empty) args in
       IndexSet.union vars (shift_vars (bv_term ty) i)
+
+and bv_equation (eq: equation) : IndexSet.t =
+  let p, te = eq in
+  IndexSet.union (bv_pattern p) (shift_vars (bv_term te) (pattern_size p))
 
 (* function like map, but that can skip elements *)
 let rec skipmap (f: 'a -> 'b option) (l: 'a list) : 'b list =
@@ -519,8 +540,30 @@ let rec eq_term (te1: term) (te2: term) : bool =
       eq_term (App (te1, args1 @ args1', nopos)) te2
     | _, App (App (te2, args2,_), args2', _) ->
       eq_term te1 (App (te2, args2 @ args2', nopos)) 
+    | Match (te1, eqs1, _), Match (te2, eqs2, _) when List.length eqs1 = List.length eqs2 ->
+      List.fold_left (fun acc (eq1, eq2) ->
+	acc && eq_equation eq1 eq2
+      ) (eq_term te1 te2) (List.combine eqs1 eqs2)
     | _ -> false
-
+and eq_equation (eq1: equation) (eq2: equation) : bool =
+  let p1, te1 = eq1 in
+  let p2, te2 = eq2 in
+  eq_pattern p1 p2 && eq_term te1 te2
+and eq_pattern (p1: pattern) (p2: pattern) : bool =
+    match p1, p2 with
+      | PType _, PType _ -> true
+      | PCste (s1, _), PCste (s2, _) -> s1 = s2
+      | PVar (n1, ty1, _), PVar (n2, ty2, _) ->
+	n1 = n2 && eq_term ty1 ty2
+      | PAVar (ty1, _), PAVar (ty2, _) ->
+	eq_term ty1 ty2
+      | PAlias (n1, p1, ty1, _), PAlias (n2, p2, ty2, _) ->
+	n1 = n2 && eq_pattern p1 p2 && eq_term ty1 ty2
+      | PApp ((s1, _), args1, ty1, _), PApp ((s2, _), args2, ty2, _) when List.length args1 = List.length args2 ->
+	List.fold_left (fun acc ((arg1, n1), (arg2, n2)) -> 
+	  n1 = n2 && eq_pattern arg1 arg2
+	) (s1 = s2 && eq_term ty1 ty2) (List.combine args1 args2)
+      | _ -> false
 
 (*************************************)
 (*      substitution/rewriting       *)
@@ -556,6 +599,11 @@ let rec term_substitution (s: substitution) (te: term) : term =
       Lambda ((symb, term_substitution s ty, n, p),
 	      term_substitution (shift_substitution s 1) te,
 	      pos)
+    | Match (te, eqs, p) ->
+      Match (term_substitution s te,
+	     List.map (fun eq -> eq_substitution s eq) eqs,
+	     p
+      )
 
 and pattern_substitution (s: substitution) (p: pattern) : pattern =
   match p with
@@ -571,6 +619,10 @@ and pattern_substitution (s: substitution) (p: pattern) : pattern =
 	    ),
 	    term_substitution (shift_substitution s (pattern_size p)) ty,
 	    pos)
+
+and eq_substitution (s: substitution) (eq: equation) : equation =
+  let p, te = eq in
+  pattern_substitution s p, term_substitution (shift_substitution s (pattern_size p)) te
 
 (* shift vars index in a substitution 
    only bound variable of the l.h.s. of the map are shifted too
@@ -618,6 +670,11 @@ and leveled_shift_term (te: term) (level: int) (delta: int) : term =
     | Lambda ((s, ty, n, p), te, pos) ->
       Lambda ((s, leveled_shift_term ty level delta, n, p), leveled_shift_term te (level + 1) delta, pos)
 
+    | Match (te, eqs, pos) ->
+      Match (leveled_shift_term te level delta,
+	     List.map (fun eq -> leveled_shift_equation eq level delta) eqs,
+	     pos)
+
 and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
   match p with
     | PType _ | PCste _ -> p
@@ -633,6 +690,9 @@ and leveled_shift_pattern (p: pattern) (level: int) (delta: int) : pattern =
 	    ),
 	    leveled_shift_term ty (level + pattern_size p) delta, pos)
 
+and leveled_shift_equation (eq: equation) (level: int) (delta: int) : equation =
+  let p, te = eq in
+  leveled_shift_pattern p level delta, leveled_shift_term te (level + pattern_size p) delta
 
 (********************************)
 (*      defs/context/frame      *)
@@ -981,6 +1041,15 @@ let pop_quantification (ctxt: context ref) (tes: term list) : (symbol * term * n
   (* and returns the quantifier *)
   (frame.symbol, shift_term frame.ty (-1), frame.nature, frame.pos), tes  
 
+let rec pop_quantifications (ctxt: context ref) (tes: term list) (n: int) : (symbol * term * nature * pos) list * term list =
+  match n with
+    | _ when n < 0 -> raise (DoudouException (FreeError "Catastrophic: negative n in pop_quantifications"))
+    | 0 -> [], tes
+    | _ ->
+      let hd, tes = pop_quantification ctxt tes in
+      let tl, tes = pop_quantifications ctxt tes (n-1) in
+      hd::tl, tes
+
 (******************)
 (* pretty printer *)
 (******************)
@@ -1195,6 +1264,21 @@ let rec term2token (ctxt: context) (te: term) (p: place): token =
 	  Box ([Verbatim "\\"] @ lhs @ [ Space 1; Verbatim "->"; Space 1; rhs])
 	)
 
+    | Match (te, eqs, _) ->
+      (match p with
+	| InArg Explicit -> withParen
+	| InApp -> withParen
+	| InNotation _ -> withParen
+	| _ -> fun x -> x
+      ) (
+	Box [Verbatim "match"; Space 1; term2token ctxt te Alone; Space 1; Verbatim "with"; Newline;
+	     Box (intercalate Newline (List.map (fun (p, te) ->
+	       Box [Verbatim "|"; Space 1; pattern2token ctxt p Alone; Space 1; Verbatim ":="; Space 1; term2token ctxt te Alone ]
+	     ) eqs
+	     )
+	     )	  
+	    ]
+       )
 	(*
     | AVar _ -> raise (Failure "term2token - catastrophic: still an AVar in the term")
     | TName _ -> raise (Failure "term2token - catastrophic: still an TName in the term")
@@ -1470,7 +1554,7 @@ let with_pos (p: 'a parsingrule) : ('a * pos) parsingrule =
     let endp = cur_pos pb in
     (res, (startp, endp))
 
-let doudou_keywords = ["Type"; "::"; ":="; "->"]
+let doudou_keywords = ["Type"; "::"; ":="; "->"; "match"; "with"]
 
 open Str;;
 
@@ -1841,8 +1925,31 @@ and parse_term_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : te
     let () =  whitespaces pb in
     AVar pos
   ) 
-  <|> tryrule (fun pb -> 
+  <|> tryrule (fun pb ->
     let () =  whitespaces pb in
+    let startpos = cur_pos pb in    
+    let () = at_start_pos leftmost (word "match") pb in
+    let () =  whitespaces pb in
+    let te = parse_term defs leftmost pb in
+    let () =  whitespaces pb in
+    let () = at_start_pos leftmost (word "with") pb in
+    let eqs = many (fun pb ->
+      let () = whitespaces pb in
+      let () = at_start_pos leftmost (word "|") pb in
+      let () = whitespaces pb in
+      let p = at_start_pos leftmost (parse_pattern defs leftmost) pb in
+      let () = whitespaces pb in
+      let () = at_start_pos leftmost (word ":=") pb in
+      let startpos = cur_pos pb in
+      let () = whitespaces pb in
+      let te = parse_term defs startpos pb in
+      p, te
+    ) pb in
+    let endpos = cur_pos pb in    
+    Match (te, eqs, (startpos, endpos))
+  )
+  <|> tryrule (fun pb -> 
+    let () = whitespaces pb in
     let s, pos = at_start_pos leftmost (with_pos (parse_symbol_name defs)) pb in
     let () =  whitespaces pb in    
     TName (s, pos)
@@ -1930,13 +2037,13 @@ and parse_pattern_arguments (defs: defs) (leftmost: (int * int)) (pb: parserbuff
 end pb
   
 and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) : pattern = begin
-  (fun pb -> 
+  tryrule (fun pb -> 
     let () = whitespaces pb in
     let (), pos = at_start_pos leftmost (with_pos (word "Type")) pb in
     let () = whitespaces pb in
     PType pos
   ) 
-  <|> (fun pb ->
+  <|> tryrule (fun pb ->
     let () =  whitespaces pb in
     let (), pos = at_start_pos leftmost (with_pos parse_avar) pb in
     let () =  whitespaces pb in
@@ -1957,15 +2064,15 @@ and parse_pattern_lvl2 (defs: defs) (leftmost: (int * int)) (pb: parserbuffer) :
     let endpos = cur_pos pb in
     PAlias (name, p, AVar nopos, (startpos, endpos))
   )
-  <|> (fun pb -> 
+  <|> tryrule (fun pb -> 
     let () =  whitespaces pb in
     let name, pos = at_start_pos leftmost (with_pos name_parser) pb in
     let () =  whitespaces pb in    
     PVar (name, AVar nopos, pos)
   )
-  <|> (fun pb ->
+  <|> tryrule (fun pb ->
     let () =  whitespaces pb in    
-    at_start_pos leftmost (paren (parse_pattern defs leftmost)) pb
+    at_start_pos leftmost (paren (parse_pattern defs leftmost)) pb    
   )
 end pb
 
@@ -2595,7 +2702,7 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 		    Left ()
 	      ) () eqs in
 	      match res with
-		| Left () -> te
+		| Left () -> if strat.deltaiotaweak_armed then raise IotaReductionFailed else te
 		| Right te -> reduction defs ctxt strat te
 	    )
 	    | _ -> App (Cste (c1, pos), List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args, pos2)
@@ -2608,6 +2715,25 @@ and reduction (defs: defs) (ctxt: context ref) (strat: reduction_strategy) (te: 
 	| App (hd, args, p) ->
 	  App (hd, List.map (fun (arg, n) -> reduction defs ctxt strat arg, n) args, p)
 
+    )
+    | Match (te, eqs, p) -> (
+      (* we reduce the term *)
+      let te = reduction defs ctxt strat te in
+      (* we try all the possible equations *)
+      let res = fold_stop (fun () (p, body) ->
+	(* we could check that n = argn, but it should have been already checked *)
+	(* can we unify the pattern ? *)
+	try 
+	  let r = unification_pattern_term !ctxt p te in
+	  let te = term_substitution r body in
+	  Right (shift_term te (- (pattern_size p)))
+	with
+	  | DoudouException (NoMatchingPattern (ctxt, p, te)) -> 
+	    Left ()
+      ) () eqs in
+      match res with
+	| Left () -> if strat.deltaiotaweak_armed then raise IotaReductionFailed else te
+	| Right te -> reduction defs ctxt strat te
     )
   ) in
   if !debug then printf "reduction result: %s\n" (term2string !ctxt res);
@@ -2823,6 +2949,11 @@ and typeinfer (defs: defs) (ctxt: context ref) (te: term) : term * term =
       let fvte = add_fvar ctxt (TVar (fvty, nopos)) in
       TVar (fvte, pos), TVar (fvty, nopos)
 
+    (* destruction *)
+    | Match (te, eqs, _) -> (
+      raise (DoudouException (FreeError "Match case not yet implemented in typeinfer"))
+    )
+
   ) with
     | DoudouException ((CannotInfer _) as err) ->
       raise (DoudouException err)
@@ -2929,7 +3060,8 @@ and typecheck_equation (defs: defs) (ctxt: context ref) (lhs: pattern) (rhs: ter
   close_context ctxt;  
   (* and we typecheck the rhs *)
   let rhs, rhsty = typecheck defs ctxt rhs lhsty in
-  ctxt := drop (pattern_size lhs') !ctxt;
+  let _ = pop_quantifications ctxt [] (pattern_size lhs') in
+  (*ctxt := drop (pattern_size lhs') !ctxt;*)
   lhs', rhs
 
 (* close a context with bvar valued to fvars *)
