@@ -100,3 +100,37 @@ isClassC2 :: (a1 :: T1) -> isClassC2
 a1 :: {A :: T} -> [H :: C1 A] -> [C2 A [H]] -> T1
 a1 {A} -> [H] -> [isClassC2 a1] := a1
 *)
+
+-----------------------------------------------------------------------------------------
+
+The question is: based on this [] quantification, can one reconstruct the Domain / Subdomain / Category of Axioms ??
+Might needs more instrumentalization ...
+Need to deal with representation
+
+
+Category := a typeclass
+can the Category actually provides the constructor for the representation ?
+it can define the constructors as types, implemented with inductive type at domain level (ex: acosh of ArcHyperbolicFunctionCategory
+)
+
+Class ArcHyperbolicFunctionCategory (A :: Type) :=
+| acosh :: A -> A (* this is the definition of a constructor that any type implementing ArcHyperbolicFunctionCategory must provide *)
+
+Class Logic A :=
+| and :: A -> A -> A
+| or :: A -> A -> A
+| not :: A -> A -> A
+| semantics :: A -> Type
+(* *)
+
+(Logic A) => ClassicalLogic A :=
+| exludemiddle :: (P :: A) -> semantics (or P (not P))
+
+Domain := a type
+with possibly a representation (data structure, basically in case of ), with therefore a coercion from/to string
+ex: Integer (possible an Obj)
+
+Subdomain := a type + a (decidable) constraint
+ex: PositiveInteger :: Type := (x :: Integer) -> [ x > 0 ] -> PositiveInteger
+(but this is more a )
+
