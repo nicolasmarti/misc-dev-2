@@ -17,6 +17,7 @@ module NameMap = Map.Make(
 
 class virtual ['a] eObj =
 object
+  method uuid: int = 0
   method virtual get_name: string
   method virtual get_doc: string
   method virtual apply: 'a list -> (name, 'a) Hashtbl.t -> 'a
@@ -391,6 +392,7 @@ let save_and_restore (l: name list) (ctxt: env) (f: unit -> 'a) : 'a =
 class lambda (name: string) (doc: string) (listargs: (name * expr option) list) (body: expr list) =
 object (self)
   inherit [expr] eObj
+  method uuid = 1
   method get_name = name
   method get_doc = doc
   method apply args ctxt =     
@@ -417,6 +419,7 @@ end;;
 class defun =
 object (self)
   inherit [expr] eObj
+  method uuid = 2
   method get_name = "defun"
   method get_doc = "primitive to define a function\nformat:\n(defun name (params) \"doc\" body"
   method apply args ctxt =     
@@ -451,6 +454,7 @@ end;;
 class plus =
 object (self)
   inherit [expr] eObj
+  method uuid = 3
   method get_name = "+"
   method get_doc = "sum its arguments"
   method apply args ctxt =     
@@ -468,6 +472,7 @@ end;;
 class mult =
 object (self)
   inherit [expr] eObj
+  method uuid = 4
   method get_name = "*"
   method get_doc = "product its arguments"
   method apply args ctxt =     
@@ -485,6 +490,7 @@ end;;
 class getdoc =
 object (self)
   inherit [expr] eObj
+  method uuid = 5
   method get_name = "getdoc"
   method get_doc = "return the documentation of the function symbol passed as argument"
   method apply args ctxt =     
@@ -500,6 +506,7 @@ end;;
 class elet =
 object (self)
   inherit [expr] eObj
+  method uuid = 6
   method get_name = "let"
   method get_doc = "lisp let expression\n format: (let varlist body)\n with varlist := ((var0 val0) ... (vari vali))"
   method apply args ctxt =     
@@ -540,6 +547,7 @@ end;;
 class set =
 object (self)
   inherit [expr] eObj
+  method uuid = 7
   method get_name = "set"
   method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: both args are evaluated prior to mutation"
   method apply args ctxt =     
@@ -555,6 +563,7 @@ end;;
 class setq =
 object (self)
   inherit [expr] eObj
+  method uuid = 8
   method get_name = "setq"
   method get_doc = "set a variable to a value\nformat: (set var value)\nN.B.: only value is evaluated prior to mutation"
   method apply args ctxt =     
@@ -571,6 +580,7 @@ end;;
 class ifte =
 object (self)
   inherit [expr] eObj
+  method uuid = 9
   method get_name = "if"
   method get_doc = "conditional branching\nformat (if test then ?else)"
   method apply args ctxt =     
@@ -585,6 +595,7 @@ end;;
 class ewhen =
 object (self)
   inherit [expr] eObj
+  method uuid = 10
   method get_name = "when"
   method get_doc = "(when COND BODY...)
 
@@ -613,6 +624,7 @@ let rec fold_left_stop (f: 'b -> 'a option) (l: 'a list) : 'b option =
 class cond =
 object (self)
   inherit [expr] eObj
+  method uuid = 11
   method get_name = "cond"
   method get_doc = "(cond CLAUSES...)
 
@@ -644,6 +656,7 @@ end;;
 class eTrue =
 object (self)
   inherit [expr] eObj
+  method uuid = 12
   method get_name = "t"
   method get_doc = "true value"
   method apply args ctxt = 
@@ -653,6 +666,7 @@ end;;
 class eEq =
 object (self)
   inherit [expr] eObj
+  method uuid = 13
   method get_name = "="
   method get_doc = "numerical equality"
   method apply args ctxt = 
@@ -670,6 +684,7 @@ end;;
 class eGt =
 object (self)
   inherit [expr] eObj
+  method uuid = 14
   method get_name = ">"
   method get_doc = "numerical Gt"
   method apply args ctxt = 
@@ -687,6 +702,7 @@ end;;
 class eGe =
 object (self)
   inherit [expr] eObj
+  method uuid = 15
   method get_name = ">="
   method get_doc = "numerical Ge"
   method apply args ctxt = 
@@ -704,6 +720,7 @@ end;;
 class eLt =
 object (self)
   inherit [expr] eObj
+  method uuid = 16
   method get_name = "<"
   method get_doc = "numerical Lt"
   method apply args ctxt = 
@@ -721,6 +738,7 @@ end;;
 class eLe =
 object (self)
   inherit [expr] eObj
+  method uuid = 17
   method get_name = "<="
   method get_doc = "numerical Le"
   method apply args ctxt = 
@@ -738,6 +756,7 @@ end;;
 class eeq =
 object (self)
   inherit [expr] eObj
+  method uuid = 18
   method get_name = "eq"
   method get_doc = "strict equality"
   method apply args ctxt = 
@@ -751,6 +770,7 @@ end;;
 class eequal =
 object (self)
   inherit [expr] eObj
+  method uuid = 19
   method get_name = "equal"
   method get_doc = "equiv equality"
   method apply args ctxt = 
@@ -764,6 +784,7 @@ end;;
 class estringlt =
 object (self)
   inherit [expr] eObj
+  method uuid = 20
   method get_name = "string<"
   method get_doc = "string lt"
   method apply args ctxt = 
@@ -786,6 +807,7 @@ end;;
 class estringeq =
 object (self)
   inherit [expr] eObj
+  method uuid = 21
   method get_name = "string="
   method get_doc = "string eq"
   method apply args ctxt = 
@@ -802,6 +824,7 @@ end;;
 class estringequal =
 object (self)
   inherit estringlt
+  method uuid = 22
   method get_name = "string-equal"
 end;;
 
@@ -863,6 +886,7 @@ let parse_msg args : (string list) Parser.t =
 class message =
 object (self)
   inherit [expr] eObj
+  method uuid = 23
   method get_name = "message"
   method get_doc = "format a message"
   method apply args ctxt = 
@@ -892,6 +916,7 @@ end;;
 class print =
 object (self)
   inherit [expr] eObj
+  method uuid = 24
   method get_name = "print"
   method get_doc = "print an expr"
   method apply args ctxt = 
@@ -907,6 +932,7 @@ end;;
 class econs =
 object (self)
   inherit [expr] eObj
+  method uuid = 25
   method get_name = "cons"
   method get_doc = "constructor"
   method apply args ctxt = 
@@ -921,6 +947,7 @@ end;;
 class ecar =
 object (self)
   inherit [expr] eObj
+  method uuid = 26
   method get_name = "car"
   method get_doc = "extract head of list"
   method apply args ctxt = 
@@ -937,6 +964,7 @@ end;;
 class ecdr =
 object (self)
   inherit [expr] eObj
+  method uuid = 27
   method get_name = "cdr"
   method get_doc = "extract tail of list"
   method apply args ctxt = 
@@ -953,6 +981,7 @@ end;;
 class enthcdr =
 object (self)
   inherit [expr] eObj
+  method uuid = 28
   method get_name = "nthcdr"
   method get_doc = "correspond to nth call to cdr"
   method apply args ctxt = 
@@ -968,6 +997,7 @@ end;;
 class enth =
 object (self)
   inherit [expr] eObj
+  method uuid = 29
   method get_name = "nth"
   method get_doc = "returns the nth element of a list"
   method apply args ctxt = 
@@ -983,6 +1013,7 @@ end;;
 class setcar =
 object (self)
   inherit [expr] eObj
+  method uuid = 30
   method get_name = "setcar"
   method get_doc = "mutate the variable, replacing its head"
   method apply args ctxt = 
@@ -1009,6 +1040,7 @@ end;;
 class setcdr =
 object (self)
   inherit [expr] eObj
+  method uuid = 31
   method get_name = "setcdr"
   method get_doc = "mutate the variable, replacing its tail"
   method apply args ctxt = 
@@ -1035,6 +1067,7 @@ end;;
 class length =
 object (self)
   inherit [expr] eObj
+  method uuid = 32
   method get_name = "length"
   method get_doc = "(length SEQUENCE)
 
@@ -1058,6 +1091,7 @@ end;;
 class symbolname =
 object (self)
   inherit [expr] eObj
+  method uuid = 33
   method get_name = "symbol-name"
   method get_doc = "(symbol-name SYMBOL)
 
@@ -1074,6 +1108,7 @@ end;;
 class enot =
 object (self)
   inherit [expr] eObj
+  method uuid = 34
   method get_name = "not"
   method get_doc = "negation"
   method apply args ctxt = 
@@ -1086,6 +1121,7 @@ end;;
 class ewhile =
 object (self)
   inherit [expr] eObj
+  method uuid = 35
   method get_name = "while"
   method get_doc = "while loop\nformat: (while test body...)"
   method apply args ctxt = 
@@ -1104,6 +1140,7 @@ end;;
 class dolist =
 object (self)
   inherit [expr] eObj
+  method uuid = 36
   method get_name = "dolist"
   method get_doc = "(dolist (VAR LIST [RESULT]) BODY...)\nLoop over a list.\nEvaluate BODY with VAR bound to each car from LIST, in turn.\nThen evaluate RESULT to get return value, default nil.\n"
   method apply args ctxt = 
@@ -1135,6 +1172,7 @@ let rec from_to (from: int) (ito: int) : int list =
 class dotimes =
 object (self)
   inherit [expr] eObj
+  method uuid = 37
   method get_name = "dotimes"
   method get_doc = "
 (dotimes (VAR COUNT [RESULT]) BODY...)
@@ -1168,6 +1206,7 @@ end;;
 class plusone =
 object (self)
   inherit [expr] eObj
+  method uuid = 38
   method get_name = "1+"
   method get_doc = "(1+ NUMBER)
 
@@ -1193,6 +1232,7 @@ end;;
 class minusone =
 object (self)
   inherit [expr] eObj
+  method uuid = 39
   method get_name = "1-"
   method get_doc = "(1- NUMBER)
 
@@ -1232,6 +1272,7 @@ open Unix;;
 class currenttimestring =
 object (self)
   inherit [expr] eObj
+  method uuid = 40
   method get_name = "current-time-string"
   method get_doc = "simple version without args"
   method apply args ctxt = 
@@ -1275,6 +1316,7 @@ end;;
 class elist =
 object (self)
   inherit [expr] eObj
+  method uuid = 41
   method get_name = "list"
   method get_doc = "returns its args in a list"
   method apply args ctxt = 
@@ -1284,6 +1326,7 @@ end;;
 class progn =
 object (self)
   inherit [expr] eObj
+  method uuid = 42
   method get_name = "progn"
   method get_doc = "(progn BODY...)
 
@@ -1342,13 +1385,13 @@ let rec execException2box (e: lisp_error) : token =
 				       ]
 ;;
 
-let interp_expr ctxt expr = 
+let interp_expr ?(verbose: bool = false) ctxt expr = 
   (*printf "term = '%s'\n" s;*)
   let stream = Stream.from_string ~filename:"stdin" expr in
   match parse_oneexpr stream with
     | Result.Ok ((consume, res), _) -> (
       let res' = eval res ctxt in
-      printbox (token2box (expr2token res') 400 2);
+      if verbose then printbox (token2box (expr2token res') 400 2);
       (consume, res')
     )
     | Result.Error (pos, s) ->
@@ -1470,7 +1513,7 @@ struct
   let empty_session () =  init_ctxt () ;;
 
   let proceed_expr session exprs = 
-    interp_expr session exprs 
+    interp_expr ~verbose:true session exprs 
   ;;
 
   let proceed_exprs session exprs = 
