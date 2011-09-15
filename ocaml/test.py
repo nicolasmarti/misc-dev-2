@@ -20,8 +20,8 @@ consum, f2 = Lisp.proceed("\
        (cond\
         ((not word-list) nil)\
         ((eq 3 (length (symbol-name (car word-list))))\
-         (cons (car word-list) (keep-three-letter-words (cdr word-list))))\
-        (t (keep-three-letter-words (cdr word-list)))))")
+         (cons (car word-list) (keepthreeletterwords (cdr word-list))))\
+        (t (keepthreeletterwords (cdr word-list)))))")
 
 print Lisp.sillyloop
 print Lisp.keepthreeletterwords(("one", "two", "three", "four"))

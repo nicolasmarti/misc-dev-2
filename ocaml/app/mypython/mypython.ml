@@ -10,10 +10,10 @@ let rec lisp2python (env: env) (expr: expr) : _Object t =
   match expr with
     | Int i -> Object.obj (Int.fromLong i)
     (*| Float f -> ???*)
-    | String s -> Object.obj (Py.String.fromString s)
+    | String s -> Object.obj (Py.String.fromString (String.concat "" ["\""; s; "\""]))
     | SrcInfo (e, _) -> lisp2python env e
     | List [] -> Object.obj (Base.none ())
-    | Name n -> lisp2python env (Hashtbl.find env n)
+    | Name n -> (try lisp2python env (Hashtbl.find env n) with | _ -> Object.obj (Py.String.fromString n))
     | Obj o when o#uuid = 1 ->
       Object.obj (Base.embed_closure (fun args ->
 	let args = Tuple.to_list args in
@@ -34,7 +34,13 @@ let rec lisp2python (env: env) (expr: expr) : _Object t =
       
 and python2lisp (o: _Object t) : expr =
   match () with
-    | _ when Py.String.check o -> String (Py.String.asString (Py.String.coerce o))
+    | _ when Py.String.check o -> (
+      let s = Py.String.asString (Py.String.coerce o) in
+      match () with 
+	| _ when String.length s < 2 -> Name s
+	| _ when String.sub s 0 1 = "\"" && String.sub s (String.length s - 1) 1 = "\"" -> String s
+	| _ -> Name s
+    )
     | _ when Int.check o -> Int (Int.asLong (Int.coerce o))
     | _ when Tuple.check o ->
       Quoted (List (List.map python2lisp (Tuple.to_list (Tuple.coerce o))))

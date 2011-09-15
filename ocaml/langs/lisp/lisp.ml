@@ -88,14 +88,14 @@ let rec extractList (e: expr) : expr list =
     | _ -> raise (LispException (FreeError ("not a list", e)))
 ;;
 
-let rec extractName (e: expr) : string =
+let rec extractName ?(src: string = "" ) (e: expr) : string =
   match e with
     | Name n -> n
     | SrcInfo (e, pos) -> (
       try extractName e with
 	| LispException err -> raise (LispException (AtPos (pos, err)))
     )
-    | _ -> raise (LispException (FreeError ("not a name", e)))
+    | _ -> raise (LispException (FreeError (String.concat "" ["not a name("; src;")"], e)))
 ;;
 
 let rec extractString (e: expr) : string =
@@ -136,7 +136,7 @@ let exprbool (b: bool) : expr =
 ;;
 
 let extractStringOrName (e: expr) : string =
-  try extractString e with | _ -> extractName e
+  try extractString e with | _ -> extractName ~src:"extractStringOrName" e
 ;;
 
 let rec extractInt (e: expr) : int =
@@ -431,19 +431,19 @@ object (self)
 	let l = extractList (List.nth args 1) in
 	List.map (fun hd -> 
 	  try 
-	    (extractName hd, None)
+	    (extractName ~src:"defun(1)" hd, None)
 	  with
 	    | _ -> (
 	      try 
 		let [argname; defaultvalue] = extractList hd in
-		(extractName argname, Some defaultvalue)
+		(extractName ~src:"defun(2)" argname, Some defaultvalue)
 	      with
 		| _ -> raise (LispException (FreeError ("wrong argument form", hd)))
 	    )
 	) l
       in 
       let body = drop args 2 in
-      let name = extractName (List.hd args) in
+      let name = extractName ~src:"defun(3)" (List.hd args) in
       let doc = extractString (List.nth args 2) in
       let o = Obj (new lambda name doc listargs body) in
       Hashtbl.replace ctxt name o;
@@ -497,7 +497,7 @@ object (self)
     if List.length args != 1 then
       raise (LispException (StringError "wrong number of arguments"))
     else
-      let n = extractName (List.nth args 0) in
+      let n = extractName ~src:"getdoc(1)" (List.nth args 0) in
       let value = try Hashtbl.find ctxt n with | Not_found -> raise (LispException (FreeError ("unknown name", (List.nth args 0)))) in
       let o = extractObj value in
       String o#get_doc
@@ -520,11 +520,11 @@ object (self)
 	  List.map (fun hd ->
 	    try 
 	      let [var; value] = extractList hd in
-	      let n = extractName var in
+	      let n = extractName ~src:"elet(1)" var in
 	      (n, value)
 	    with
 	      | _ -> 
-		let n = extractName hd in
+		let n = extractName ~src:"elet(2)" hd in
 		(n, List [])
 	  ) l
 	with
@@ -555,7 +555,7 @@ object (self)
       raise (LispException (StringError "wrong number of arguments"))
     else
       let [var; value] = List.map (fun hd -> eval hd ctxt) args in
-      let n = extractName var in
+      let n = extractName ~src:"set(1)" var in
       Hashtbl.replace ctxt n value;
       value      
 end;;
@@ -572,7 +572,7 @@ object (self)
     else
       let [var; value] = args in
       let value = eval value ctxt in
-      let n = extractName var in
+      let n = extractName ~src:"setq(1)" var in
       Hashtbl.replace ctxt n value;
       value      
 end;;
@@ -793,7 +793,7 @@ object (self)
      else
        let [s1; s2] = List.map (fun hd -> 
 	 let hd' = eval hd ctxt in
-	 try extractString hd' with | _ -> extractName hd'
+	 try extractString hd' with | _ -> extractName ~src:"estringlt(1)" hd'
        ) args in
        exprbool (s1 < s2)
 end;;
@@ -1021,7 +1021,7 @@ object (self)
       raise (LispException (StringError "wrong number of arguments"))
      else
        let value = eval (List.nth args 1) ctxt in
-       let n = extractName (List.nth args 0) in
+       let n = extractName ~src:"setcar(1)" (List.nth args 0) in
        let nvalue = 
 	 try 
 	   Hashtbl.find ctxt n
@@ -1048,7 +1048,7 @@ object (self)
       raise (LispException (StringError "wrong number of arguments"))
      else
        let value = extractList (eval (List.nth args 1) ctxt) in
-       let n = extractName (List.nth args 0) in
+       let n = extractName ~src:"setcdr(1)" (List.nth args 0) in
        let nvalue = 
 	 try 
 	   Hashtbl.find ctxt n 
@@ -1101,7 +1101,7 @@ Return SYMBOL's name, a string.
      if List.length args != 1 then
       raise (LispException (StringError "wrong number of arguments"))
      else
-       String (extractName (eval (List.hd args) ctxt))
+       String (extractName ~src:"symbolname(1)" (eval (List.hd args) ctxt))
 end;;
 
 
@@ -1150,7 +1150,7 @@ object (self)
        let param = List.hd args in
        let body = List.tl args in
        let [var; list; result] = extractList param in
-       let var = extractName var in
+       let var = extractName ~src:"dolist(1)" var in
        let list = extractList (eval list ctxt) in
        let result = extractName result in
        
