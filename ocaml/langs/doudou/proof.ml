@@ -536,7 +536,7 @@ let create_opparser_proof_pattern (ctxt: proof_context) (primary: proof_pattern 
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> PPApp (PPCste s, [te, Explicit]))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> PPApp (PPCste s, [te1, Explicit; te2, Explicit]))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> PPApp (PPCste s, [te, Explicit]))
-  ) ctxt.defs.hist in
+  ) (List.flatten ctxt.defs.hist) in
   res
 
 

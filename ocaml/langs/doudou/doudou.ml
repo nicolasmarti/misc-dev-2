@@ -142,7 +142,7 @@ and defs = {
   (* here we store all id in a string *)
   (* id -> (symbol * type * equations) *)
   store : (string, (symbol * term * value)) Hashtbl.t;
-  hist : symbol list;
+  hist : (symbol list) list;
 }
 
 let empty_frame = {
@@ -954,7 +954,7 @@ let addAxiom (defs: defs ref) (s: symbol) (ty: term) : unit =
 
   (* update the definitions *)
   Hashtbl.add !defs.store (symbol2string s) (s, ty, Axiom);
-  defs := {!defs with hist = s::!defs.hist }
+  defs := {!defs with hist = [s]::!defs.hist }
 
 let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
   (* just checking that there is a definition *)
@@ -969,7 +969,7 @@ let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
   ) in
   (* update the definitions *)
   Hashtbl.add !defs.store (symbol2string s) (s, constante_type !defs s, Equation (eqs @ [eq]));
-  defs := {!defs with hist = s::!defs.hist }
+  defs := {!defs with hist = [s]::!defs.hist }
 
 let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * term) list) : unit =
   (* just checking that there is no redefinition for the type *)
@@ -979,7 +979,7 @@ let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * ter
   (* update the definitions *)
   Hashtbl.add !defs.store (symbol2string s) (s, ty, Inductive (List.map fst constrs));
   let _ = List.map (fun (s, ty) -> Hashtbl.add !defs.store (symbol2string s) (s, ty, Constructor)) constrs in
-  defs := {!defs with hist = s::(List.map fst constrs) @ !defs.hist }
+  defs := {!defs with hist = (s::(List.map fst constrs))::!defs.hist }
 
 
 (* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
@@ -1575,7 +1575,7 @@ let parse_symbol_name (defs: defs) : symbol parsingrule =
     match s with
       | Name _ -> None
       | _ -> Some (tryrule (fun pb -> let () = word (symbol2string s) pb in s))
-  ) defs.hist)
+  ) (List.flatten defs.hist))
 
 let parseint = applylexingrule (regexp "[0-9]+", fun (s:string) -> int_of_string s)
 ;;
@@ -1692,7 +1692,7 @@ let parse_symbol (defs: defs) : symbol parsingrule =
 	Right s
       with
 	| NoMatch -> Left ()
-    ) () defs.hist in
+    ) () (List.flatten defs.hist) in
     match res with
       | Left () -> raise NoMatch
       | Right s -> s
@@ -1712,7 +1712,7 @@ let create_opparser_term (defs: defs) (primary: term parsingrule) : term opparse
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> App (Cste (s, pos), [te, Explicit], (fst pos, snd (get_term_pos te))))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> App (Cste (s, pos), [te1, Explicit; te2, Explicit], (fst (get_term_pos te1), snd (get_term_pos te2))))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> App (Cste (s, pos), [te, Explicit], (fst (get_term_pos te), snd pos)))
-  ) defs.hist in
+  ) (List.flatten defs.hist) in
   res
 
 let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : pattern opparser =
@@ -1729,7 +1729,7 @@ let create_opparser_pattern (defs: defs) (primary: pattern parsingrule) : patter
       | Symbol (n, Prefix i) -> Hashtbl.add res.prefixes n (i, fun pos te -> PApp ((s, pos), [te, Explicit], AVar nopos, (fst pos, snd (get_pattern_pos te))))
       | Symbol (n, Infix (i, a)) -> Hashtbl.add res.infixes n (i, a, fun pos te1 te2 -> PApp ((s, pos), [te1, Explicit; te2, Explicit], AVar nopos, (fst (get_pattern_pos te1), snd (get_pattern_pos te2))))
       | Symbol (n, Postfix i) -> Hashtbl.add res.postfixes n (i, fun pos te -> PApp ((s, pos), [te, Explicit], AVar nopos, (fst (get_pattern_pos te), snd pos)))
-  ) defs.hist in
+  ) (List.flatten defs.hist) in
   res
 
 (* these are the whole term set 
@@ -2097,7 +2097,7 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
     let () = at_start_pos leftmost (word ":=") pb in
     let () = whitespaces pb in
     (* we need to create a copy of the definition, in order to parse the Inductive type symbol *)
-    let defs = { defs with hist = s::defs.hist } in
+    let defs = { defs with hist = [s]::defs.hist } in
     let constrs = many (fun pb ->
       let () = whitespaces pb in
       let () = at_start_pos leftmost (word "|") pb in
