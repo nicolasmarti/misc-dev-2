@@ -24,5 +24,5 @@ consum, f2 = Lisp.proceed("\
         (t (keep-three-letter-words (cdr word-list)))))")
 
 print Lisp.sillyloop
-print Lisp.keepthreeletterwords
+print Lisp.keepthreeletterwords(("one", "two", "three", "four"))
 

@@ -37,7 +37,7 @@ and python2lisp (o: _Object t) : expr =
     | _ when Py.String.check o -> String (Py.String.asString (Py.String.coerce o))
     | _ when Int.check o -> Int (Int.asLong (Int.coerce o))
     | _ when Tuple.check o ->
-      List (List.map python2lisp (Tuple.to_list (Tuple.coerce o)))
+      Quoted (List (List.map python2lisp (Tuple.to_list (Tuple.coerce o))))
 
 
 let addIfNotIn mdl dict key expr =
