@@ -18,8 +18,15 @@ let rec lisp2python (env: env) (expr: expr) : _Object t =
       Object.obj (Base.embed_closure (fun args ->
 	let args = Tuple.to_list args in
 	let args = List.map python2lisp args in
-	let res = eval (List (expr::args)) env in
-	printbox (token2box (expr2token res) 400 2);
+	let res = 
+	  try 
+	    eval (List (expr::args)) env
+	  with
+	    | LispException err ->
+	      printf "%s\n" (box2string (token2box (execException2box err) 400 2)); flush Pervasives.stdout;
+	      List []
+	in
+	(*printbox (token2box (expr2token res) 400 2);*)
 	lisp2python env res
       ))
     | List l ->
@@ -31,6 +38,33 @@ and python2lisp (o: _Object t) : expr =
     | _ when Int.check o -> Int (Int.asLong (Int.coerce o))
     | _ when Tuple.check o ->
       List (List.map python2lisp (Tuple.to_list (Tuple.coerce o)))
+
+
+let addIfNotIn mdl dict key expr =
+  try 
+    let _ = Dict.getItemString dict key in
+    (*printf "%s found\n" key;*)
+    ()
+  with
+    | _ -> 
+      try 
+	let _ = Module.addObject mdl key (lisp2python ctxt expr) in
+	(*printf "%s added\n" key;*)
+	()
+      with
+	| _ -> 
+	  (*printf "adding %s failed\n" key;*)
+	  ()
+
+let synchModuleCtxt mdl =
+  let dict = Module.getDict mdl in
+  Hashtbl.iter (fun key expr ->
+    match expr with
+      | Obj o when o#uuid = 1 -> addIfNotIn mdl dict key expr
+      | Obj o -> ()
+      | _ -> addIfNotIn mdl dict key expr
+  ) ctxt
+
 
 let _ =
   (* initialization *)
@@ -74,7 +108,8 @@ let _ =
 	  let str = Py.String.asString (Py.String.coerce str) in
 	  let consumed, res = interp_expr ctxt str in
 	  let consumed = Int.fromLong consumed in
-	  let res = lisp2python ctxt res in	  
+	  let res = lisp2python ctxt res in	
+	  let _ = synchModuleCtxt mdl in
 	  Object.obj (Tuple.from_list [Object.obj consumed; res])
 	)
 	| _ -> Object.obj (Base.none ())
