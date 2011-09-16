@@ -201,8 +201,8 @@ class Sheet(gtk.TreeView):
             self.firstcolumn.set_title(title)
         
             key = colnum2colname(col - 1) + str(row + 1)
-            f = self.ss.getformula(key)
-            win.set_title(str(f))
+            f = self.ss.getformula(key)            
+            win.set_title((str(f) if f <> None else key) + " := " + str(self.ss[key]))
 
         except:
             return 
