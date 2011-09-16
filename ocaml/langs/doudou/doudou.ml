@@ -2154,7 +2154,7 @@ let parse_onedefinition defs : (int * definition) parsingrule =
     let def = parse_definition defs leftmost pb in
     let () = whitespaces pb in
     let posend = pb.beginpointer in  
-    posend - posstart, def
+    posend - posstart - 1, def
 
 
 (*************************************************************)
