@@ -1,9 +1,13 @@
+open Doudou
+open Parser
 open Lisp;;
 open Opycaml.Api;;
 open Printf;;
 open Pprinter;;
 
-let ctxt = init_ctxt ()
+(***************************************************************)
+
+let env = init_ctxt ()
 
 (* transcription of a lisp value into a python value *)
 let rec lisp2python (env: env) (expr: expr) : _Object t = 
@@ -54,7 +58,7 @@ let addIfNotIn mdl dict key expr =
   with
     | _ -> 
       try 
-	let _ = Module.addObject mdl key (lisp2python ctxt expr) in
+	let _ = Module.addObject mdl key (lisp2python env expr) in
 	(*printf "%s added\n" key;*)
 	()
       with
@@ -69,8 +73,15 @@ let synchModuleCtxt mdl =
       | Obj o when o#uuid = 1 -> addIfNotIn mdl dict key expr
       | Obj o -> ()
       | _ -> addIfNotIn mdl dict key expr
-  ) ctxt
+  ) env
 
+(***************************************************************)
+
+let defs = ref (empty_defs ())
+
+let ctxt = ref empty_context
+
+(***************************************************************)
 
 let _ =
   (* initialization *)
@@ -104,7 +115,6 @@ let _ =
       let res = Tuple.from_list (List.map (Py.String.fromString) res) in      
       Object.obj res);
 
-
   (* enter a lisp value *)
   Module.setClosureString mdl "proceed"
     (fun args ->
@@ -112,19 +122,84 @@ let _ =
       match args with
 	| str::_ when Py.String.check str -> (
 	  let str = Py.String.asString (Py.String.coerce str) in
-	  let consumed, res = interp_expr ctxt str in
+	  let consumed, res = interp_expr env str in
 	  let consumed = Int.fromLong consumed in
-	  let res = lisp2python ctxt res in	
+	  let res = lisp2python env res in	
 	  let _ = synchModuleCtxt mdl in
 	  Object.obj (Tuple.from_list [Object.obj consumed; res])
 	)
 	| _ -> Object.obj (Base.none ())
     );
 
+  (* importing Lisp module *)
+  let _ = Run.simpleString "import Lisp" in
+
+  (********************************************************************)
+
+  (* building Lisp module *)
+  let mdl = Module.new_ "Doudou" in
+  let mdldic = Import.getModuleDict () in
+  Dict.setItemString mdldic "Doudou" mdl;
+
+  (* filling the module *)
+  (*
+    Module.setClosureString : [>_Module] t -> string -> ([>_Tuple] t -> _Object t) -> unit
+    Module.setItemString : [>_Module] t -> string -> [>_Object] t -> unit
+  *)
+
+  (* enter a doudou definition *)
+  Module.setClosureString mdl "proceed"
+    (fun args ->
+      let args = Tuple.to_list args in
+      match args with
+	| str::_ when Py.String.check str -> (
+	  let str = Py.String.asString (Py.String.coerce str) in
+	  (* we set the parser *)
+	  let lines = stream_of_string str in
+	  let pb = build_parserbuffer lines in
+	  (*if verbose then printf "input:\n%s\n" str;*)
+	  (* we save the context and the defs *)
+	  let saved_ctxt = !ctxt in
+	  let saved_defs = !defs in
+	  try
+	    let (consumed, def) = parse_onedefinition !defs pb in
+	    let _ = process_definition ~verbose:false defs ctxt def in
+	    let o = Object.obj (Base.none ()) in
+	    let consumed = Int.fromLong consumed in
+	    Object.obj (Tuple.from_list [Object.obj consumed; o])	    
+	  with
+	    (* TODO: return proper python exception *)
+	    | NoMatch -> 
+	      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+	      raise Pervasives.Exit
+	    | DoudouException err -> 
+	      (* we restore the context and defs *)
+	      ctxt := saved_ctxt;
+	      defs := saved_defs;
+	      printf "error:\n%s\n" (error2string err);
+	      raise Pervasives.Exit
+
+	)
+	| _ -> Object.obj (Base.none ())
+    );
+
+  (* undo last definition *)
+  Module.setClosureString mdl "undo"
+    (fun args ->
+      undoDefinition defs;
+      Object.obj (Base.none ())
+    );
+
+  (* show definitions *)
+  Module.setClosureString mdl "showdefs"
+    (fun args ->
+      let s = defs2string !defs in
+      Object.obj (Py.String.fromString s)
+    );
 
 
   (* importing Lisp module *)
-  let _ = Run.simpleString "import Lisp" in
+  let _ = Run.simpleString "import Doudou" in
 
   (********************************************************************)
 

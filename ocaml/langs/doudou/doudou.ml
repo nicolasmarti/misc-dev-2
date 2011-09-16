@@ -981,6 +981,13 @@ let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * ter
   let _ = List.map (fun (s, ty) -> Hashtbl.add !defs.store (symbol2string s) (s, ty, Constructor)) constrs in
   defs := {!defs with hist = (s::(List.map fst constrs))::!defs.hist }
 
+(* remove back a set of definitions *)
+let undoDefinition (defs: defs ref) : unit =
+  match !defs.hist with
+    | [] -> ()
+    | hd::tl ->
+      let _ = List.map (fun s -> Hashtbl.remove !defs.store (symbol2string s)) hd in
+      defs := {!defs with hist = tl}
 
 (* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
 let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
@@ -2138,6 +2145,17 @@ let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsing
   <|> tryrule (fun pb ->
     DefTerm (parse_term defs leftmost pb)
   )
+
+let parse_onedefinition defs : (int * definition) parsingrule = 
+  fun pb -> 
+    let posstart = pb.beginpointer in
+    let () = whitespaces pb in
+    let leftmost = cur_pos pb in
+    let def = parse_definition defs leftmost pb in
+    let () = whitespaces pb in
+    let posend = pb.beginpointer in  
+    posend - posstart, def
+
 
 (*************************************************************)
 (*      unification/reduction, type{checking/inference}      *)
