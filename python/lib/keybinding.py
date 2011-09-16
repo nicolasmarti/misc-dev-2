@@ -76,10 +76,10 @@ class KeyBinding:
                     elif self.pressed_key <= i[0][len(self.validkeysequences)]:   
                         valid = True
                         return
-        
+                    
 
 
         #print "cleaning"
         # we reset the validkeysequence
         self.validkeysequences = []
-
+        self.pressed_key = Set()
