@@ -2,7 +2,7 @@
 <language id="doudou" _name="doudou" version="2.0" _section="Sources">
   <metadata>
     <property name="mimetypes">text/x-doudou</property>
-    <property name="globs">*.d</property>
+    <property name="globs">*.doudou</property>
     <property name="block-comment-start">(*</property>
     <property name="block-comment-end">*)</property>
   </metadata>

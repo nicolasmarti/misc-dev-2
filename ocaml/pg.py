@@ -107,7 +107,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         self.buffer.set_highlight_matching_brackets(True)
         
         # syntax highlight
-        language = self.lm.guess_language("d.d")
+        language = self.lm.guess_language("d.doudou")
         if language:
             self.buffer.set_language(language)
             self.buffer.set_highlight_syntax(True)
