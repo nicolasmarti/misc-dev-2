@@ -26,3 +26,18 @@ consum, f2 = Lisp.proceed("\
 print Lisp.sillyloop
 print Lisp.keepthreeletterwords(("one", "two", "three", "four"))
 
+#################################################################
+
+Doudou.proceed("False :: Type :=")
+
+Doudou.proceed("False")
+
+Doudou.proceed("List (A :: Type) :: Type := | [[]] :: List A | (:) : right, 20 :: A -> List A -> List A")
+
+print Doudou.showdefs() + "\n\n"
+
+Doudou.undo()
+
+print Doudou.showdefs() + "\n\n"
+
+Doudou.proceed("False")
