@@ -52,12 +52,12 @@ class KeyBinding:
                     
                 # yes this is a prefix
                 if prefix:
-                    print "is prefix"
-                    print "pressed:" + str(self.pressed_key)
-                    print "waiting for: " + str(i[0][len(self.validkeysequences)])
+                    #print "is prefix"
+                    #print "pressed:" + str(self.pressed_key)
+                    #print "waiting for: " + str(i[0][len(self.validkeysequences)])
                     # is the pressed key is the following sequence we were waiting for
                     if self.pressed_key == i[0][len(self.validkeysequences)]:
-                        print "is next waited"
+                        #print "is next waited"
                         # append to validsequence
                         self.validkeysequences.append(self.pressed_key)
                         # and reset
@@ -79,7 +79,7 @@ class KeyBinding:
         
 
 
-        print "cleaning"
+        #print "cleaning"
         # we reset the validkeysequence
         self.validkeysequences = []
 
