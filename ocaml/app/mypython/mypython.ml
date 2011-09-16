@@ -190,8 +190,14 @@ let _ =
   (* undo last definition *)
   Module.setClosureString mdl "undo"
     (fun args ->
-      undoDefinition defs;
-      Object.obj (Base.none ())
+      try 
+	undoDefinition defs;
+	Object.obj (Base.none ())
+      with
+	| DoudouException err -> 
+	  (* we restore the context and defs *)
+	  printf "error:\n%s\n" (error2string err);
+	  Object.obj (Py.String.fromString (error2string err))
     );
 
   (* show definitions *)
