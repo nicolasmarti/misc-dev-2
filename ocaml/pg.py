@@ -156,6 +156,9 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
 
         self.buffer.apply_tag(self.not_editable_tag, startiter, enditer)
         
+        # and we set the cursor there
+        self.buffer.place_cursor(enditer)
+
         #print self.startpos
         return True
 
@@ -186,8 +189,11 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
 
         oldenditer = self.buffer.get_iter_at_offset(oldendpos)
         newenditer = self.buffer.get_iter_at_offset(newendpos)
-
+        
         self.buffer.remove_tag(self.not_editable_tag, newenditer, oldenditer)
+
+        # and we set the cursor
+        self.buffer.place_cursor(newenditer)
 
         #print self.startpos
         return True
