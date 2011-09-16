@@ -59,6 +59,8 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         # the current starting position for position
         self.startpos = [0]
 
+        # a tag for uneditable text 
+        self.not_editable_tag = self.buffer.create_tag(editable=False, foreground="purple", background="green")
 
     # remove all marks
     def remove_all_marks(self):
@@ -80,7 +82,8 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     # proceed next definition
     def proceed_definition(self):
         # grab the start iterator
-        startiter = self.buffer.get_iter_at_offset(self.startpos[len(self.startpos) - 1])
+        startpos = self.startpos[len(self.startpos) - 1]
+        startiter = self.buffer.get_iter_at_offset(startpos)
         # grab the last iter of the buffer
         enditer = self.buffer.get_end_iter()
         # grab the text
@@ -88,19 +91,35 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         # proceed the term
         endpos, res = Doudou.proceed(text)
         # update starting position
-        self.startpos.append(self.startpos[len(self.startpos) - 1] + endpos)
+        endpos = startpos + endpos
+        self.startpos.append(endpos)
+
+        enditer = self.buffer.get_iter_at_offset(endpos)
+
+        # create a texttag
+
+        self.buffer.apply_tag(self.not_editable_tag, startiter, enditer)
         
-        print self.startpos
+        #print self.startpos
         return
 
     # undo last definition
     def undo(self):
+        if len(self.startpos) == 0: return
         # calling the undo
         Doudou.undo()
         # poping the last starting position
-        self.startpos.pop()
+        oldendpos = self.startpos.pop()
 
-        print self.startpos
+        # removing the tag
+        newendpos = self.startpos[len(self.startpos) - 1]
+
+        oldenditer = self.buffer.get_iter_at_offset(oldendpos)
+        newenditer = self.buffer.get_iter_at_offset(newendpos)
+
+        self.buffer.remove_tag(self.not_editable_tag, newenditer, oldenditer)
+
+        #print self.startpos
         
         return
 
