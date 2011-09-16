@@ -42,6 +42,20 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
+        # C-c C-n -> proceed next
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,110])],
+             lambda s: s.proceed_definition()
+             )
+            )
+
+        # C-c C-u -> undo last definition
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,117])],
+             lambda s: s.undo()
+             )
+            )
+
     # remove all marks
     def remove_all_marks(self):
         begin, end = self.buffer.get_bounds()
@@ -57,6 +71,16 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     def key_released(self, widget, event, data=None):        
         self.keyreleased(event.keyval)
         if not (event.state & gtk.gdk.CONTROL_MASK): self.keyreleased(self.ctrl)
+        return
+
+    # proceed next definition
+    def proceed_definition(self):
+        print "proceed_definition"
+        return
+
+    # undo last definition
+    def undo(self):
+        print "undo"
         return
 
 
