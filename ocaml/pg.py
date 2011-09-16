@@ -62,6 +62,11 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         # a tag for uneditable text 
         self.not_editable_tag = self.buffer.create_tag(editable=False, foreground="purple", background="green")
 
+        # modifying theme for sake of readability
+        self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        self.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('white'))
+
+
     # remove all marks
     def remove_all_marks(self):
         begin, end = self.buffer.get_bounds()
@@ -105,7 +110,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
 
     # undo last definition
     def undo(self):
-        if len(self.startpos) == 0: return
+        if len(self.startpos) == 1: return
         # calling the undo
         Doudou.undo()
         # poping the last starting position
