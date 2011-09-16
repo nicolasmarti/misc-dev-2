@@ -953,7 +953,7 @@ let addAxiom (defs: defs ref) (s: symbol) (ty: term) : unit =
   if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])));
 
   (* update the definitions *)
-  Hashtbl.add !defs.store (symbol2string s) (s, ty, Axiom);
+  Hashtbl.replace !defs.store (symbol2string s) (s, ty, Axiom);
   defs := {!defs with hist = [s]::!defs.hist }
 
 let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
@@ -968,7 +968,8 @@ let addEquation (defs: defs ref) (s: symbol) (eq: equation) : unit =
     | Constructor -> raise (DoudouException (FreeError (String.concat "" ["symbol: "; (symbol2string s); " is a constructor!"])))
   ) in
   (* update the definitions *)
-  Hashtbl.add !defs.store (symbol2string s) (s, constante_type !defs s, Equation (eqs @ [eq]));
+  let ty = constante_type !defs s in
+  Hashtbl.replace !defs.store (symbol2string s) (s, ty, Equation (eqs @ [eq]));
   defs := {!defs with hist = [s]::!defs.hist }
 
 let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * term) list) : unit =
@@ -977,8 +978,8 @@ let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * ter
   let _ = List.map (fun (s, _) -> if Hashtbl.mem !defs.store (symbol2string s) then raise (DoudouException (FreeError (String.concat "" ["redefinition of symbol: "; (symbol2string s)])))) constrs in
 
   (* update the definitions *)
-  Hashtbl.add !defs.store (symbol2string s) (s, ty, Inductive (List.map fst constrs));
-  let _ = List.map (fun (s, ty) -> Hashtbl.add !defs.store (symbol2string s) (s, ty, Constructor)) constrs in
+  Hashtbl.replace !defs.store (symbol2string s) (s, ty, Inductive (List.map fst constrs));
+  let _ = List.map (fun (s, ty) -> Hashtbl.replace !defs.store (symbol2string s) (s, ty, Constructor)) constrs in
   defs := {!defs with hist = (s::(List.map fst constrs))::!defs.hist }
 
 (* remove back a set of definitions *)
@@ -986,7 +987,13 @@ let undoDefinition (defs: defs ref) : unit =
   match !defs.hist with
     | [] -> ()
     | hd::tl ->
-      let _ = List.map (fun s -> Hashtbl.remove !defs.store (symbol2string s)) hd in
+      let _ = List.map (fun s ->
+	match unfold_constante !defs s with
+	  | Equation eqs when List.length eqs > 0 -> 
+	    let ty = constante_type !defs s in
+	    Hashtbl.replace !defs.store (symbol2string s) (s, ty, Equation (take (List.length eqs - 1) eqs))
+	  | _ -> Hashtbl.remove !defs.store (symbol2string s)  
+      ) (List.rev hd) in
       defs := {!defs with hist = tl}
 
 (* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
@@ -1502,7 +1509,9 @@ let defs2token (defs: defs) : token =
       match value with
 	| (s, ty, _) ->
 	  acc @ [Box [Verbatim (symbol2string s); Space 1; Verbatim "::"; Space 1; term2token [] ty Alone]; Newline]
-    ) defs.store []
+    ) defs.store [] @ 
+      [Newline] @
+      (intercalate (Space 1) (List.map (fun s -> Verbatim (symbol2string s)) (List.flatten defs.hist)))
   )  
 
 (* make a string from an error *)
@@ -3282,7 +3291,7 @@ let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context 
 	s', ty
       ) constrs in
       (* we remove the definition of the inductive type *)
-      Hashtbl.remove !defs.store (symbol2string s);
+      undoDefinition defs;
       (* now we can pop the quantifiers *)
       let qs = List.rev (List.map (fun _ -> fst (pop_quantification ctxt [])) args) in
       (* pop the inductive types type *)
