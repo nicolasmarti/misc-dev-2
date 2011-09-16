@@ -65,13 +65,12 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
-        # C-c C-v -> print defs
+        # C-c C-d -> print defs
         self.keyactions.append(
             ([Set([65507, 99]), Set([65507,100])],
              lambda s: s.show_defs()
              )
             )
-
 
         # C-c C-u -> undo last definition
         self.keyactions.append(
@@ -79,14 +78,20 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              lambda s: s.undo()
              )
             )
-        
+
+        # C-c C-y -> undo all definitions
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,121])],
+             lambda s: s.undo_all()
+             )
+            )
+
         # C-x C-f -> open a file
         self.keyactions.append(
             ([Set([65507, 120]), Set([65507,102])],
              lambda s: s.openfile()
              )
             )
-
 
         # the current starting position for position
         self.startpos = [0]
@@ -185,8 +190,12 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         self.buffer.remove_tag(self.not_editable_tag, newenditer, oldenditer)
 
         #print self.startpos
-        
-        return
+        return True
+
+    # undo all definitions
+    def undo_all(self):
+        while self.undo():
+            None
 
     # open file
     def openfile(self):
