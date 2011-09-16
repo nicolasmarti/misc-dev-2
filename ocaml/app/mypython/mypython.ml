@@ -150,37 +150,41 @@ let _ =
   (* enter a doudou definition *)
   Module.setClosureString mdl "proceed"
     (fun args ->
-      let args = Tuple.to_list args in
-      match args with
-	| str::_ when Py.String.check str -> (
-	  let str = Py.String.asString (Py.String.coerce str) in
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | str::_ when Py.String.check str -> (
+	    let str = Py.String.asString (Py.String.coerce str) in
 	  (* we set the parser *)
-	  let lines = stream_of_string str in
-	  let pb = build_parserbuffer lines in
-	  (*if verbose then printf "input:\n%s\n" str;*)
+	    let lines = stream_of_string str in
 	  (* we save the context and the defs *)
-	  let saved_ctxt = !ctxt in
-	  let saved_defs = !defs in
-	  try
-	    let (consumed, def) = parse_onedefinition !defs pb in
-	    let _ = process_definition ~verbose:false defs ctxt def in
-	    let o = Object.obj (Base.none ()) in
-	    let consumed = Int.fromLong consumed in
-	    Object.obj (Tuple.from_list [Object.obj consumed; o])	    
-	  with
-	    (* TODO: return proper python exception *)
-	    | NoMatch -> 
-	      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
-	      raise Pervasives.Exit
-	    | DoudouException err -> 
+	    let saved_ctxt = !ctxt in
+	    let saved_defs = !defs in
+	  (*if verbose then printf "input:\n%s\n" str;*)
+	    let pb = build_parserbuffer lines in
+	    try
+	      let (consumed, def) = parse_onedefinition !defs pb in
+	      let _ = process_definition ~verbose:false defs ctxt def in
+	      let o = Object.obj (Base.none ()) in
+	      let consumed = Int.fromLong consumed in
+	      Object.obj (Tuple.from_list [Object.obj consumed; o])	    
+	    with
+	      (* TODO: return proper python exception *)
+	      | NoMatch -> 
+		printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
+		Object.obj (Py.String.fromString (errors2string pb))
+	      | DoudouException err -> 
 	      (* we restore the context and defs *)
-	      ctxt := saved_ctxt;
-	      defs := saved_defs;
-	      printf "error:\n%s\n" (error2string err);
-	      raise Pervasives.Exit
-
-	)
+		ctxt := saved_ctxt;
+		defs := saved_defs;
+		printf "error:\n%s\n" (error2string err);
+		Object.obj (Py.String.fromString (error2string err))
+	  )
+	  | _ -> Object.obj (Base.none ())
+      )
+      with
 	| _ -> Object.obj (Base.none ())
+
     );
 
   (* undo last definition *)

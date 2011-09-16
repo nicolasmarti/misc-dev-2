@@ -14,14 +14,23 @@ import pango
 from sets import *
 import keybinding
 
+def error_dialog(parent, msg):
+    dialog = gtk.MessageDialog(parent,
+                               gtk.DIALOG_DESTROY_WITH_PARENT,
+                               gtk.MESSAGE_ERROR,
+                               gtk.BUTTONS_OK,
+                               msg)
+    dialog.run()
+    dialog.destroy()
+
 class PG(gtksourceview2.View, keybinding.KeyBinding):
     
     def __init__(self):
 
         # first define a buffer and its language manager
-        lm = gtksourceview2.LanguageManager()
+        self.lm = gtksourceview2.LanguageManager()
         self.buffer = gtksourceview2.Buffer()
-        self.buffer.set_data('languages-manager', lm)
+        self.buffer.set_data('languages-manager', self.lm)
 
         # initialize super class using the buffer
         gtksourceview2.View.__init__(self, self.buffer)
@@ -49,12 +58,35 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
+        # C-c C-b -> proceed all
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,98])],
+             lambda s: s.proceed_all()
+             )
+            )
+
+        # C-c C-v -> print defs
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,100])],
+             lambda s: s.show_defs()
+             )
+            )
+
+
         # C-c C-u -> undo last definition
         self.keyactions.append(
             ([Set([65507, 99]), Set([65507,117])],
              lambda s: s.undo()
              )
             )
+        
+        # C-x C-f -> open a file
+        self.keyactions.append(
+            ([Set([65507, 120]), Set([65507,102])],
+             lambda s: s.openfile()
+             )
+            )
+
 
         # the current starting position for position
         self.startpos = [0]
@@ -66,6 +98,15 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
         self.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('white'))
 
+        # set source features
+        self.buffer.set_highlight_matching_brackets(True)
+        
+        # syntax highlight
+        language = self.lm.guess_language("d.d")
+        if language:
+            self.buffer.set_language(language)
+            self.buffer.set_highlight_syntax(True)
+        
 
     # remove all marks
     def remove_all_marks(self):
@@ -76,7 +117,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     def key_pressed(self, widget, event, data=None):        
         self.keypressed(event.keyval)
         if event.state & gtk.gdk.CONTROL_MASK: self.keypressed(self.ctrl)
-        #print event.keyval
+        print event.keyval
         return
 
     def key_released(self, widget, event, data=None):        
@@ -94,9 +135,14 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         # grab the text
         text = self.buffer.get_text(startiter, enditer)
         # proceed the term
-        endpos, res = Doudou.proceed(text)
-        # update starting position
-        endpos = startpos + endpos
+        res = Doudou.proceed(text)
+        if res == None: return
+        if isinstance(res, str): 
+            print res
+            error_dialog(self.get_toplevel(), res)
+            return
+        # update starting position         
+        endpos = startpos + res[0]
         self.startpos.append(endpos)
 
         enditer = self.buffer.get_iter_at_offset(endpos)
@@ -106,7 +152,17 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         self.buffer.apply_tag(self.not_editable_tag, startiter, enditer)
         
         #print self.startpos
-        return
+        return True
+
+
+    # proceed all definitions
+    def proceed_all(self):
+        while self.proceed_definition():
+            None
+
+    #show defs
+    def show_defs(self):
+        error_dialog(self.get_toplevel(), Doudou.showdefs())
 
     # undo last definition
     def undo(self):
@@ -127,6 +183,36 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         #print self.startpos
         
         return
+
+    # open file
+    def openfile(self):
+        self.filew = gtk.FileSelection("File selection")
+    
+        def close(w):
+            self.filew.hide()
+
+        def fileok(w):
+            self.filew.hide()   
+            path = self.filew.get_filename()
+            self.buffer.begin_not_undoable_action()
+            try:
+                txt = open(path).read()
+            except:
+                return False
+
+            self.buffer.set_text(txt)
+            self.buffer.set_data('filename', path)
+            self.buffer.end_not_undoable_action()
+
+            self.buffer.set_modified(False)
+            self.buffer.place_cursor(self.buffer.get_start_iter())
+            return True           
+            
+        self.filew.connect("destroy", close)
+        self.filew.ok_button.connect("clicked", fileok)
+
+        self.filew.show()
+
 
 
 if __name__ == '__main__':

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language id="doudou" _name="doudou" version="2.0" _section="Sources">
+  <metadata>
+    <property name="mimetypes">text/x-doudou</property>
+    <property name="globs">*.d</property>
+    <property name="block-comment-start">(*</property>
+    <property name="block-comment-end">*)</property>
+  </metadata>
+
+  <styles>
+    <style id="type" _name="Data Type" map-to="def:type"/>
+    <style id="keyword" _name="Keyword" map-to="def:keyword"/>
+  </styles>
+
+  <definitions>
+    <!-- here's the main context -->
+    <context id="doudou" class="no-spell-check">
+      <include>
+	<!-- Flow control & common keywords -->
+	<context id="keywords" style-ref="keyword">
+	  <keyword>match</keyword>
+	  <keyword>with</keyword>
+	  <keyword>no</keyword>
+	  <keyword>left</keyword>
+	  <keyword>right</keyword>
+	</context>
+	<context id="types" style-ref="type">
+	  <!-- pervasives types -->
+	  <keyword>Type</keyword>
+	</context>
+      </include>
+    </context>
+  </definitions>
+</language>
