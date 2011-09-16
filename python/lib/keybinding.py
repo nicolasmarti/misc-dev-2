@@ -41,8 +41,6 @@ class KeyBinding:
 
         #print "pressed_key:" + str(self.pressed_key)
 
-        # initially the validity id false
-        valid = False
         # we do a traversal of all the key actions
         for i in self.keyactions:
             # if the valid keysequence so far is not empty
@@ -52,34 +50,36 @@ class KeyBinding:
                 for j in range(0, len(self.validkeysequences) - 1):
                     prefix = prefix and (self.validkeysequences[j] == i[0][j])
                     
-                #if prefix: 
-                #    print "prefix"
-                #else:
-                #    print "not a prefix"
-
                 # yes this is a prefix
                 if prefix:
-                    valid = True
+                    print "is prefix"
+                    print "pressed:" + str(self.pressed_key)
+                    print "waiting for: " + str(i[0][len(self.validkeysequences)])
                     # is the pressed key is the following sequence we were waiting for
                     if self.pressed_key == i[0][len(self.validkeysequences)]:
+                        print "is next waited"
                         # append to validsequence
                         self.validkeysequences.append(self.pressed_key)
+                        # and reset
+                        self.pressed_key = Set()
                         # if if this is the final one 
                         if len(self.validkeysequences) == len(i[0]):
                             # then we can execute the action
                             # we reset the sequence
                             self.validkeysequences = []
                             # clear the presed key
-                            self.pressed_key = Set()
                             # and call the actions
                             #print "runaction"
                             i[1](self)
-                            return
+                        return
+                    # else, if its include in it we say it might be valid
+                    elif self.pressed_key <= i[0][len(self.validkeysequences)]:   
+                        valid = True
+                        return
+        
 
-                        
 
-        # it is not a valid sequence
-        if not valid:
-            # we reset the validkeysequence
-            self.validkeysequences = []
+        print "cleaning"
+        # we reset the validkeysequence
+        self.validkeysequences = []
 
