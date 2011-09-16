@@ -1,6 +1,6 @@
 # this class is supposed to somehow emulate an emacs inputs of key
 # this is supposed to be derived
-
+from sets import *
 
 class KeyBinding:
 
@@ -23,19 +23,23 @@ class KeyBinding:
     # this function is call when a key is pressed
     def keypressed(self, keycode):
         # we add the key pressed to the set
-        self.pressed_key.add(event.keyval)
+        self.pressed_key.add(keycode)
         # and call the manager
         self.managekey()
 
     # this function is call when a key is released
     def keyreleased(self, keycode):
         # discard the key from the set
-        self.pressed_key.discard(event.keyval)
+        self.pressed_key.discard(keycode)
 
 
     # the key manager: decide if the current list of entered key is a valid one,
     # and run the action
     def managekey(self):
+
+        #print "validkeysequence:" + str(self.validkeysequences)
+
+        #print "pressed_key:" + str(self.pressed_key)
 
         # initially the validity id false
         valid = False
@@ -48,8 +52,14 @@ class KeyBinding:
                 for j in range(0, len(self.validkeysequences) - 1):
                     prefix = prefix and (self.validkeysequences[j] == i[0][j])
                     
+                #if prefix: 
+                #    print "prefix"
+                #else:
+                #    print "not a prefix"
+
                 # yes this is a prefix
                 if prefix:
+                    valid = True
                     # is the pressed key is the following sequence we were waiting for
                     if self.pressed_key == i[0][len(self.validkeysequences)]:
                         # append to validsequence
@@ -62,16 +72,14 @@ class KeyBinding:
                             # clear the presed key
                             self.pressed_key = Set()
                             # and call the actions
+                            #print "runaction"
                             i[1](self)
                             return
-                        else:
-                            # if its not the final, this is yet a valid pressed key
-                            valid = True
-                    # if the pressed_keys are a subset for what we are waiting, we also say this is/(might be) valid
-                    elif self.pressed_key <= i[0][len(self.validkeysequences)] and (len(self.validkeysequences) > 0 or Set([self.ctrl]) <= self.pressed_key):
-                        valid = True
+
+                        
 
         # it is not a valid sequence
         if not valid:
             # we reset the validkeysequence
             self.validkeysequences = []
+
