@@ -56,6 +56,10 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
+        # the current starting position for position
+        self.startpos = [0]
+
+
     # remove all marks
     def remove_all_marks(self):
         begin, end = self.buffer.get_bounds()
@@ -75,12 +79,29 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
 
     # proceed next definition
     def proceed_definition(self):
-        print "proceed_definition"
+        # grab the start iterator
+        startiter = self.buffer.get_iter_at_offset(self.startpos[len(self.startpos) - 1])
+        # grab the last iter of the buffer
+        enditer = self.buffer.get_end_iter()
+        # grab the text
+        text = self.buffer.get_text(startiter, enditer)
+        # proceed the term
+        endpos, res = Doudou.proceed(text)
+        # update starting position
+        self.startpos.append(self.startpos[len(self.startpos) - 1] + endpos)
+        
+        print self.startpos
         return
 
     # undo last definition
     def undo(self):
-        print "undo"
+        # calling the undo
+        Doudou.undo()
+        # poping the last starting position
+        self.startpos.pop()
+
+        print self.startpos
+        
         return
 
 
