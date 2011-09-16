@@ -11,6 +11,8 @@ from string import join, ascii_uppercase
 
 from spreadsheet import *
 
+from types import *
+
 def colnum2colname(n):
     
     res = ""
@@ -66,7 +68,7 @@ class Sheet(gtk.TreeView):
         gtk.TreeView.__init__(self)
 
         # the underlying ss
-        self.ss = SpreadSheet(callback = self.setcell)
+        self.ss = SpreadSheet(callback = self.setcell, _globals = globals())
 
         # numbers of row / columns
         self.numCols = numCols
@@ -202,7 +204,7 @@ class Sheet(gtk.TreeView):
         
             key = colnum2colname(col - 1) + str(row + 1)
             f = self.ss.getformula(key)            
-            win.set_title((str(f) if f <> None else key) + " := " + str(self.ss[key]))
+            win.set_title((str(f) if f <> None else key) + " := " + str(self.ss[key]) + repr(type(self.ss[key])))
 
         except:
             return 
