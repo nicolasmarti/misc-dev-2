@@ -117,7 +117,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     def key_pressed(self, widget, event, data=None):        
         self.keypressed(event.keyval)
         if event.state & gtk.gdk.CONTROL_MASK: self.keypressed(self.ctrl)
-        print event.keyval
+        #print event.keyval
         return
 
     def key_released(self, widget, event, data=None):        
@@ -168,7 +168,11 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     def undo(self):
         if len(self.startpos) == 1: return
         # calling the undo
-        Doudou.undo()
+        res = Doudou.undo()
+        if isinstance(res, str): 
+            print res
+            error_dialog(self.get_toplevel(), res)
+            return
         # poping the last starting position
         oldendpos = self.startpos.pop()
 
