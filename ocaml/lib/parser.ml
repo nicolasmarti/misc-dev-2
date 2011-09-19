@@ -483,6 +483,7 @@ let (<!!>) p s pb =
 ;;
 
 let rec errors2string (pb: parserbuffer) : string =
+  try (
   let errors = 
     let cmp (e1, _, _, _) (e2, _, _, _) =
       (snd e2) - (snd e1) in
@@ -492,11 +493,14 @@ let rec errors2string (pb: parserbuffer) : string =
     List.map (
       fun ((b1,e1), (b2, e2), (b, e), s) -> String.concat "" ["("; 
 							      "("; string_of_int b1; ","; string_of_int e1; ")";
-							      "-- '"; (Buffer.sub pb.bufferstr b (e - b + 1)); "' -->";
+							      "-- '"; (Buffer.sub pb.bufferstr b (e - b)); "' -->";
 							      "("; string_of_int b2; ","; string_of_int e2; ")";
 							      "): "; s]
     ) errors
   )
+  )
+  with 
+    | Invalid_argument "Buffer.sub" -> "Buffer.sub error"
 ;;
 
 
@@ -510,7 +514,7 @@ let markerror (pb: parserbuffer) : string =
     | [] -> Buffer.contents pb.bufferstr
     | ((b1,e1), (b2, e2), (b,e), s)::_ ->
       (*let s1 = Buffer.sub pb.bufferstr 0 b in*)
-      let se = Buffer.sub pb.bufferstr b (e - b + 1) in
+      let se = Buffer.sub pb.bufferstr b (e - b) in
       (* let s2 = Buffer.sub pb.bufferstr (e+1) (Buffer.length pb.bufferstr - e - 1) in*)
       String.concat "" ["\""; se; "\""; "\n"; 
                         string_of_int b1; ":"; string_of_int e1;"-";

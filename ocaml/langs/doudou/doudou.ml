@@ -3206,7 +3206,7 @@ let clean_term_strat : reduction_strategy = {
   eta = true;
 }
 
-let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context ref) (definition: definition) : unit =
+let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context ref) (definition: definition) : unit =
   match definition with
     | DefInductive (s, args, ty, constrs) -> (
       (* first, we build the inductive type's type and typecheck again type *)
@@ -3337,53 +3337,53 @@ let process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context 
       (* just print that everything is fine *)
       if verbose then printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout
 
-let parse_process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (str: string) : unit =
-    (* we set the parser *)
-    let lines = stream_of_string str in
-    let pb = build_parserbuffer lines in
-    let pos = cur_pos pb in
-    (*if verbose then printf "input:\n%s\n" str;*)
-    (* we save the context and the defs *)
-    let saved_ctxt = !ctxt in
-    let saved_defs = !defs in
-    try
-      let def = parse_definition !defs pos pb in
-      let _ = process_definition ~verbose:verbose defs ctxt def in
-      assert (List.length !ctxt = 1)
-    with
-      | NoMatch -> 
-	printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
-	raise Pervasives.Exit
-      | DoudouException err -> 
-	(* we restore the context and defs *)
-	ctxt := saved_ctxt;
-	defs := saved_defs;
-	printf "error:\n%s\n" (error2string err);
-	raise Pervasives.Exit
+(* parse definition from a parserbuffer *)
+and parse_process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (pb: parserbuffer) : unit =
+  (* consume all the whatspace and grab the position *)
+  let () = whitespaces pb in
+  let pos = cur_pos pb in
+  (*if verbose then printf "input:\n%s\n" str;*)
+  (* we save the context and the defs *)
+  let saved_ctxt = !ctxt in
+  let saved_defs = copy_defs !defs in
+  try
+    let def = parse_definition !defs pos pb in
+    let _ = process_definition ~verbose:verbose defs ctxt def in
+    assert (List.length !ctxt = 1)
+  with
+    | NoMatch -> 
+      if verbose then printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb); flush Pervasives.stdout;
+      raise NoMatch
+    | DoudouException err -> 
+      (* we restore the context and defs *)
+      ctxt := saved_ctxt;
+      defs := saved_defs;
+      if verbose then printf "error:\n%s\n" (error2string err);
+      raise (DoudouException err)
 
-let parse_process_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (str: string) : unit =
-    (* we set the parser *)
-    let lines = stream_of_string str in
-    let pb = build_parserbuffer lines in
-    let pos = cur_pos pb in
-    (*if verbose then printf "input:\n%s\n" str;*)
+(* the same function but with a string *)
+and parse_process_definition_from_string (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (str: string) : unit =
+  let lines = stream_of_string str in
+  let pb = build_parserbuffer lines in
+  parse_process_definition defs ctxt ~verbose:verbose pb
+
+(* the same function but with a filename *)
+and parse_process_definition_from_file (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (filename: string) : unit =    
+  let ic = try Pervasives.open_in filename with | Sys_error s -> raise (DoudouException (FreeError s)) in
+  let lines = line_stream_of_channel ic in
+  let pb = build_parserbuffer lines in
+  parse_process_definition defs ctxt ~verbose:verbose pb
+
+(* parse all the definitions until an eof *)
+and parse_process_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (pb: parserbuffer) : unit =
     (* we save the context and the defs *)
     let saved_ctxt = !ctxt in
-    let saved_defs = !defs in
+    let saved_defs = copy_defs !defs in
     let continue = ref true in
     while !continue do
       try
-	let def = parse_definition !defs pos pb in (
-	  try	  
-	    process_definition ~verbose:verbose defs ctxt def
-	  with
-	    | DoudouException err -> 
-	      (* we restore the context and defs *)
-	      ctxt := saved_ctxt;
-	      defs := saved_defs;
-	      printf "error:\n%s\n" (error2string err);
-	      raise Pervasives.Exit
-	);
+	(* process one definition *)
+	parse_process_definition defs ctxt ~verbose:verbose pb;
 	assert (List.length !ctxt = 1)
       with
 	| NoMatch -> (
@@ -3393,10 +3393,30 @@ let parse_process_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bo
 	    continue := false
 	  with
 	    | NoMatch ->
-	      printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb);
-	      raise Pervasives.Exit	    
+	      if verbose then printf "parsing error: '%s'\n%s\n" (Buffer.contents pb.bufferstr) (errors2string pb); flush Pervasives.stdout;
+	      raise (DoudouException (FreeError (errors2string pb)))
 	)
+	| DoudouException err ->
+	  (* we restore the context and defs *)
+	  ctxt := saved_ctxt;
+	  defs := saved_defs;
+	  if verbose then printf "error:\n%s\n" (error2string err); flush Pervasives.stdout;
+	  raise (DoudouException err)	  
     done
+
+(* the same function but with a string *)
+and parse_process_definitions_from_string (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (str: string) : unit =
+  let lines = stream_of_string str in
+  let pb = build_parserbuffer lines in
+  parse_process_definitions defs ctxt ~verbose:verbose pb
+
+(* the same function but with a filename *)
+and parse_process_definitions_from_file (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (filename: string) : unit =    
+  let ic = try Pervasives.open_in filename with | Sys_error s -> raise (DoudouException (FreeError s)) in
+  let lines = line_stream_of_channel ic in
+  let pb = build_parserbuffer lines in
+  parse_process_definitions defs ctxt ~verbose:verbose pb
+
 
 (* for the purpose of oracles, we define the init_defs with the following initial definitions *)
 
@@ -3447,9 +3467,9 @@ let initdef =
   let ctxt = ref empty_context in
   let _ = 
     try 
-      parse_process_definitions defs ctxt ~verbose:false init_definitions 
+      parse_process_definitions_from_string defs ctxt ~verbose:false init_definitions 
     with
-      | _ -> printf "catastrophic: error in processing the initial defs\n"; raise Exit
+      | DoudouException err -> printf "catastrophic: error in processing the initial defs:\n%s\n" (error2string err); raise Exit
   in
   printf "abled to proceed init defs\n"; flush Pervasives.stdout;
   !defs
