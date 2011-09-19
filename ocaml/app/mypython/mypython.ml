@@ -155,12 +155,12 @@ let _ =
 	match args with
 	  | str::_ when Py.String.check str -> (
 	    let str = Py.String.asString (Py.String.coerce str) in
-	  (* we set the parser *)
+	    (* we set the parser *)
 	    let lines = stream_of_string str in
-	  (* we save the context and the defs *)
+	    (* we save the context and the defs *)
 	    let saved_ctxt = !ctxt in
 	    let saved_defs = !defs in
-	  (*if verbose then printf "input:\n%s\n" str;*)
+	    (*if verbose then printf "input:\n%s\n" str;*)
 	    let pb = build_parserbuffer lines in
 	    try
 	      let (consumed, def) = parse_onedefinition !defs pb in

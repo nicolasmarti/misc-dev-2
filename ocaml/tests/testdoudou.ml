@@ -166,6 +166,20 @@ let _ = parse_process_definition_from_string definition_defs definition_ctxt ~ve
 let _ = parse_process_definition_from_string definition_defs definition_ctxt ~verbose:true "negb True"
 let _ = parse_process_definition_from_string definition_defs definition_ctxt ~verbose:true "negb False"
 
+
+(* loading files *)
+let definition_ctxt2 = ref empty_context
+
+let definition_defs2 = ref (empty_defs ())
+
+let _ = parse_process_definition_from_string definition_defs2 definition_ctxt2 ~verbose:false "Load ex"
+(*
+let _ = printf "%s\n" (defs2string !definition_defs2)
+
+let _ = undoDefinition definition_defs2
+
+let _ = printf "%s\n" (defs2string !definition_defs2)
+*)
 (**********************)
 (* example of tactics *)
 (**********************)

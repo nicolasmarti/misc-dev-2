@@ -2096,10 +2096,29 @@ type definition = DefSignature of symbol * term
 		  | DefEquation of pattern * term
 		  | DefTerm of term
 		  | DefInductive of symbol * ((symbol * pos) list * term * nature) list * term * (symbol * term) list
+		  (* the following constructors are not language element per say, but commands *)
+		  | Load of string
 
 let rec parse_definition (defs: defs) (leftmost: int * int) : definition parsingrule =
-  (* an inductive *)
+  (* here we first try to parse command:
+     - Load <filename>
+  *)
   tryrule (fun pb ->
+    let () = whitespaces pb in
+    let () = at_start_pos leftmost (word "Load") pb in
+    let () = whitespaces pb in
+    let filename = at_start_pos leftmost name_parser pb in
+    let () = whitespaces pb in
+    Load filename
+  )
+  (* then we try to parse basic definitions: 
+     - Inductive types
+     - Signature
+     - Equation
+     - Term
+  *)
+  (* an inductive *)
+  <|> tryrule (fun pb ->
     let () = whitespaces pb in
     let s = at_start_pos leftmost (parse_symbol_name_def) pb in
     let () = whitespaces pb in
@@ -3337,6 +3356,10 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
       (* just print that everything is fine *)
       if verbose then printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout
 
+
+    | Load filename ->
+       load_definitions defs ctxt ~verbose:verbose (String.concat "." [filename; "doudou"])
+
 (* parse definition from a parserbuffer *)
 and parse_process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (pb: parserbuffer) : unit =
   (* consume all the whatspace and grab the position *)
@@ -3411,12 +3434,22 @@ and parse_process_definitions_from_string (defs: defs ref) (ctxt: context ref) ?
   parse_process_definitions defs ctxt ~verbose:verbose pb
 
 (* the same function but with a filename *)
-and parse_process_definitions_from_file (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (filename: string) : unit =    
+and parse_process_definitions_from_file (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (filename: string) : unit =
   let ic = try Pervasives.open_in filename with | Sys_error s -> raise (DoudouException (FreeError s)) in
   let lines = line_stream_of_channel ic in
   let pb = build_parserbuffer lines in
   parse_process_definitions defs ctxt ~verbose:verbose pb
 
+(* this function load a source file, and flatten the new definitions into one historic event *)
+and load_definitions (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (filename: string) : unit =
+  (* first we compute the current historic size *)
+  let hist_size = List.length !defs.hist in
+  (* then we parse and process definitions *)
+  parse_process_definitions_from_file defs ctxt ~verbose:verbose filename;
+  (* then we flatten the historic from the file into one element *)
+  let hd = take (List.length !defs.hist - hist_size) !defs.hist in
+  let tl = drop (List.length !defs.hist - hist_size) !defs.hist in
+  defs := {!defs with hist = (List.flatten hd)::tl}
 
 (* for the purpose of oracles, we define the init_defs with the following initial definitions *)
 
