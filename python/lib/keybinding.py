@@ -47,7 +47,7 @@ class KeyBinding:
             if len(i[0]) > len(self.validkeysequences):
                 # we make a fold that will check if the sequence is a prefix of the currently checked keyactions
                 prefix = True
-                for j in range(0, len(self.validkeysequences) - 1):
+                for j in range(0, len(self.validkeysequences)):
                     prefix = prefix and (self.validkeysequences[j] == i[0][j])
                     
                 # yes this is a prefix
@@ -58,8 +58,10 @@ class KeyBinding:
                     # is the pressed key is the following sequence we were waiting for
                     if self.pressed_key == i[0][len(self.validkeysequences)]:
                         #print "is next waited"
+                        #print str(self.pressed_key) + " == " + str(i[0][len(self.validkeysequences)])
                         # append to validsequence
                         self.validkeysequences.append(self.pressed_key)
+                        #print "validkeysequence:" + str(self.validkeysequences)
                         # and reset
                         self.pressed_key = Set()
                         # if if this is the final one 
@@ -70,10 +72,11 @@ class KeyBinding:
                             # clear the presed key
                             # and call the actions
                             #print "runaction"
+                            #print str(i)
                             i[1](self)
                         return
                     # else, if its include in it we say it might be valid
-                    elif self.pressed_key <= i[0][len(self.validkeysequences)]:   
+                    elif self.pressed_key < i[0][len(self.validkeysequences)]:   
                         valid = True
                         return
                     
