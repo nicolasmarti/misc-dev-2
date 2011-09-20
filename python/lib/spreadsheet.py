@@ -264,8 +264,12 @@ class SpreadSheet:
 
 
   def __getitem__(self, key):
+    if not isinstance(key, str):
+      #print "key := " + str(key)
+      return self._cells.keys()[key]
+
     if self._debug:
-      print "self.__getitem__(" + key + ")"      
+      print "self.__getitem__(" + str(key) + ")"      
 
     # look if the evaluation comes from another cell computation
     if len(self._dep_stack) > 0:
@@ -308,7 +312,8 @@ class SpreadSheet:
       for key in self._cells:
         self.callback("update", (key, self._cells[key][1]))
       
-
+  def keys(self):
+    return self._cells.keys()
 
 
 if __name__ == '__main__':
