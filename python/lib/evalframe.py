@@ -8,9 +8,11 @@ import keybinding
 
 from sets import *
 
+import spreadsheet
+
 class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
     
-    def __init__(self):
+    def __init__(self, _locals = None):
         gtk.Frame.__init__(self)
         self.set_label("Evaluator")
         
@@ -55,7 +57,10 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
         self.button.show()
         self.table.attach(self.button, 6, 10, 8, 9)
 
-        self.m_locals = locals()
+        if _locals == None:
+            self.m_locals = locals()
+        else:
+            self.m_locals = _locals
 
         # tree view
         self.sw3 = gtk.ScrolledWindow()
@@ -249,7 +254,8 @@ if __name__ == '__main__':
     sw.set_policy(gtk.POLICY_AUTOMATIC,
                   gtk.POLICY_AUTOMATIC)
 
-    evalf = EvalFrame()
+    ss = spreadsheet.SpreadSheet(_globals = globals())
+    evalf = EvalFrame(ss)
     sw.add(evalf)
     win = gtk.Window()
     win.add(sw)
