@@ -110,6 +110,27 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
              )
             )
 
+        # this is a historic of the commands
+        self.hist = []
+        # and a pointer
+        self.histn = None
+        # and a buffer for the current command
+        self.savedcmd = None
+
+        # C-up -> get the previous command
+        self.keyactions.append(
+            ([Set([65507, 65362])],
+             lambda s: self.hist_previous()
+             )
+            )
+
+        # C-down -> get the next command
+        self.keyactions.append(
+            ([Set([65507, 65364])],
+             lambda s: self.hist_next()
+             )
+            )
+
     # key callback
     def key_pressed(self, widget, event, data=None):        
         self.keypressed(event.keyval)
@@ -147,6 +168,9 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
                 # remove the var
                 self.treestore.remove(self.name2iter[d])
                 
+        self.hist.append(m_str)
+        self.histn = None
+
         self.textview.grab_focus()
 
     def myeval(self, data=None):
@@ -162,6 +186,9 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
 
             self.textview.grab_focus()
 
+        self.hist.append(m_str)
+        self.histn = None
+
     def local_clicked(self, treeview, path, viewcolumn, data):
         #print "treeview: " + str(treeview) + " :: " + str(type(treeview))
         #print "path: " + str(path) + " :: " + str(type(path))
@@ -172,6 +199,48 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
         varname = str(treeview.get_model().get_value(piter, 0))
         self.textbuffer.insert(self.textbuffer.get_end_iter(), varname)
         self.textview.grab_focus()
+
+    def hist_previous(self):
+
+        # first time we look for the historic, or if the pointer is on the length of the hist, we need to save the current command
+        if self.histn == None or self.histn == len(self.hist):
+            self.savedcmd = self.textbuffer.get_text(self.textbuffer.get_start_iter(), self.textbuffer.get_end_iter())
+
+        # first set up the pointer
+        if self.histn == None:
+            self.histn = len(self.hist) - 1
+        else:
+            self.histn -= 1
+
+        # make sure we are at least at 0
+        if self.histn < 0:
+            self.histn = 0
+
+        # and make sure it points to something
+        if self.histn >= len(self.hist):
+            self.hist = None
+            return
+
+
+        # change the current value of the buffer with the historical command
+        self.textbuffer.set_text(self.hist[self.histn])
+        return
+        
+    def hist_next(self):
+        # if the pointer is not set, do nothing
+        if self.histn == None: return
+
+        # else update it
+        self.histn += 1
+
+        # if it is gt to the length of the historic, then we assign to the length, and show the current command
+        if self.histn >= len(self.hist): 
+            self.histn = len(self.hist)
+            self.textbuffer.set_text(self.savedcmd)
+        else:
+            self.textbuffer.set_text(self.hist[self.histn])
+        
+        return
 
 if __name__ == '__main__':
     
