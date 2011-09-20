@@ -100,6 +100,13 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
+        # C-x C-k -> close a file
+        self.keyactions.append(
+            ([Set([65507, 120]), Set([65507,107])],
+             lambda s: s.closefile()
+             )
+            )
+
         # the current starting position for position
         self.startpos = [0]
 
@@ -155,6 +162,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
             print res
             error_dialog(self.get_toplevel(), res)
             return
+
         # update starting position         
         endpos = startpos + res[0]
         self.startpos.append(endpos)
@@ -285,6 +293,14 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
             self.filew.ok_button.connect("clicked", fileok)
             
             self.filew.show()
+
+    def closefile(self):
+        # reset the buffer
+        self.resetbuffer()
+        # reset the text
+        self.buffer.set_text("")
+        # set filename as None
+        self.buffer.set_data('filename', None)
 
 
 if __name__ == '__main__':
