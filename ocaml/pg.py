@@ -117,6 +117,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
     def remove_all_marks(self):
         begin, end = self.buffer.get_bounds()
         self.buffer.remove_source_marks(begin, end)
+        self.startpos = [0]
 
     # key callback
     def key_pressed(self, widget, event, data=None):        
@@ -139,6 +140,7 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         enditer = self.buffer.get_end_iter()
         # grab the text
         text = self.buffer.get_text(startiter, enditer)
+        if text == "": return
         # proceed the term
         res = Doudou.proceed(text)
         if res == None: return
@@ -203,6 +205,14 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         while self.undo():
             None
 
+    # reset the buffer
+    def resetbuffer(self):
+        # first we undo everything
+        self.undo_all()
+        # then we remove all marks
+        self.remove_all_marks()
+
+
     # open file
     def openfile(self):
         self.filew = gtk.FileSelection("File selection")
@@ -218,6 +228,9 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
                 txt = open(path).read()
             except:
                 return False
+
+            # reset the buffer
+            self.resetbuffer()
 
             self.buffer.set_text(txt)
             self.buffer.set_data('filename', path)
