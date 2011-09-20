@@ -4,8 +4,11 @@ import gobject
 import gtk
 
 from threading import *
+import keybinding
 
-class EvalFrame(gtk.Frame, Thread):
+from sets import *
+
+class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
     
     def __init__(self):
         gtk.Frame.__init__(self)
@@ -38,12 +41,12 @@ class EvalFrame(gtk.Frame, Thread):
         self.table.attach(self.sw2, 0, 10, 9, 12)
 
         # the button
-        self.button = gtk.Button(label="execute(F5)")
+        self.button = gtk.Button(label="execute(C-c C-c)")
         self.button.show()
         self.table.attach(self.button, 3, 6, 8, 9)
         self.button.connect("clicked", self.myexec, None)
 
-        self.button = gtk.Button(label="eval(F6)")
+        self.button = gtk.Button(label="eval(C-c C-n)")
         self.button.show()
         self.table.attach(self.button, 0, 3, 8, 9)
         self.button.connect("clicked", self.myeval, None)
@@ -76,17 +79,53 @@ class EvalFrame(gtk.Frame, Thread):
             iter = self.treestore.append(None, [d])
             self.name2iter[d] = iter
 
-        self.connect("key_press_event", self.key_pressed, None)
+        for i in [self, self.textview]:
+            i.connect("key_press_event", self.key_pressed, None)
+            i.connect("key_release_event", self.key_released, None)
+        
 
-    def key_pressed(self, widget, event, data=None):
-        if event.keyval == 65474:
-            self.myexec(widget)
-        elif event.keyval == 65475:
-            self.myeval(widget)
 
+        # initialize super class keybing
+        keybinding.KeyBinding.__init__(self)
+        self.ctrl = 65507
+
+        # C-x C-c -> close the application
+        self.keyactions.append(
+            ([Set([65507, 120]), Set([65507,99])],
+             lambda s: gtk.main_quit()
+             )
+            )
+
+        # C-c C-c -> execute
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,99])],
+             lambda s: self.myexec()
+             )
+            )
+
+        # C-c C-c -> eval
+        self.keyactions.append(
+            ([Set([65507, 99]), Set([65507,110])],
+             lambda s: self.myeval()
+             )
+            )
+
+    # key callback
+    def key_pressed(self, widget, event, data=None):        
+        self.keypressed(event.keyval)
+        if event.state & gtk.gdk.CONTROL_MASK: self.keypressed(self.ctrl)
+        #print event.keyval
         self.textview.grab_focus()
+        return
 
-    def myexec(self, widget, data=None):
+    def key_released(self, widget, event, data=None):        
+        self.keyreleased(event.keyval)
+        if not (event.state & gtk.gdk.CONTROL_MASK): self.keyreleased(self.ctrl)
+        self.textview.grab_focus()
+        return
+
+
+    def myexec(self, data=None):
         m_str = self.textbuffer.get_text(self.textbuffer.get_start_iter(), self.textbuffer.get_end_iter())
         try:
             exec m_str in globals(), self.m_locals
@@ -110,7 +149,7 @@ class EvalFrame(gtk.Frame, Thread):
                 
         self.textview.grab_focus()
 
-    def myeval(self, widget, data=None):
+    def myeval(self, data=None):
         m_str = self.textbuffer.get_text(self.textbuffer.get_start_iter(), self.textbuffer.get_end_iter())
         try:
 
@@ -133,3 +172,23 @@ class EvalFrame(gtk.Frame, Thread):
         varname = str(treeview.get_model().get_value(piter, 0))
         self.textbuffer.insert(self.textbuffer.get_end_iter(), varname)
         self.textview.grab_focus()
+
+if __name__ == '__main__':
+    
+    sw = gtk.ScrolledWindow()
+    sw.set_shadow_type(gtk.SHADOW_ETCHED_IN)
+    sw.set_policy(gtk.POLICY_AUTOMATIC,
+                  gtk.POLICY_AUTOMATIC)
+
+    evalf = EvalFrame()
+    sw.add(evalf)
+    win = gtk.Window()
+    win.add(sw)
+
+    win.connect('destroy', lambda win: gtk.main_quit())
+
+    win.resize(800, 600)
+
+    win.show_all()
+
+    gtk.main()
