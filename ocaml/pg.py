@@ -93,6 +93,13 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
              )
             )
 
+        # C-x C-s -> save a file
+        self.keyactions.append(
+            ([Set([65507, 120]), Set([65507,115])],
+             lambda s: s.savefile()
+             )
+            )
+
         # the current starting position for position
         self.startpos = [0]
 
@@ -245,6 +252,39 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
 
         self.filew.show()
 
+
+    def savefile(self):
+        # grab the filename 
+        filename = self.buffer.get_data('filename')
+        # grab the text
+        txt = self.buffer.get_text(self.buffer.get_start_iter(), self.buffer.get_end_iter())
+        # if this is not None, just save
+        if filename <> None:
+            try:
+                txt = open(filename, 'w').write(txt)
+            except:
+                return False
+        else:
+            self.filew = gtk.FileSelection("File selection")
+
+            def close(w):
+                self.filew.hide()
+
+            def fileok(w):
+                self.filew.hide()   
+                path = self.filew.get_filename()
+                self.buffer.begin_not_undoable_action()
+                #try:
+                open(path, 'w').write(txt)
+                self.buffer.set_data('filename', path)
+                #except:
+                #    return False
+
+
+            self.filew.connect("destroy", close)
+            self.filew.ok_button.connect("clicked", fileok)
+            
+            self.filew.show()
 
 
 if __name__ == '__main__':
