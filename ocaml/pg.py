@@ -251,6 +251,8 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
             self.buffer.set_data('filename', path)
             self.buffer.end_not_undoable_action()
 
+            self.get_toplevel().set_title(path)
+
             self.buffer.set_modified(False)
             self.buffer.place_cursor(self.buffer.get_start_iter())
             return True           
@@ -287,7 +289,8 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
                 self.buffer.set_data('filename', path)
                 #except:
                 #    return False
-
+                self.get_toplevel().set_title(path)
+                return True
 
             self.filew.connect("destroy", close)
             self.filew.ok_button.connect("clicked", fileok)
