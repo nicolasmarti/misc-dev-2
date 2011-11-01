@@ -1,0 +1,25 @@
+nat :: Type :=
+| O:: nat
+| S:: nat -> nat
+
+Vector (A:: Type) :: nat -> Type :=
+| vnil :: Vector A O
+| vcons :: {n :: nat} -> A -> Vector A n -> Vector A (S n)
+
+vmap :: {A B :: Type} -> {n :: nat} -> (A -> B) -> Vector A n -> Vector B n
+vmap f vnil := vnil
+vmap {A} {B} {S n} f (vcons hd tl) := vcons (f hd) (vmap f tl)
+
+(/\) (A :: Type) (B::Type) :: Type :=
+| conj :: A -> B -> A /\ B
+
+True :: Type :=
+| I :: True
+
+False :: Type :=
+
+lt :: nat -> nat -> Type
+lt O O := True
+lt (S x) (S y) := lt x y
+lt O (S x) := False
+
