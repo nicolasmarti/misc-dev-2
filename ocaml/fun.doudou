@@ -1,0 +1,14 @@
+(<): no, 50 :: {A :: Type} -> A -> A -> Type 
+
+(>): no, 50 :: {A :: Type} -> A -> A -> Type
+
+(=): no, 50 :: {A :: Type} -> A -> A -> Type
+
+Compare :: {A :: Type} -> (x y :: A) -> Type
+Lt :: {A :: Type} -> (x y :: A) -> x < y -> Compare x y
+Eq :: {A :: Type} -> (x y :: A) -> x = y -> Compare x y
+Gt :: {A :: Type} -> (x y :: A) -> x > y -> Compare x y
+
+Tree (A :: Type) :: Type := 
+| Null :: Tree A
+| Fork :: A -> Tree A -> Tree A -> Tree A
