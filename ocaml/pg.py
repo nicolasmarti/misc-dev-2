@@ -125,7 +125,9 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         if language:
             self.buffer.set_language(language)
             self.buffer.set_highlight_syntax(True)
-        
+
+        self.get_settings().set_property("gtk-error-bell", False)
+
 
     # remove all marks
     def remove_all_marks(self):
@@ -311,6 +313,8 @@ if __name__ == '__main__':
     srcview = PG()
 
     win = gtk.Window()
+
+    
     win.add(srcview)
 
     win.connect('destroy', lambda win: gtk.main_quit())
