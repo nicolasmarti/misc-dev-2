@@ -159,7 +159,7 @@ let _ =
 	    let lines = stream_of_string str in
 	    (* we save the context and the defs *)
 	    let saved_ctxt = !ctxt in
-	    let saved_defs = !defs in
+	    let saved_defs = copy_defs !defs in
 	    (*if verbose then printf "input:\n%s\n" str;*)
 	    let pb = build_parserbuffer lines in
 	    try
