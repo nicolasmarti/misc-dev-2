@@ -83,6 +83,19 @@ let ctxt = ref empty_context
 
 let registry : (int, (term * int)) Hashtbl.t = Hashtbl.create 100
 
+let register (te: term) : int =
+  let id = Hashtbl.hash te in
+  if Hashtbl.mem registry id then
+    raise (Failure "id collision ...")
+  else
+    let _ = Hashtbl.add registry id (te, 1) in
+    id  
+
+let marshal_doudou_python createValue te =
+  let id = register te in
+  let res = Object.call createValue [Object.obj (Int.fromLong id)] in
+  res
+
 (***************************************************************)
 
 let _ =
@@ -158,9 +171,18 @@ let _ =
      def __str__(self):
          return Doudou.to_string(self.id)
 
+     def type(self):
+         return Doudou.type(self.id)
+
      # application (here args is a tuple)
      def __call__(self, *args):
          Doudou.apply(self.id, args)
+
+
+def createValue(id):
+    return Value(id)
+
+
   " in
 
   (* building Doudou module *)
@@ -168,13 +190,22 @@ let _ =
   let mdldic = Import.getModuleDict () in
   Dict.setItemString mdldic "Doudou" mdl;
 
+  (* grabing Value *)
+  let main_mdl = Import.importModule "__main__" in
+  let main_dict = Module.getDict main_mdl in
+  let value_class = unsafe_coerce (Dict.getItemString main_dict "Value") in
+
+  let createValue_function = Callable.coerce (Dict.getItemString main_dict "createValue") in
+
+  (* *)
+
   (* filling the module *)
   (*
     Module.setClosureString : [>_Module] t -> string -> ([>_Tuple] t -> _Object t) -> unit
     Module.setItemString : [>_Module] t -> string -> [>_Object] t -> unit
   *)
 
-  (* decref a registered term *)
+  (*  *)
   Module.setClosureString mdl "apply"
     (fun args ->
       try(
@@ -183,6 +214,25 @@ let _ =
 	  | id::args::[] when Number.check id && Tuple.check args -> (
 	    let args = Tuple.to_list (Tuple.coerce args) in
 	    Object.obj (Base.none ())
+	    )
+	  | _ -> Object.obj (Base.none ())
+      )
+      with
+	| _ -> Object.obj (Base.none ())
+
+    );
+
+  Module.setClosureString mdl "to_string"
+    (fun args ->
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | id::[] when Number.check id -> (
+	    let id = Int.asLong (Int.coerce id) in	    
+	    if not (Hashtbl.mem registry id) then
+	      Object.obj (Base.none ())
+	    else
+	      Object.obj (Py.String.fromString (term2string !ctxt (fst (Hashtbl.find registry id))))
 	    )
 	  | _ -> Object.obj (Base.none ())
       )
@@ -232,9 +282,17 @@ let _ =
 	    let pb = build_parserbuffer lines in
 	    try
 	      let (consumed, def) = parse_onedefinition !defs pb in
-	      let _ = process_definition ~verbose:false defs ctxt def in
+	      let symbs = process_definition ~verbose:false defs ctxt def in
 	      let o = Object.obj (Base.none ()) in
 	      let consumed = Int.fromLong consumed in
+
+	      let _ = List.map (fun symb ->
+		let s = (symbol2string symb) in
+		let te = Cste (symb, nopos) in
+		let pte = marshal_doudou_python createValue_function te in
+		Module.addObject mdl s pte 
+	      ) symbs in
+
 	      Object.obj (Tuple.from_list [Object.obj consumed; o])	    
 	    with
 	      (* TODO: return proper python exception *)
