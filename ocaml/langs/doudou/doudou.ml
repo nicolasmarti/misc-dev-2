@@ -983,18 +983,22 @@ let addInductive (defs: defs ref) (s: symbol) (ty: term) (constrs: (symbol * ter
   defs := {!defs with hist = (s::(List.map fst constrs))::!defs.hist }
 
 (* remove back a set of definitions *)
-let undoDefinition (defs: defs ref) : unit =
+let undoDefinition (defs: defs ref) : symbol list =
   match !defs.hist with
-    | [] -> ()
+    | [] -> []
     | hd::tl ->
-      let _ = List.map (fun s ->
+      let l = List.map (fun s ->
 	match unfold_constante !defs s with
 	  | Equation eqs when List.length eqs > 0 -> 
 	    let ty = constante_type !defs s in
-	    Hashtbl.replace !defs.store (symbol2string s) (s, ty, Equation (take (List.length eqs - 1) eqs))
-	  | _ -> Hashtbl.remove !defs.store (symbol2string s)  
+	    Hashtbl.replace !defs.store (symbol2string s) (s, ty, Equation (take (List.length eqs - 1) eqs));
+	    []
+	  | _ -> 
+	    Hashtbl.remove !defs.store (symbol2string s);
+	    [s]
       ) (List.rev hd) in
-      defs := {!defs with hist = tl}
+      defs := {!defs with hist = tl};
+      List.flatten l
 
 (* this function rewrite all free vars that have a real value in the upper frame of a context into a list of terms, and removes them *)
 let rec flush_fvars (ctxt: context ref) (l: term list) : term list =
@@ -3310,7 +3314,7 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
 	s', ty
       ) constrs in
       (* we remove the definition of the inductive type *)
-      undoDefinition defs;
+      let _ = undoDefinition defs in
       (* now we can pop the quantifiers *)
       let qs = List.rev (List.map (fun _ -> fst (pop_quantification ctxt [])) args) in
       (* pop the inductive types type *)

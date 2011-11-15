@@ -81,6 +81,8 @@ let defs = ref (empty_defs ())
 
 let ctxt = ref empty_context
 
+let registry : (int, (term * int)) Hashtbl.t = Hashtbl.create 100
+
 (***************************************************************)
 
 let _ =
@@ -136,7 +138,32 @@ let _ =
 
   (********************************************************************)
 
-  (* building Lisp module *)
+  (*
+    we need a python class that represents Doudou values
+    c.f. http://docs.python.org/reference/datamodel.html#basic-customization
+
+  *)
+
+  let _ = Run.simpleString "class Value:
+     # just register the id
+     # the id should be already registered in ocaml
+     def __init__(self, id):
+         self.id=id
+
+     # decref the term registered by id
+     def __del__(self):
+         Doudou.decref(self.id)
+
+     # return the string representation
+     def __str__(self):
+         return Doudou.to_string(self.id)
+
+     # application (here args is a tuple)
+     def __call__(self, *args):
+         Doudou.apply(self.id, args)
+  " in
+
+  (* building Doudou module *)
   let mdl = Module.new_ "Doudou" in
   let mdldic = Import.getModuleDict () in
   Dict.setItemString mdldic "Doudou" mdl;
@@ -146,6 +173,47 @@ let _ =
     Module.setClosureString : [>_Module] t -> string -> ([>_Tuple] t -> _Object t) -> unit
     Module.setItemString : [>_Module] t -> string -> [>_Object] t -> unit
   *)
+
+  (* decref a registered term *)
+  Module.setClosureString mdl "apply"
+    (fun args ->
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | id::args::[] when Number.check id && Tuple.check args -> (
+	    let args = Tuple.to_list (Tuple.coerce args) in
+	    Object.obj (Base.none ())
+	    )
+	  | _ -> Object.obj (Base.none ())
+      )
+      with
+	| _ -> Object.obj (Base.none ())
+
+    );
+
+  Module.setClosureString mdl "decref"
+    (fun args ->
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | id::[] when Number.check id -> (
+	    let id = Int.asLong (Int.coerce id) in
+	    if not (Hashtbl.mem registry id) then
+	      Object.obj (Base.none ())
+	    else
+	      let (value, refcounter) = Hashtbl.find registry id in
+	      let _ = if refcounter = 0 then
+		  Hashtbl.remove registry id		    
+		else
+		  Hashtbl.replace registry id (value, refcounter - 1) in
+	      Object.obj (Base.none ())
+	    )
+	  | _ -> Object.obj (Base.none ())
+      )
+      with
+	| _ -> Object.obj (Base.none ())
+
+    );
 
   (* enter a doudou definition *)
   Module.setClosureString mdl "proceed"
@@ -191,7 +259,7 @@ let _ =
   Module.setClosureString mdl "undo"
     (fun args ->
       try 
-	undoDefinition defs;
+	let _ = undoDefinition defs in
 	Object.obj (Base.none ())
       with
 	| DoudouException err -> 
