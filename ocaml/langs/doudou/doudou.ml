@@ -3225,7 +3225,7 @@ let clean_term_strat : reduction_strategy = {
   eta = true;
 }
 
-let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context ref) (definition: definition) : unit =
+let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: context ref) (definition: definition) : symbol list =
   match definition with
     | DefInductive (s, args, ty, constrs) -> (
       (* first, we build the inductive type's type and typecheck again type *)
@@ -3324,7 +3324,8 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
 	s, ty
       ) constrs in
       (* and we update the definitions *)
-      addInductive defs s ind_ty constrs
+      addInductive defs s ind_ty constrs;
+      List.hd !defs.hist
     )
 
     | DefSignature (s, ty) ->
@@ -3335,7 +3336,8 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
       (* add to the defs *)
       addAxiom defs s ty;
       (* just print that everything is fine *)
-      if verbose then printf "Axiom: %s :: %s \n" (symbol2string s) (term2string !ctxt ty); flush Pervasives.stdout
+      if verbose then printf "Axiom: %s :: %s \n" (symbol2string s) (term2string !ctxt ty); flush Pervasives.stdout;
+      List.hd !defs.hist
 
     | DefEquation (PCste (s, spos) as p, te) | DefEquation (PApp ((s, spos), _, _, _) as p, te) ->
       let p, te = typecheck_equation !defs ctxt p te in
@@ -3344,7 +3346,8 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
       (* add to the defs *)
       addEquation defs s (p, te);
       (* just print that everything is fine *)
-      if verbose then printf "Equation: %s \n" (equation2string !ctxt (p, te)); flush Pervasives.stdout
+      if verbose then printf "Equation: %s \n" (equation2string !ctxt (p, te)); flush Pervasives.stdout;
+      []
       
     | DefTerm te ->
       (* we infer the term type *)
@@ -3354,11 +3357,12 @@ let rec process_definition ?(verbose: bool = false) (defs: defs ref) (ctxt: cont
       (* we flush the free vars so far *)
       let [te; ty] = flush_fvars ctxt [te; ty] in
       (* just print that everything is fine *)
-      if verbose then printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout
-
+      if verbose then printf "Term |- %s :: %s \n" (term2string !ctxt te) (term2string !ctxt ty); flush Pervasives.stdout;
+      []
 
     | Load filename ->
-       load_definitions defs ctxt ~verbose:verbose (String.concat "." [filename; "doudou"])
+      load_definitions defs ctxt ~verbose:verbose (String.concat "." [filename; "doudou"]);
+      List.hd !defs.hist
 
 (* parse definition from a parserbuffer *)
 and parse_process_definition (defs: defs ref) (ctxt: context ref) ?(verbose: bool = false) (pb: parserbuffer) : unit =
