@@ -8,6 +8,8 @@ import Pyro.core
 
 from time import *
 
+from accountframe import contract2str
+
 class ExecutionFrame(gtk.Frame, Thread):
 
     def __init__(self, glock):
