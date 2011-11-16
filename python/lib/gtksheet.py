@@ -65,10 +65,10 @@ class CellRender(gtk.CellRendererText):
 class MyEntry(gtk.Entry):
 
     def key_pressed(self, widget, event, data=None):        
-        print "MyEntry " + str(event.keyval)
+        #print "MyEntry " + str(event.keyval)
         if (event.keyval == 65293):
             text = self.get_text()
-            print "MyEntry enter pressed! " + text
+            #print "MyEntry enter pressed! " + text
             self.set_text("")
             self.disconnect(self.keypressedid)
             self.set_editable(False)
@@ -232,8 +232,6 @@ class Sheet(gtk.TreeView):
         # F4 -> import something
         if event.keyval == 65473:
 
-            print "65473"
-            
             entry = MyEntry()
             window = gtk.Window()
 
