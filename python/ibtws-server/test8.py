@@ -31,6 +31,9 @@ print dataid
 
 sleep(10)
 
-print o.getHistData(dataid)
+hist = o.getHistData(dataid)
+
+for i in hist:
+    print i
 
 o.cancelHistData(dataid)
