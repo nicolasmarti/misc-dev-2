@@ -217,6 +217,8 @@ def createValue(id):
   let mdldic = Import.getModuleDict () in
   Dict.setItemString mdldic "Doudou" mdl;
 
+  let doudou_dict = Module.getDict mdl in
+
   (* grabing Value *)
   let main_mdl = Import.importModule "__main__" in
   let main_dict = Module.getDict main_mdl in
@@ -397,7 +399,11 @@ def createValue(id):
   Module.setClosureString mdl "undo"
     (fun args ->
       try 
-	let _ = undoDefinition defs in
+	let symbs = undoDefinition defs in
+	let _ = List.map (fun symb ->
+	  let s = symbol2string symb in
+	  Dict.delItemString doudou_dict s
+	) symbs in
 	Object.obj (Base.none ())
       with
 	| DoudouException err -> 

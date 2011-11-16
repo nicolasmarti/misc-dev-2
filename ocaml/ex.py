@@ -7,13 +7,9 @@ Tree (A :: Type) :: Type := \
 
 #print res
 print dir(Doudou)
-print Doudou.Tree
-print Doudou.Type
 
 print "Tree Type := " + str(Doudou.Tree(Doudou.Type))
 
-#print (Doudou.Tree)
-#print (Doudou.Type)
+Doudou.undo()
 
-#ty = Doudou.Tree(Doudou.Type)
-#print "ty := " + str(ty)
+print dir(Doudou)
