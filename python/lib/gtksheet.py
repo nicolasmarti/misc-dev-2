@@ -160,7 +160,7 @@ class Sheet(gtk.TreeView):
 
         # F2 -> save
         if event.keyval == 65471:
-            self.filew = gtk.FileSelection("File selection")
+            self.filew = gtk.FileSelection("Save")
 
             def close(w):
                 self.filew.hide()
@@ -176,7 +176,7 @@ class Sheet(gtk.TreeView):
 
         # F3 -> load
         if event.keyval == 65472:
-            self.filew = gtk.FileSelection("File selection")
+            self.filew = gtk.FileSelection("Load")
 
             def close(w):
                 self.filew.hide()
