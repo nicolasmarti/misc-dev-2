@@ -121,6 +121,8 @@ class Sheet(gtk.TreeView):
         
         self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_BOTH)
 
+        self.get_settings().set_property("gtk-error-bell", False)
+
     def raw_activated(self, treeview, path, view_column, user_param1 = None):
         #print "raw_activated"
         pass

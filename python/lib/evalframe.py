@@ -136,6 +136,8 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
              )
             )
 
+        self.get_settings().set_property("gtk-error-bell", False)
+
     # key callback
     def key_pressed(self, widget, event, data=None):        
         self.keypressed(event.keyval)
