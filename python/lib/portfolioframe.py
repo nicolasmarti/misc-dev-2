@@ -8,6 +8,8 @@ from threading import *
 import Pyro.core
 from Pyro.EventService.Clients import Subscriber
 
+from accountframe import contract2str
+
 class PortfolioFrame(gtk.Frame, Subscriber):
 
     def __init__(self, glock):
