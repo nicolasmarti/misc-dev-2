@@ -30,6 +30,8 @@ from portfolioframe import *
 from executionframe import *
 from stockframe import *
 
+from gtksheet import *
+
 gtk.gdk.threads_init()
 
 
@@ -59,6 +61,13 @@ if __name__ == "__main__":
     evalf = EvalFrame()
     evalf.show()
     notebook.append_page(evalf, gtk.Label(evalf.get_label()))
+
+    sheetf = gtk.Frame()
+    ss = Sheet()
+    sheetf.add(ss)
+    sheetf.show()
+    ss.show()
+    notebook.append_page(sheetf, gtk.Label("sheet"))
 
     accountf = AccountFrame(glock)
     accountf.show()
