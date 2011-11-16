@@ -88,6 +88,7 @@ let register (te: term) : int =
   if Hashtbl.mem registry id then
     raise (Failure "id collision ...")
   else
+    let s = term2string !ctxt te in
     let _ = Hashtbl.add registry id (te, 1) in
     id  
 
@@ -95,6 +96,29 @@ let marshal_doudou_python createValue te =
   let id = register te in
   let res = Object.call createValue [Object.obj (Int.fromLong id)] in
   res
+
+let marshal_python_doudou valueClass value =
+  try
+    let isValue = Object.isInstance value valueClass in
+    if isValue then
+      let id_object = Object.getAttr value (Py.String.fromString "id") in
+      let id = Int.asLong (Int.coerce id_object) in
+      if not (Hashtbl.mem registry id) then
+	None
+      else
+	let (te, _) = Hashtbl.find registry id in
+	Some te        
+    else
+      None
+  with
+    | _ -> None
+
+let show_registry () =
+  (* iter : ('a -> 'b -> unit) -> ('a, 'b) t -> unit *)
+  Hashtbl.iter (fun id (te, rc) ->
+    let s = term2string !ctxt te in
+    printf "%d: %s\n" id s; flush Pervasives.stdout;
+  ) registry
 
 (***************************************************************)
 
@@ -161,6 +185,8 @@ let _ =
      # just register the id
      # the id should be already registered in ocaml
      def __init__(self, id):
+         #print \"python: register \" + str(id) + \": \" + Doudou.to_string(id) 
+         #print \"python: registering \" + str(id)
          self.id=id
 
      # decref the term registered by id
@@ -176,11 +202,12 @@ let _ =
 
      # application (here args is a tuple)
      def __call__(self, *args):
-         Doudou.apply(self.id, args)
+         return Doudou.apply(self.id, args)
 
 
 def createValue(id):
     return Value(id)
+
 
 
   " in
@@ -197,13 +224,16 @@ def createValue(id):
 
   let createValue_function = Callable.coerce (Dict.getItemString main_dict "createValue") in
 
-  (* *)
-
   (* filling the module *)
   (*
     Module.setClosureString : [>_Module] t -> string -> ([>_Tuple] t -> _Object t) -> unit
     Module.setItemString : [>_Module] t -> string -> [>_Object] t -> unit
   *)
+
+  Module.setItemString mdl "Type"
+    (marshal_doudou_python value_class (Type nopos));
+
+  (*show_registry ();*)
 
   (*  *)
   Module.setClosureString mdl "apply"
@@ -212,13 +242,58 @@ def createValue(id):
 	let args = Tuple.to_list args in
 	match args with
 	  | id::args::[] when Number.check id && Tuple.check args -> (
-	    let args = Tuple.to_list (Tuple.coerce args) in
-	    Object.obj (Base.none ())
+	    let id = Int.asLong (Int.coerce id) in	    
+	    if not (Hashtbl.mem registry id) then (
+	      Object.obj (Base.none ())
 	    )
-	  | _ -> Object.obj (Base.none ())
+	    else (
+	      let args = Tuple.to_list (Tuple.coerce args) in
+	      let rev_args = List.fold_left (fun acc hd -> 
+		match acc with
+		  | None -> None
+		  | Some acc -> 
+		    match marshal_python_doudou value_class hd with
+		      | None -> None
+		      | Some te ->
+			Some (te::acc)
+	      ) (Some []) args in	      
+	      match rev_args with
+		| None -> (
+		  Object.obj (Base.none ())
+		)
+		| Some l ->
+		  let args = List.rev l in
+		  let te = App (
+		    fst (Hashtbl.find registry id),
+		    List.map (fun hd -> (hd, Explicit)) args,
+		    nopos
+		  ) in
+		  let saved_ctxt = !ctxt in
+		  let saved_defs = copy_defs !defs in
+		  (*if verbose then printf "input:\n%s\n" str;*)
+		  try
+		    (* we infer the term type *)
+		    let te, ty = typeinfer !defs ctxt te in
+		    let te = reduction !defs ctxt clean_term_strat te in
+		    let pte = marshal_doudou_python createValue_function te in
+		    pte
+		  with
+		    (* TODO: return proper python exception *)
+		    | DoudouException err -> 
+		      (* we restore the context and defs *)
+		      ctxt := saved_ctxt;
+		      defs := saved_defs;
+		      Object.obj (Base.none ())
+		    | _ -> 
+		      Object.obj (Base.none ())
+	    )
+	  )
+	  | _ -> 
+	    Object.obj (Base.none ())
       )
       with
-	| _ -> Object.obj (Base.none ())
+	| _ -> 
+	  Object.obj (Base.none ())
 
     );
 
@@ -229,15 +304,19 @@ def createValue(id):
 	match args with
 	  | id::[] when Number.check id -> (
 	    let id = Int.asLong (Int.coerce id) in	    
-	    if not (Hashtbl.mem registry id) then
+	    if not (Hashtbl.mem registry id) then (
 	      Object.obj (Base.none ())
-	    else
+	    )
+	    else (
 	      Object.obj (Py.String.fromString (term2string !ctxt (fst (Hashtbl.find registry id))))
 	    )
-	  | _ -> Object.obj (Base.none ())
+	    )
+	  | _ -> 
+	    Object.obj (Base.none ())
       )
       with
-	| _ -> Object.obj (Base.none ())
+	| _ -> 
+	  Object.obj (Base.none ())
 
     );
 
@@ -290,7 +369,8 @@ def createValue(id):
 		let s = (symbol2string symb) in
 		let te = Cste (symb, nopos) in
 		let pte = marshal_doudou_python createValue_function te in
-		Module.addObject mdl s pte 
+		Module.setItemString mdl s pte
+		
 	      ) symbs in
 
 	      Object.obj (Tuple.from_list [Object.obj consumed; o])	    
@@ -303,7 +383,7 @@ def createValue(id):
 	      (* we restore the context and defs *)
 		ctxt := saved_ctxt;
 		defs := saved_defs;
-		printf "error:\n%s\n" (error2string err);
+		printf "error:\n%s\n" (error2string err); flush Pervasives.stdout;
 		Object.obj (Py.String.fromString (error2string err))
 	  )
 	  | _ -> Object.obj (Base.none ())
@@ -322,7 +402,7 @@ def createValue(id):
       with
 	| DoudouException err -> 
 	  (* we restore the context and defs *)
-	  printf "error:\n%s\n" (error2string err);
+	  printf "error:\n%s\n" (error2string err); flush Pervasives.stdout;
 	  Object.obj (Py.String.fromString (error2string err))
     );
 
