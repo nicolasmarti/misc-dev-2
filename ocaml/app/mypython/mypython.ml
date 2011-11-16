@@ -117,8 +117,9 @@ let show_registry () =
   (* iter : ('a -> 'b -> unit) -> ('a, 'b) t -> unit *)
   Hashtbl.iter (fun id (te, rc) ->
     let s = term2string !ctxt te in
-    printf "%d: %s\n" id s; flush Pervasives.stdout;
-  ) registry
+    printf "%d: %s\n" id s; flush Pervasives.stdout;    
+  ) registry;
+    printf "\n\n"; flush Pervasives.stdout
 
 (***************************************************************)
 
@@ -369,12 +370,16 @@ def createValue(id):
 
 	      let _ = List.map (fun symb ->
 		let s = (symbol2string symb) in
+		(*printf "registering %s\n" s;*)
 		let te = Cste (symb, nopos) in
-		let pte = marshal_doudou_python createValue_function te in
-		Module.setItemString mdl s pte
-		
+		try 
+		  let pte = marshal_doudou_python createValue_function te in
+		  Module.setItemString mdl s pte;
+		  (*printf "registered %s\n" s*)
+		with
+		  | _ -> (*printf "failed registerig %s\n" s; flush Pervasives.stdout;*) ()
 	      ) symbs in
-
+	
 	      Object.obj (Tuple.from_list [Object.obj consumed; o])	    
 	    with
 	      (* TODO: return proper python exception *)
@@ -402,7 +407,10 @@ def createValue(id):
 	let symbs = undoDefinition defs in
 	let _ = List.map (fun symb ->
 	  let s = symbol2string symb in
-	  Dict.delItemString doudou_dict s
+	  try 
+	    Dict.delItemString doudou_dict s
+	  with
+	    | _ -> (*printf "failed unregisterig %s\n" s; flush Pervasives.stdout;*) ()
 	) symbs in
 	Object.obj (Base.none ())
       with
