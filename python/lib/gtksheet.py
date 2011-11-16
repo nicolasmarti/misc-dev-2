@@ -61,6 +61,43 @@ class CellRender(gtk.CellRendererText):
         #print "editing_cancel"
         pass
 
+# some entry used for external needs
+class MyEntry(gtk.Entry):
+
+    def key_pressed(self, widget, event, data=None):        
+        print "MyEntry " + str(event.keyval)
+        if (event.keyval == 65293):
+            text = self.get_text()
+            print "MyEntry enter pressed! " + text
+            self.set_text("")
+            self.disconnect(self.keypressedid)
+            self.set_editable(False)
+            self.set_can_focus(False)
+            action = self.on_enter
+            action(text)
+
+
+    def __init__(self):
+
+        gtk.Entry.__init__(self)
+
+        self.on_enter = None
+
+        self.set_editable(False)
+
+        #self.modify_base(gtk.STATE_NORMAL, gtk.gdk.color_parse('black'))
+        
+        self.set_can_focus(False)
+
+    def setquestion(self, text, action):
+        self.on_enter = action
+        self.set_editable(True)
+        self.set_text(text)
+        self.keypressedid = self.connect("key_press_event", self.key_pressed, None)
+        self.set_can_focus(True)
+        self.grab_focus()
+
+
 class Sheet(gtk.TreeView):
 
     def __init__(self, numCols = 100, numRows = 100):
@@ -191,6 +228,28 @@ class Sheet(gtk.TreeView):
             self.filew.ok_button.connect("clicked", fileok)
 
             self.filew.show()
+
+        # F4 -> import something
+        if event.keyval == 65473:
+
+            print "65473"
+            
+            entry = MyEntry()
+            window = gtk.Window()
+
+            window.add(entry)
+            entry.show()
+            window.show()
+
+            def action(txt):
+                cmd = "import " + txt
+                exec cmd in globals()
+                window.hide()
+                return None
+            
+            entry.setquestion("module: ", action)
+
+            #window.hide()
 
     def key_released(self, widget, event, data=None):      
         try:
