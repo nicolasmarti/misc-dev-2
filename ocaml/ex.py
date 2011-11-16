@@ -1,11 +1,19 @@
-a = Value(12)
 
-a(10, 21, "doudou")
 
-del(a)
+res = Doudou.proceed("\
+Tree (A :: Type) :: Type := \
+| Leaf :: Tree A \
+| Node :: A -> Tree A -> Tree A -> Tree A")
 
-res = Doudou.proceed("Tree :: Type -> Type")
-
-print res
-
+#print res
+print dir(Doudou)
 print Doudou.Tree
+print Doudou.Type
+
+print "Tree Type := " + str(Doudou.Tree(Doudou.Type))
+
+#print (Doudou.Tree)
+#print (Doudou.Type)
+
+#ty = Doudou.Tree(Doudou.Type)
+#print "ty := " + str(ty)
