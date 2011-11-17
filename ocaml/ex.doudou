@@ -2,6 +2,8 @@ False :: Type :=
 
 absurd :: {P :: Type} -> False -> P
 absurd {P} prf := match prf with
+absurd2 :: False -> (P :: Type) -> P
+absurd2 prf _ := match prf with
 
 True :: Type := | I :: True
 
@@ -33,3 +35,27 @@ disj (right b) fleft fright := fright b
 
 congr :: {A :: Type} -> (P :: A -> Type) -> (a b :: A) -> a = b -> P a -> P b
 congr P a b (refl) H := H
+
+congr2 :: {A :: Type} -> (a b :: A) -> ((P :: A -> Type) -> P a -> P b) -> a = b
+congr2 a b H := (H (\ x -> a = x) refl)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
