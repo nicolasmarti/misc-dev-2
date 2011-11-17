@@ -100,9 +100,12 @@ let register (te: term) : int =
     if equality_term_term !defs ctxt te (fst (Hashtbl.find registry id)) then
       id 
     else (
-      printf "id collision on %s (%d)\n" (term2string !ctxt te) id;
-      show_registry ();
-      raise (Failure "id collision ...")
+      let id = ref (Random.int 10000000) in
+      while Hashtbl.mem registry !id do
+	id := Random.int 10000000
+      done;
+      let _ = Hashtbl.add registry !id (te, 1) in
+      !id  
     )
   ) else   
     let _ = Hashtbl.add registry id (te, 1) in
