@@ -6,10 +6,31 @@ Tree (A :: Type) :: Type := \
 | Node :: A -> Tree A -> Tree A -> Tree A")
 
 #print res
-print dir(Doudou)
+#print dir(Doudou)
 
-print "Tree Type := " + str(Doudou.Tree(Doudou.Type))
+te = Doudou.Tree(Doudou.Type)
 
-Doudou.undo()
+print "Tree Type := " + str(te)
 
-print dir(Doudou)
+print "|Tree Type| := " + str(len(te))
+
+#del(te)
+
+#Doudou.undo()
+
+#print dir(Doudou)
+
+res = Doudou.proceed("\
+nat :: Type := \
+| O :: nat \
+| S :: nat -> nat")
+
+O = Doudou.O
+S = Doudou.S
+
+print O.type()
+print S.type()
+
+print S(O)
+
+#print dir(Doudou)
