@@ -83,18 +83,36 @@ let ctxt = ref empty_context
 
 let registry : (int, (term * int)) Hashtbl.t = Hashtbl.create 100
 
-let register (te: term) : int =
-  let id = Hashtbl.hash te in
-  if Hashtbl.mem registry id then
-    raise (Failure "id collision ...")
-  else
+let debug = ref false
+
+let show_registry () =
+  (* iter : ('a -> 'b -> unit) -> ('a, 'b) t -> unit *)
+  Hashtbl.iter (fun id (te, rc) ->
     let s = term2string !ctxt te in
+    printf "%d: %s, %d\n" id s rc; flush Pervasives.stdout;    
+  ) registry;
+    printf "\n\n"; flush Pervasives.stdout
+
+let register (te: term) : int =  
+  let id = Hashtbl.hash te in
+  if !debug then printf "id for %s --> %d\n" (term2string !ctxt te) id;
+  if Hashtbl.mem registry id then (
+    if equality_term_term !defs ctxt te (fst (Hashtbl.find registry id)) then
+      id 
+    else (
+      printf "id collision on %s (%d)\n" (term2string !ctxt te) id;
+      show_registry ();
+      raise (Failure "id collision ...")
+    )
+  ) else   
     let _ = Hashtbl.add registry id (te, 1) in
     id  
 
 let marshal_doudou_python createValue te =
   let id = register te in
+  if !debug then printf "registered %s (%d)\n" (term2string !ctxt te) id;
   let res = Object.call createValue [Object.obj (Int.fromLong id)] in
+  if !debug then printf "created Value for id %d\n" id;
   res
 
 let marshal_python_doudou valueClass value =
@@ -113,13 +131,6 @@ let marshal_python_doudou valueClass value =
   with
     | _ -> None
 
-let show_registry () =
-  (* iter : ('a -> 'b -> unit) -> ('a, 'b) t -> unit *)
-  Hashtbl.iter (fun id (te, rc) ->
-    let s = term2string !ctxt te in
-    printf "%d: %s\n" id s; flush Pervasives.stdout;    
-  ) registry;
-    printf "\n\n"; flush Pervasives.stdout
 
 (***************************************************************)
 
@@ -192,6 +203,7 @@ let _ =
 
      # decref the term registered by id
      def __del__(self):
+         #print \"__del__(\" + str(self.id) + \")\"
          Doudou.decref(self.id)
 
      # return the string representation
@@ -205,6 +217,9 @@ let _ =
      def __call__(self, *args):
          return Doudou.apply(self.id, args)
 
+     # size of the term (1 + number of explicite arguments)
+     def __len__(self):
+         return Doudou.length(self.id)
 
 def createValue(id):
     return Value(id)
@@ -247,16 +262,17 @@ def createValue(id):
 	  | id::args::[] when Number.check id && Tuple.check args -> (
 	    let id = Int.asLong (Int.coerce id) in	    
 	    if not (Hashtbl.mem registry id) then (
+	      if !debug then printf "apply(1)\n";
 	      Object.obj (Base.none ())
 	    )
 	    else (
 	      let args = Tuple.to_list (Tuple.coerce args) in
 	      let rev_args = List.fold_left (fun acc hd -> 
 		match acc with
-		  | None -> None
+		  | None -> if !debug then printf "apply(2)\n"; None
 		  | Some acc -> 
 		    match marshal_python_doudou value_class hd with
-		      | None -> None
+		      | None -> if !debug then printf "apply(3)\n"; None
 		      | Some te ->
 			Some (te::acc)
 	      ) (Some []) args in	      
@@ -277,8 +293,11 @@ def createValue(id):
 		  try
 		    (* we infer the term type *)
 		    let te, ty = typeinfer !defs ctxt te in
+		    if !debug then printf "typechecked application\n";
 		    let te = reduction !defs ctxt clean_term_strat te in
+		    if !debug then printf "reduced results\n";
 		    let pte = marshal_doudou_python createValue_function te in
+		    if !debug then printf "marshalled results\n";
 		    pte
 		  with
 		    (* TODO: return proper python exception *)
@@ -286,9 +305,19 @@ def createValue(id):
 		      (* we restore the context and defs *)
 		      ctxt := saved_ctxt;
 		      defs := saved_defs;
+		      if !debug then printf "apply(4)\n"; 
 		      Object.obj (Base.none ())
 		    | _ -> 
+		      ctxt := saved_ctxt;
+		      defs := saved_defs;
+		      if !debug then printf "apply(5)\n"; 
 		      Object.obj (Base.none ())
+		    | Failure s -> 
+		      ctxt := saved_ctxt;
+		      defs := saved_defs;
+		      if !debug then printf "apply(6): %s\n" s; 
+		      Object.obj (Base.none ())
+
 	    )
 	  )
 	  | _ -> 
@@ -323,6 +352,59 @@ def createValue(id):
 
     );
 
+  Module.setClosureString mdl "type"
+    (fun args ->
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | id::[] when Number.check id -> (
+	    let id = Int.asLong (Int.coerce id) in	    
+	    if not (Hashtbl.mem registry id) then (
+	      Object.obj (Base.none ())
+	    )
+	    else (	      
+	      let te = fst (Hashtbl.find registry id) in
+	      let _, ty = typeinfer !defs ctxt te in
+	      marshal_doudou_python value_class ty
+	    )
+	  )
+	  | _ -> 
+	    Object.obj (Base.none ())
+      )
+      with
+	| _ -> 
+	  Object.obj (Base.none ())	    
+    );
+
+  Module.setClosureString mdl "length"
+    (fun args ->
+      try(
+	let args = Tuple.to_list args in
+	match args with
+	  | id::[] when Number.check id -> (
+	    let id = Int.asLong (Int.coerce id) in	    
+	    if not (Hashtbl.mem registry id) then (
+	      Object.obj (Base.none ())
+	    )
+	    else (
+	      let te = fst (Hashtbl.find registry id) in
+	      let len = match te with
+		| App (_, l, _) ->
+		  1 + List.length (filter_explicit l)
+		| _ -> 1 
+	      in
+	      Object.obj (Int.fromLong len)
+	    )
+	    )
+	  | _ -> 
+	    Object.obj (Base.none ())
+      )
+      with
+	| _ -> 
+	  Object.obj (Base.none ())
+
+    );
+
   Module.setClosureString mdl "decref"
     (fun args ->
       try(
@@ -334,7 +416,7 @@ def createValue(id):
 	      Object.obj (Base.none ())
 	    else
 	      let (value, refcounter) = Hashtbl.find registry id in
-	      let _ = if refcounter = 0 then
+	      let _ = if refcounter = 1 then
 		  Hashtbl.remove registry id		    
 		else
 		  Hashtbl.replace registry id (value, refcounter - 1) in
