@@ -415,6 +415,7 @@ def createValue(id):
 	match args with
 	  | id::[] when Number.check id -> (
 	    let id = Int.asLong (Int.coerce id) in
+	    if !debug then printf "decref of %d\n" id;
 	    if not (Hashtbl.mem registry id) then
 	      Object.obj (Base.none ())
 	    else
