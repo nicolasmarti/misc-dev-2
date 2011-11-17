@@ -314,9 +314,15 @@ if __name__ == '__main__':
 
     win = gtk.Window()
 
-    
-    win.add(srcview)
+    sw = gtk.ScrolledWindow()
+    sw.set_shadow_type(gtk.SHADOW_ETCHED_IN)
+    sw.set_policy(gtk.POLICY_AUTOMATIC,
+                  gtk.POLICY_AUTOMATIC)
 
+    sw.add(srcview)
+    win = gtk.Window()
+    win.add(sw)
+    
     win.connect('destroy', lambda win: gtk.main_quit())
 
     win.resize(800, 600)
