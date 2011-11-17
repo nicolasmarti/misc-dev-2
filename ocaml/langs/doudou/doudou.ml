@@ -2202,6 +2202,8 @@ let parse_onedefinition defs : (int * definition) parsingrule =
 
 let debug = ref false
 
+let debug_oracles = ref false
+
 (*
   reduction of terms
   several strategy are possible:
@@ -2596,6 +2598,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	  let ctxt' = ref ctxt' in
 	(* first let test equality *)
 	  let equality_assertion = term_equality defs ctxt' te1 te2 in
+	  if !debug_oracles then printf "unification ask to oracles: %s\n" (term2string !ctxt equality_assertion);
 	  let equality_result = fold_stop (fun () oracle ->
 	    match oracle (defs, !ctxt', equality_assertion) with
 	      | None -> Left ()
@@ -2614,6 +2617,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	    | Left _ ->
 	    (* no proof of equality, but maybe a proof of inequality *)
 	      let inequality_assertion = term_inequality defs ctxt' te1 te2 in
+	      if !debug_oracles then printf "unification ask to oracles: %s\n" (term2string !ctxt inequality_assertion);
 	      let inequality_result = fold_stop (fun () oracle ->
 		match oracle (defs, !ctxt', inequality_assertion) with
 		  | None -> Left ()
