@@ -1468,9 +1468,15 @@ let rec error2token (err: doudou_error) : token =
     | UnknownBVar (i, ctxt) -> Box [Verbatim "unknown bounded var:"; Space 1; Verbatim (string_of_int i); Space 1; context2token ctxt]
     | UnknownFVar (i, ctxt) -> Verbatim "UnknownFVar"
 
-    | UnknownUnification (ctxt, te1, te2) | NoUnification (ctxt, te1, te2) ->
+    | UnknownUnification (ctxt, te1, te2) ->
       Box [
 	Verbatim "Do not know how to unify"; Newline;
+	pos2token (get_term_pos te1); Space 1; term2token ctxt te1 Alone; Newline;
+	pos2token (get_term_pos te2); Space 1; term2token ctxt te2 Alone; Newline
+      ]
+    | NoUnification (ctxt, te1, te2) ->
+      Box [
+	Verbatim "Cannot unify"; Newline;
 	pos2token (get_term_pos te1); Space 1; term2token ctxt te1 Alone; Newline;
 	pos2token (get_term_pos te2); Space 1; term2token ctxt te2 Alone; Newline
       ]
@@ -2261,18 +2267,11 @@ exception IotaReductionFailed
 
 let unification_oracles_list : ((defs * context * term) -> term option) list ref = ref []
 
-let eq_cste = Cste (Symbol ("=", Infix (20, NoAssoc)), nopos)
-
-let not_cste = Cste (Symbol ("~", Prefix 50), nopos)
-
-
 (*
- should assert equality / inequality without any symbol:
-
+ 
   equality ty1 ty2 :=
   
-  (P: type(ty1) -> Type) -> P(ty1) -> P(ty2) /\
-  (P: type(ty1) -> Type) -> P(ty2) -> P(ty1) 
+  (P: type(ty1) -> Type) -> P(ty1) -> P(ty2)
 
   inequality ty1 ty2 :=
   
@@ -2281,12 +2280,19 @@ let not_cste = Cste (Symbol ("~", Prefix 50), nopos)
 *)
 
 let rec term_equality (defs: defs) (ctxt: context ref) (ty1: term) (ty2: term) : term =
-  let te = App (eq_cste, [ty1, Explicit; ty2, Explicit], nopos) in
+  let pname = Name "P" in  
+  let pty = TVar (add_fvar ctxt (Type nopos), nopos) in
+  let te = Impl ((pname, pty, Explicit, nopos), 
+		 Impl ((Symbol ("_", Nofix), App (TVar (0, nopos), [(shift_term ty1 1, Explicit)], nopos), Explicit, nopos),
+		       App (TVar (1, nopos), [(shift_term ty2 2, Explicit)], nopos)
+		       , nopos), nopos) in
   let te, _ = typecheck defs ctxt te (Type nopos) in
   te
 
 and term_inequality (defs: defs) (ctxt: context ref) (ty1: term) (ty2: term) : term =
-  let te = App (not_cste, [App (eq_cste, [ty1, Explicit; ty2, Explicit], nopos), Explicit], nopos) in
+  let te = Impl ((Name "H", term_equality defs ctxt ty1 ty2, Explicit, nopos),
+		 Impl ((Name "Q", Type nopos, Explicit, nopos),
+		       TVar (0, nopos), nopos), nopos) in
   let te, _ = typecheck defs ctxt te (Type nopos) in
   te
 
@@ -2586,7 +2592,6 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
     ) with
       | DoudouException (UnknownUnification (ctxt', te1', te2')) as e when eq_term te1 te1' && eq_term te2 te2' -> (
 	try (
-
 	(* in this case we ask oracles if they can decide equality or inequality *)
 	  let ctxt' = ref ctxt' in
 	(* first let test equality *)
@@ -2630,7 +2635,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	) with
 	  | _ -> raise e
       )
-      | e -> raise e	
+      | e -> printf "rpout!!\n"; raise e	
   ) in
   if !debug then printf "unification result: %s\n" (term2string !ctxt res);
   res
