@@ -2,6 +2,7 @@ False :: Type :=
 
 absurd :: {P :: Type} -> False -> P
 absurd {P} prf := match prf with
+
 absurd2 :: False -> (P :: Type) -> P
 absurd2 prf _ := match prf with
 
