@@ -1,0 +1,18 @@
+nat :: Type :=
+| O :: nat
+| S :: nat -> nat
+
+(+) : right, 50 :: nat -> nat -> nat
+O + x := x
+x + O := x
+S x + y := S (x + y)
+
+x :: nat
+y :: nat
+
+mytype :: Type -> nat -> Type
+
+n1 :: mytype Type (x + y)
+
+n2 :: mytype Type (y+x)
+n2 := n1
