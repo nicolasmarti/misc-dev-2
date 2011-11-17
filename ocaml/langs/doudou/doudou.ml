@@ -2635,7 +2635,7 @@ and unification_term_term (defs: defs) (ctxt: context ref) (te1: term) (te2: ter
 	) with
 	  | _ -> raise e
       )
-      | e -> printf "rpout!!\n"; raise e	
+      | e -> raise e	
   ) in
   if !debug then printf "unification result: %s\n" (term2string !ctxt res);
   res
