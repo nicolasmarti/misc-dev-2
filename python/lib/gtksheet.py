@@ -240,8 +240,7 @@ class Sheet(gtk.TreeView):
             window.show()
 
             def action(txt):
-                cmd = "import " + txt
-                exec cmd in globals()
+                exec txt in globals()
                 window.hide()
                 return None
             
