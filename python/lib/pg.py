@@ -308,21 +308,28 @@ class PG(gtksourceview2.View, keybinding.KeyBinding):
         self.buffer.set_data('filename', None)
 
 
+class PGFrame(gtk.Frame):
+
+    def __init__(self):
+        gtk.Frame.__init__(self)
+
+        srcview = PG()
+
+        sw = gtk.ScrolledWindow()
+        sw.set_shadow_type(gtk.SHADOW_ETCHED_IN)
+        sw.set_policy(gtk.POLICY_AUTOMATIC,
+                      gtk.POLICY_AUTOMATIC)
+
+        sw.add(srcview)
+        
+        self.add(sw)
+
 if __name__ == '__main__':
     
-    srcview = PG()
-
     win = gtk.Window()
 
-    sw = gtk.ScrolledWindow()
-    sw.set_shadow_type(gtk.SHADOW_ETCHED_IN)
-    sw.set_policy(gtk.POLICY_AUTOMATIC,
-                  gtk.POLICY_AUTOMATIC)
+    win.add(PGFrame())    
 
-    sw.add(srcview)
-    win = gtk.Window()
-    win.add(sw)
-    
     win.connect('destroy', lambda win: gtk.main_quit())
 
     win.resize(800, 600)
