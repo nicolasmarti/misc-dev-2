@@ -40,6 +40,10 @@ class SpreadSheet:
     if file <> None:
       self.load(file)
 
+    try:
+      exec "import Doudou" in globals()
+    except:
+      None
 
 
   def __str__(self):

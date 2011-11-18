@@ -138,6 +138,11 @@ class EvalFrame(gtk.Frame, Thread, keybinding.KeyBinding):
 
         self.get_settings().set_property("gtk-error-bell", False)
 
+        try:
+            exec "import Doudou" in globals()
+        except:
+            None
+
     # key callback
     def key_pressed(self, widget, event, data=None):        
         self.keypressed(event.keyval)

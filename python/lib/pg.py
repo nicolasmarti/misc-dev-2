@@ -14,6 +14,8 @@ import pango
 from sets import *
 import keybinding
 
+import Doudou
+
 def error_dialog(parent, msg):
     dialog = gtk.MessageDialog(parent,
                                gtk.DIALOG_DESTROY_WITH_PARENT,

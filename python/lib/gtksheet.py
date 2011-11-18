@@ -160,6 +160,11 @@ class Sheet(gtk.TreeView):
 
         self.get_settings().set_property("gtk-error-bell", False)
 
+        try:
+            exec "import Doudou" in globals()
+        except:
+            None
+
     def raw_activated(self, treeview, path, view_column, user_param1 = None):
         #print "raw_activated"
         pass
